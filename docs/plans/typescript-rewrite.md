@@ -62,7 +62,7 @@ interface AgentCallbacks {
   onLLMRequest?: (model: string, messages: Message[]) => void;
   onLLMResponse?: (response: string, usage: TokenUsage) => void;
   onToolStart?: (toolName: string, args: Record<string, unknown>) => void;
-  onToolComplete?: (toolName: string, result: ToolResult) => void;
+  onToolComplete?: (toolName: string, result: ToolResponse) => void;
   onTaskStart?: (taskId: string) => void;
   onTaskComplete?: (taskId: string, success: boolean) => void;
 }
