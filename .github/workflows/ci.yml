@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'release-please--**'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+# Cancel in-progress runs for same PR/branch
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test Bun ${{ matrix.bun-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        bun-version: ["1.2", "latest"]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Bun ${{ matrix.bun-version }}
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: ${{ matrix.bun-version }}
+
+    - name: Install dependencies
+      run: bun install --frozen-lockfile
+
+    - name: Check code formatting with Prettier
+      id: prettier
+      continue-on-error: true
+      run: bun run format:check
+
+    - name: Lint with ESLint
+      id: eslint
+      continue-on-error: true
+      run: bun run lint
+
+    - name: Type check with TypeScript
+      id: typecheck
+      continue-on-error: true
+      run: bun run typecheck
+
+    - name: Run tests with coverage
+      id: jest
+      continue-on-error: true
+      timeout-minutes: 10
+      run: bun run test:coverage
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      if: matrix.bun-version == 'latest'
+      continue-on-error: true
+      with:
+        files: ./coverage/lcov.info
+        fail_ci_if_error: false
+
+    # Quality check summary
+    - name: Quality Check Summary
+      if: always()
+      run: |
+        echo "## Quality Check Summary" >> $GITHUB_STEP_SUMMARY
+
+        # Check outcomes and generate summary
+        [[ "${{ steps.prettier.outcome }}" == "failure" ]] && \
+          echo "❌ Prettier formatting failed" >> $GITHUB_STEP_SUMMARY || \
+          echo "✅ Prettier formatting passed" >> $GITHUB_STEP_SUMMARY
+
+        [[ "${{ steps.eslint.outcome }}" == "failure" ]] && \
+          echo "❌ ESLint linting failed" >> $GITHUB_STEP_SUMMARY || \
+          echo "✅ ESLint linting passed" >> $GITHUB_STEP_SUMMARY
+
+        [[ "${{ steps.typecheck.outcome }}" == "failure" ]] && \
+          echo "❌ TypeScript type checking failed" >> $GITHUB_STEP_SUMMARY || \
+          echo "✅ TypeScript type checking passed" >> $GITHUB_STEP_SUMMARY
+
+        [[ "${{ steps.jest.outcome }}" == "failure" ]] && \
+          echo "❌ Jest tests failed" >> $GITHUB_STEP_SUMMARY || \
+          echo "✅ Jest tests passed" >> $GITHUB_STEP_SUMMARY
+
+        # Fail if any check failed
+        if [[ "${{ steps.prettier.outcome }}" == "failure" ]] || \
+           [[ "${{ steps.eslint.outcome }}" == "failure" ]] || \
+           [[ "${{ steps.typecheck.outcome }}" == "failure" ]] || \
+           [[ "${{ steps.jest.outcome }}" == "failure" ]]; then
+          exit 1
+        fi

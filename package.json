@@ -4,6 +4,11 @@
   "description": "TypeScript agent framework with multi-provider LLM support",
   "type": "module",
   "main": "dist/index.js",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "dev": "bun run src/index.tsx",
     "build": "bun build src/index.tsx --outdir dist --target bun",
@@ -13,8 +18,8 @@
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write src/",
     "format:check": "prettier --check src/",
-    "test": "jest --passWithNoTests",
-    "test:coverage": "jest --coverage",
+    "test": "NODE_OPTIONS='--experimental-vm-modules' jest --passWithNoTests",
+    "test:coverage": "NODE_OPTIONS='--experimental-vm-modules' jest --coverage --passWithNoTests",
     "test:watch": "jest --watch"
   },
   "dependencies": {
