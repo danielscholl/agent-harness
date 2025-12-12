@@ -123,6 +123,10 @@ export class NodeFileSystem implements IFileSystem {
   getCwd(): string {
     return process.cwd();
   }
+
+  dirname(filePath: string): string {
+    return path.dirname(filePath);
+  }
 }
 
 // -----------------------------------------------------------------------------
@@ -327,7 +331,7 @@ export class ConfigManager {
       const minimalConfig = this.createMinimalConfig(validatedConfig);
 
       // Ensure parent directory exists
-      const dir = path.dirname(targetPath);
+      const dir = this.fileSystem.dirname(targetPath);
       await this.fileSystem.mkdir(dir);
 
       // Write the config file

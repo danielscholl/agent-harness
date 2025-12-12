@@ -64,6 +64,11 @@ export interface IFileSystem {
    * Get the current working directory.
    */
   getCwd(): string;
+
+  /**
+   * Get the directory name of a path.
+   */
+  dirname(filePath: string): string;
 }
 
 // -----------------------------------------------------------------------------

@@ -2,7 +2,7 @@
  * Tests for environment variable parsing.
  */
 
-import { beforeEach, describe, expect, it } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 
 import {
   ProcessEnvReader,

@@ -60,6 +60,12 @@ class MockFileSystem implements IFileSystem {
     return '/project';
   }
 
+  dirname(filePath: string): string {
+    const parts = filePath.split('/');
+    parts.pop();
+    return parts.join('/') || '/';
+  }
+
   // Test helpers
   setFile(path: string, content: string): void {
     this.files.set(path, content);
@@ -322,6 +328,7 @@ describe('ConfigManager', () => {
         joinPath: (...s: string[]) => mockFs.joinPath(...s),
         getHomeDir: () => mockFs.getHomeDir(),
         getCwd: () => mockFs.getCwd(),
+        dirname: (p: string) => mockFs.dirname(p),
       };
 
       const throwingManager = new ConfigManager({
@@ -638,6 +645,7 @@ describe('ConfigManager', () => {
         joinPath: (...s: string[]) => mockFs.joinPath(...s),
         getHomeDir: () => mockFs.getHomeDir(),
         getCwd: () => mockFs.getCwd(),
+        dirname: (p: string) => mockFs.dirname(p),
         readFile: () => Promise.resolve('{}'),
       };
 
@@ -665,6 +673,7 @@ describe('ConfigManager', () => {
         joinPath: (...s: string[]) => mockFs.joinPath(...s),
         getHomeDir: () => mockFs.getHomeDir(),
         getCwd: () => mockFs.getCwd(),
+        dirname: (p: string) => mockFs.dirname(p),
         readFile: () => Promise.resolve('{}'),
       };
 
