@@ -85,6 +85,8 @@ All LLM calls and external API calls include fallback handling. If summarization
 - **Runtime**: Bun 1.x (users must have Bun installed)
 - We chose Bun-only runtime for native TypeScript execution without transpilation
 
+**Version Authority**: `package.json` is the source of truth for exact versions. This table records intended technologies; the package manifest may specify newer compatible versions.
+
 ---
 
 ## Architecture
@@ -105,7 +107,7 @@ Note: Only the Agent Layer invokes the Model Layer. Tools and Utils never call L
 ### LLM Access Rules
 - Only the Agent Layer may invoke the Model Layer
 - Tools must NOT call LLMs directly
-- If a tool needs LLM assistance, return a request for the Agent to handle
+- If a tool needs LLM assistance, return `ToolResponse` with `error: 'LLM_ASSIST_REQUIRED'` and a `message` describing what help is needed; the Agent Layer interprets and acts on this
 
 ### Key Patterns
 
@@ -130,6 +132,18 @@ The agent must never modify user state without explicit permission.
 - `fs-delete`: Delete files
 - `shell-run`: Execute shell commands
 
+### Default Policies (before any settings exist)
+- `fs-read`: **Allowed** only within project root and subdirectories
+- `fs-write`, `fs-delete`, `shell-run`: **Denied** — must prompt user
+
+### Sensitive Paths (always require explicit permission)
+Even for `fs-read`, these paths require per-session user approval:
+- `~/.ssh/*`, `~/.gnupg/*` — credentials and keys
+- `.env*`, `*credentials*`, `*secret*` — environment secrets
+- OS keychains and credential stores
+
+Tools must never read or write sensitive paths without explicit, per-session permission.
+
 ### Configuration Hierarchy
 1. `./.agent-ts/settings.json` (project - can be committed)
 2. `~/.agent-ts/settings.json` (user - never committed)
@@ -150,6 +164,8 @@ Tools with side effects must:
 ---
 
 ## Code Patterns
+
+> **Note**: Code examples below are illustrative patterns, not canonical implementations. When actual code is implemented, the source files become the reference. These examples show the shape and intent.
 
 ### Callback Interface
 Agent-to-UI communication uses typed callbacks. The specific callbacks evolve with implementation, but follow this pattern:
@@ -172,6 +188,8 @@ interface AgentCallbacks {
 
 Additional callbacks (streaming, permissions, task lifecycle) are added as features require them.
 
+**Correlation**: All callbacks SHOULD include a `runId` (and optionally `spanId`) to correlate events from the same agent run. This enables debugging and observability without opaque logging.
+
 ### Tool Response Format
 ```typescript
 type ToolErrorCode =
@@ -181,11 +199,12 @@ type ToolErrorCode =
   | 'PERMISSION_DENIED'
   | 'RATE_LIMITED'
   | 'NOT_FOUND'
+  | 'LLM_ASSIST_REQUIRED'
   | 'UNKNOWN';
 
-interface SuccessResponse {
+interface SuccessResponse<T = unknown> {
   success: true;
-  result: unknown;
+  result: T;
   message: string;
 }
 
@@ -195,8 +214,10 @@ interface ErrorResponse {
   message: string;
 }
 
-type ToolResponse = SuccessResponse | ErrorResponse;
+type ToolResponse<T = unknown> = SuccessResponse<T> | ErrorResponse;
 ```
+
+For public tools, prefer `ToolResponse<SpecificType>` over plain `ToolResponse` to maintain type safety.
 
 ### Tool Error Handling
 - **Public interface**: Tools MUST return `ToolResponse`, never throw
@@ -517,6 +538,27 @@ What we decided.
 ## Consequences
 Trade-offs and implications.
 ```
+
+---
+
+## Document Precedence
+
+- **CLAUDE.md** defines process and architectural guardrails (this file)
+- **docs/plans/*.md** define what to build and in what order
+- **docs/decisions/*.md** (ADRs) record significant design choices
+
+If a feature or PR conflicts with CLAUDE.md, propose an ADR and update this file as part of the change. The constitution evolves, but changes must be explicit.
+
+---
+
+## AI Assistant Behavior
+
+This file is governance for AI coding assistants. When working on this codebase:
+
+1. **Before large refactors**: Read this entire CLAUDE.md and relevant ADRs
+2. **When a request would violate a rule**: Prefer proposing an ADR or asking for clarification over silently ignoring the rule
+3. **When choosing between patterns**: Prefer existing patterns (callbacks, tools, skills) over inventing new abstractions
+4. **When uncertain**: Ask rather than guess — this file says "never guess missing parameters"
 
 ---
 

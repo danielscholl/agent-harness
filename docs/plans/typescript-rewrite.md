@@ -24,7 +24,7 @@ Full rewrite of `agent-base` (Python/Microsoft Agent Framework) to TypeScript us
 ### Key Challenges
 
 1. **Microsoft Agent Framework has no TS equivalent** → LangChain.js migration
-2. **Skills system redesign** → PEP 723 scripts need Node.js alternative
+2. **Skills system redesign** → PEP 723 scripts replaced with Bun subprocess
 3. **7 providers** → Only 3 in dexter, need 4 more implementations
 4. **Test coverage** → Rebuild 85% coverage standard with Jest
 
