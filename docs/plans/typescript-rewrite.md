@@ -143,6 +143,34 @@ class ToolContextManager {
 }
 ```
 
+### 7. Observability System
+
+**From:** `agent-base/src/agent/observability.py` + middleware instrumentation
+**To:** OpenTelemetry-native callbacks with OTLP export
+
+```typescript
+// Callbacks emit span-compatible events
+interface SpanContext {
+  traceId: string;
+  spanId: string;
+  parentSpanId?: string;
+  attributes: Record<string, string | number | boolean>;
+}
+
+interface AgentCallbacks {
+  onSpanStart?(ctx: SpanContext, name: string, attributes?: SpanAttributes): void;
+  onSpanEnd?(ctx: SpanContext, status: 'ok' | 'error', error?: Error): void;
+  // LLM/Tool callbacks include SpanContext for correlation
+}
+```
+
+**Key Features (ported from Python):**
+- OTLP exporter for Aspire Dashboard / Jaeger / custom endpoints
+- GenAI semantic conventions (model, tokens, tool calls)
+- Auto-detection of local telemetry endpoint
+- `/telemetry start|stop|status` commands (Docker-based Aspire)
+- Sensitive data toggle (disabled by default)
+
 ---
 
 ## Component Migration Map
@@ -214,9 +242,9 @@ class ToolContextManager {
 
 ## MVP Scope (6 Phases)
 
-### Phase 1: Foundation
+### Phase 1: Foundation + Observability
 
-**Goal:** Establish core architecture and single provider
+**Goal:** Establish core architecture with telemetry instrumentation from day one
 
 **Deliverables:**
 - [ ] Project setup (Bun, TypeScript strict, Jest, ESLint)
@@ -224,8 +252,11 @@ class ToolContextManager {
 - [ ] Tool base class and response format (`tools/base.ts`)
 - [ ] OpenAI provider via LangChain.js (`model/llm.ts`)
 - [ ] Basic agent orchestration (`agent/agent.ts`)
-- [ ] Callback system with trace logging (`agent/callbacks.ts`)
+- [ ] Callback system with OpenTelemetry-compatible spans (`agent/callbacks.ts`)
 - [ ] Structured error types (`errors/index.ts`)
+- [ ] OpenTelemetry setup with OTLP exporter (`telemetry/`)
+- [ ] Aspire Dashboard integration (`/telemetry start|stop|status`)
+- [ ] GenAI semantic conventions for LLM spans
 
 **Key Files:**
 ```
@@ -240,6 +271,11 @@ src/
 │   └── manager.ts
 ├── model/
 │   └── llm.ts
+├── telemetry/
+│   ├── setup.ts              # OTel initialization
+│   ├── spans.ts              # Span helpers with GenAI conventions
+│   ├── exporters.ts          # OTLP, console exporters
+│   └── aspire.ts             # Docker-based dashboard management
 ├── errors/
 │   └── index.ts
 └── tools/
@@ -426,6 +462,11 @@ agent-ts/
 │   │   ├── TaskProgress.tsx      # Task visualization
 │   │   ├── AnswerBox.tsx         # Streaming answer display
 │   │   └── ModelSelector.tsx     # Provider selection
+│   ├── telemetry/
+│   │   ├── setup.ts              # OTel initialization + singleton
+│   │   ├── spans.ts              # Span helpers with GenAI conventions
+│   │   ├── exporters.ts          # OTLP, console exporters
+│   │   └── aspire.ts             # Docker-based dashboard management
 │   ├── errors/
 │   │   └── index.ts              # Typed error hierarchy
 │   └── _bundled_skills/          # Default skills
@@ -456,6 +497,20 @@ Use latest stable versions per `CLAUDE.md` Tech Stack:
 - **LangChain.js 1.x** for LLM integration
 - **TypeScript 5.x** with strict mode
 
+**Observability (Phase 1):**
+- `@opentelemetry/api` - Core OTel API
+- `@opentelemetry/sdk-node` - Node SDK (Bun compatible)
+- `@opentelemetry/exporter-trace-otlp-http` - OTLP export
+- `@opentelemetry/semantic-conventions` - Standard attributes
+
+**Utilities:**
+- `dotenv` - Environment variable loading
+- `meow` - CLI argument parsing (pairs with Ink)
+- `p-queue` - Concurrency/rate limiting
+
+**Dev Dependencies:**
+- `ink-testing-library` - CLI component testing
+
 See `package.json` for exact versions (source of truth for dependencies).
 
 ---
@@ -476,9 +531,9 @@ See `package.json` for exact versions (source of truth for dependencies).
 | Feature | Rationale for Deferral |
 |---------|------------------------|
 | Git-based skill installation | Complex; bundled skills sufficient for MVP |
-| OpenTelemetry observability | Nice-to-have; callbacks provide basic tracing |
 | Semantic memory (Mem0) | In-memory history sufficient for MVP |
 | npm package publishing | Focus on functionality first |
+| Azure Monitor exporter | OTLP covers most use cases; add vendor exporters later |
 
 ---
 
@@ -491,6 +546,7 @@ See `package.json` for exact versions (source of truth for dependencies).
 5. **Migration:** Existing Python users can migrate configs
 6. **Streaming:** All providers support streaming responses
 7. **Testable:** All components mockable without real LLM calls
+8. **Observable:** Traces visible in Aspire Dashboard with GenAI attributes
 
 ---
 
@@ -501,6 +557,9 @@ See `package.json` for exact versions (source of truth for dependencies).
 - `agent-base/src/agent/config/schema.py`
 - `agent-base/src/agent/skills/loader.py`
 - `agent-base/src/agent/tools/toolset.py`
+- `agent-base/src/agent/observability.py` - OTel setup patterns
+- `agent-base/src/agent/cli/commands.py` - Aspire dashboard commands
+- `agent-base/docs/decisions/0014-observability-integration.md`
 - `agent-base/docs/decisions/` (20 ADRs)
 
 ### From dexter (TypeScript reference):

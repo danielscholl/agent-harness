@@ -75,6 +75,7 @@ All LLM calls and external API calls include fallback handling. If summarization
 | UI Framework | React 19 + Ink 6 | Terminal UI rendering |
 | LLM Integration | LangChain.js 1.x | Multi-provider abstraction |
 | Schema Validation | Zod 4.x | Runtime validation + type inference |
+| Observability | OpenTelemetry | OTLP export, GenAI semantic conventions |
 | Testing | Jest + ts-jest | Run via `bun run test` |
 | Linting | ESLint + Prettier | Consistent code style |
 
