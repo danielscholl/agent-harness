@@ -65,13 +65,11 @@ jobs:
       - name: Build package
         run: bun run build
 
-      - name: Create tarball
-        run: |
-          mkdir -p release
-          tar -czvf release/agent-base-v2-${{ needs.release-please.outputs.tag_name }}.tar.gz dist/
+      - name: Create npm package tarball
+        run: npm pack
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.release-please.outputs.tag_name }}
-          files: release/*
+          files: "*.tgz"
