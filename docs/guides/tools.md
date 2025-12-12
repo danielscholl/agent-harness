@@ -143,18 +143,54 @@ const SummarizeInputSchema = z.object({
 
 const MAX_PROCESSABLE_LENGTH = 10000;
 
+// Security: Allowlist of domains that can be fetched
+// In production, configure this via environment or config file
+const ALLOWED_DOMAINS = [
+  'docs.example.com',
+  'api.example.com',
+  // Add trusted domains here
+];
+
 export const summarizeTool = createTool({
   name: 'summarize',
   description: 'Summarize content from a URL',
   schema: SummarizeInputSchema,
   execute: async (input) => {
-    const content = await fetchContent(input.url);
+    // Security: Validate URL scheme to prevent SSRF attacks
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(input.url);
+    } catch {
+      return errorResponse('VALIDATION_ERROR', 'Invalid URL format');
+    }
+
+    // Security: Only allow HTTPS to prevent credential leakage
+    if (parsedUrl.protocol !== 'https:') {
+      return errorResponse('VALIDATION_ERROR', 'Only HTTPS URLs are allowed');
+    }
+
+    // Security: Check domain allowlist to prevent internal network probing
+    if (!ALLOWED_DOMAINS.includes(parsedUrl.hostname)) {
+      return errorResponse(
+        'PERMISSION_DENIED',
+        `Domain ${parsedUrl.hostname} is not in the allowlist`
+      );
+    }
+
+    let content: string;
+    try {
+      content = await fetchContent(input.url);
+    } catch (e) {
+      // Security: Do not expose raw error details that might leak internal info
+      return errorResponse('IO_ERROR', 'Failed to fetch content from URL');
+    }
 
     if (content.length > MAX_PROCESSABLE_LENGTH) {
       // Tool cannot handle this alone - request LLM help
+      // Security: Pass content via structured field, not in error message
       return errorResponse(
         'LLM_ASSIST_REQUIRED',
-        `Content too large (${content.length} chars). Please summarize: ${content.slice(0, 1000)}...`
+        `Content too large (${content.length} chars). Requesting summarization.`
       );
     }
 
