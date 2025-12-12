@@ -1,12 +1,10 @@
-# CLAUDE.md
+# Project Constitution
 
-This file provides governance and guidance for AI coding assistants building the TypeScript agent framework (v2). This is a full rewrite of `agent-base` (Python) using the Claude Code tech stack.
+This file provides governance and guidance for AI coding assistants building the TypeScript agent framework.
 
 **Reference Documents:**
 - `docs/plans/typescript-rewrite.md` - Architecture plan and phase breakdown
 - `docs/plans/typescript-rewrite-features.md` - Ordered feature list (42 MVP features)
-- `agent-base/` - Python source (patterns to port)
-- `dexter/` - TypeScript reference implementation
 
 ---
 
@@ -145,9 +143,11 @@ Even for `fs-read`, these paths require per-session user approval:
 Tools must never read or write sensitive paths without explicit, per-session permission.
 
 ### Configuration Hierarchy
-1. `./.agent-ts/settings.json` (project - can be committed)
-2. `~/.agent-ts/settings.json` (user - never committed)
+1. Project-level config (committable, team-shared)
+2. User-level config (personal, never committed)
 3. Interactive prompt (one-time or remember)
+
+Actual paths are defined in the config module.
 
 ### Tool Requirements
 Tools with side effects must:
@@ -165,7 +165,7 @@ Tools with side effects must:
 
 ## Code Patterns
 
-> **Note**: Code examples below are illustrative patterns, not canonical implementations. When actual code is implemented, the source files become the reference. These examples show the shape and intent.
+> **Note**: Code examples below are illustrative patterns, not canonical implementations. When actual code is implemented, the source files become the reference. For complete examples with error handling, see [`docs/guides/tools.md`](docs/guides/tools.md).
 
 ### Callback Interface
 Agent-to-UI communication uses typed callbacks. The specific callbacks evolve with implementation, but follow this pattern:
@@ -225,37 +225,22 @@ For public tools, prefer `ToolResponse<SpecificType>` over plain `ToolResponse` 
 - **Agent/Model layers**: MAY throw `AgentError` subclasses - CLI handles them
 
 ### Tool Definition (LangChain + Zod)
+
+Tools use LangChain's `tool()` with Zod schemas. Key elements:
+- Zod schema with `.describe()` on parameters
+- Return `ToolResponse<T>` (never throw at public boundary)
+- Description under 40 tokens
+
 ```typescript
-import { tool } from '@langchain/core/tools';
-import { z } from 'zod';
-
-const HelloInputSchema = z.object({
-  name: z.string().describe('Name to greet'),
-});
-
-export const helloTool = tool(
-  async (input): Promise<ToolResponse> => {
-    try {
-      return {
-        success: true,
-        result: { greeting: `Hello, ${input.name}!` },
-        message: `Greeted ${input.name}`,
-      };
-    } catch (e) {
-      return {
-        success: false,
-        error: 'UNKNOWN',
-        message: e instanceof Error ? e.message : 'Unknown error',
-      };
-    }
+export const myTool = tool(
+  async (input): Promise<ToolResponse<ResultType>> => {
+    // Implementation - catch errors at boundary, return ToolResponse
   },
-  {
-    name: 'hello',
-    description: 'Greet a user by name',  // Keep under 40 tokens
-    schema: HelloInputSchema,
-  }
+  { name: 'my_tool', description: 'Brief description', schema: InputSchema }
 );
 ```
+
+See [`docs/guides/tools.md`](docs/guides/tools.md) for complete examples with error handling.
 
 ### Provider Routing
 ```typescript
@@ -303,12 +288,8 @@ src/
 │   ├── agent.ts
 │   └── __tests__/
 │       └── agent.test.ts
-├── tools/
-│   ├── hello.ts
-│   └── __tests__/
-│       └── hello.test.ts
 ```
-- **Integration tests** spanning multiple modules: `tests/integration/`
+- **Integration tests**: `tests/integration/`
 - **Shared fixtures**: `tests/fixtures/`
 
 ### Rules
@@ -317,19 +298,7 @@ src/
 - Clear mocks in `beforeEach` for test isolation
 - Coverage minimum: 85% (enforced in CI)
 
-### Mock Pattern
-```typescript
-jest.mock('../../model/llm.js');
-
-const MockChatModel = ChatOpenAI as jest.MockedClass<typeof ChatOpenAI>;
-
-beforeEach(() => {
-  jest.clearAllMocks();
-  MockChatModel.mockImplementation(() => ({
-    invoke: jest.fn().mockResolvedValue({ content: 'mock response' }),
-  }));
-});
-```
+See [`docs/guides/testing.md`](docs/guides/testing.md) for mock patterns, factory functions, and integration test examples.
 
 ---
 
@@ -369,9 +338,9 @@ export class PermissionError extends AgentError { /* permission denied */ }
 ## Configuration
 
 ### Priority Order
-1. Environment variables (highest) - via `dotenv`
-2. Project settings (`./.agent-ts/settings.json`)
-3. User settings (`~/.agent-ts/settings.json`)
+1. Environment variables (highest)
+2. Project-level settings (lowest priority file config)
+3. User-level settings
 4. Default values in Zod schemas (lowest)
 
 ### Schema Pattern
@@ -389,16 +358,18 @@ type ProviderConfig = z.infer<typeof ProviderConfigSchema>;
 ```
 
 ### Storage Locations
-- **Project config**: `./.agent-ts/settings.json` (committed, team-shared)
-- **User config**: `~/.agent-ts/settings.json` (personal, never committed)
-- **Sessions**: `~/.agent-ts/sessions/`
-- **Context**: `~/.agent-ts/context/` (cleaned per session)
+- **Project config**: `./<config-dir>/settings.json` (committed, team-shared)
+- **User config**: `~/.<config-dir>/settings.json` (personal, never committed)
+- **Sessions**: `~/.<config-dir>/sessions/`
+- **Context**: `~/.<config-dir>/context/` (cleaned per session)
+
+The config directory name is defined as a constant in the config module.
 
 ---
 
 ## Session Logging
 
-Each agent run is logged to `~/.agent-ts/sessions/` for debugging and auditability.
+Each agent run is logged to the sessions directory for debugging and auditability.
 
 **Logged events**: session lifecycle, LLM calls, tool calls, errors.
 
@@ -562,10 +533,47 @@ This file is governance for AI coding assistants. When working on this codebase:
 
 ---
 
+## Task-Specific Reference Guides
+
+For detailed instructions on specific development tasks, refer to these guides:
+
+### Building Tools
+**When to use:** Creating new agent tools, implementing LangChain StructuredTools, adding filesystem or API operations
+
+Read: [`docs/guides/tools.md`](docs/guides/tools.md)
+
+This guide covers:
+- `ToolResponse<T>` type definitions and usage
+- Basic tool implementation with Zod schemas
+- Error handling patterns (catch at boundary)
+- `LLM_ASSIST_REQUIRED` pattern for tools needing LLM help
+- Permission-aware tools with callbacks
+- Context storage for large outputs
+- Tool documentation standards
+
+### Writing Tests
+**When to use:** Adding unit tests, mocking LLM providers, testing tools or callbacks, writing integration tests
+
+Read: [`docs/guides/testing.md`](docs/guides/testing.md)
+
+This guide covers:
+- Jest configuration (not Bun's native test runner)
+- Co-located test organization (`__tests__/` directories)
+- LLM provider mocking (basic, streaming, tool calls)
+- Tool testing patterns
+- Callback invocation testing
+- Factory functions for test fixtures
+- Integration test examples
+- Coverage requirements (85%)
+
+---
+
 ## References
 
+### Planning Documents
 - `docs/plans/typescript-rewrite.md` - Master plan with phases
 - `docs/plans/typescript-rewrite-features.md` - Feature breakdown
-- `agent-base/CLAUDE.md` - Python patterns to port
-- `agent-base/docs/decisions/` - Existing ADRs for context
+
+### Source References
+- `agent-base/` - Python source (patterns to port)
 - `dexter/` - TypeScript reference implementation
