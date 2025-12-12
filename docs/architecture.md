@@ -136,21 +136,38 @@ Tools return this structure - never throw exceptions at public boundaries.
 
 ## Provider Architecture
 
-### Routing Strategy
+### Supported Providers (7)
 
-Providers are selected by model name prefix:
+| Provider | Description | Default Model | Example Models |
+|----------|-------------|---------------|----------------|
+| `openai` | OpenAI API | gpt-5-mini | gpt-4o, gpt-5-mini |
+| `anthropic` | Anthropic API | claude-haiku-4-5 | claude-sonnet-4-5, claude-opus-4 |
+| `azure` | Azure OpenAI | (deployment) | gpt-5-codex, gpt-4o |
+| `foundry` | Azure AI Foundry | (deployment) | Managed models |
+| `gemini` | Google Gemini | gemini-2.0-flash-exp | gemini-2.5-pro |
+| `github` | GitHub Models | gpt-4o-mini | phi-4, llama-3.3-70b-instruct |
+| `local` | Docker Model Runner | ai/phi4 | Local models via OpenAI-compatible API |
+
+### Provider Selection
+
+Providers are selected by **name** in configuration, not by model prefix:
 
 ```
-Model Name              Provider
-──────────────────────  ─────────────────
-gpt-4o                  → OpenAI
-gpt-4-turbo             → OpenAI
-claude-3-opus           → Anthropic
-claude-3-5-sonnet       → Anthropic
-gemini-pro              → Google
-gemini-1.5-flash        → Google
-llama-3.1-70b           → Ollama (local)
-(no match)              → Default (OpenAI)
+settings.json
+─────────────
+{
+  "providers": {
+    "enabled": ["openai", "anthropic"],  ← Active providers
+    "openai": {
+      "api_key": "...",
+      "model": "gpt-4o"                   ← Model for this provider
+    },
+    "anthropic": {
+      "api_key": "...",
+      "model": "claude-sonnet-4-5"
+    }
+  }
+}
 ```
 
 ### Provider Registry
@@ -159,19 +176,30 @@ llama-3.1-70b           → Ollama (local)
 ┌─────────────────────────────────────────────┐
 │           Provider Registry                 │
 │                                             │
-│  'gpt-'     ──► OpenAI Factory              │
-│  'claude-'  ──► Anthropic Factory           │
-│  'gemini-'  ──► Google Factory              │
-│  'azure-'   ──► Azure OpenAI Factory        │
-│  'github-'  ──► GitHub Models Factory       │
-│  'llama-'   ──► Ollama Factory              │
+│  'openai'    ──► OpenAI Factory             │
+│  'anthropic' ──► Anthropic Factory          │
+│  'azure'     ──► Azure OpenAI Factory       │
+│  'foundry'   ──► Azure AI Foundry Factory   │
+│  'gemini'    ──► Google Gemini Factory      │
+│  'github'    ──► GitHub Models Factory      │
+│  'local'     ──► Local (OpenAI-compatible)  │
 │                                             │
-│  registerProvider(prefix, factory)          │
-│  getChatModel(name, options) → BaseChatModel│
+│  getProviderSetup(name) → ProviderFactory   │
+│  createChatClient(provider) → BaseChatModel │
 └─────────────────────────────────────────────┘
 ```
 
-New providers added by registering a prefix and factory function.
+### Provider-Specific Notes
+
+| Provider | Authentication | Notes |
+|----------|----------------|-------|
+| `openai` | API key | Standard OpenAI API |
+| `anthropic` | API key | Anthropic Claude API |
+| `azure` | API key or Azure CLI credential | Supports AzureCliCredential fallback |
+| `foundry` | Azure CLI credential | Async credential required |
+| `gemini` | API key or Vertex AI | Supports both direct API and Vertex AI |
+| `github` | GitHub token | Supports org-scoped enterprise rate limits |
+| `local` | None | Docker Desktop Model Runner (OpenAI-compatible) |
 
 ---
 
@@ -222,6 +250,162 @@ All schemas defined with Zod. Types inferred via `z.infer<>`.
 
 ---
 
+## Error Handling Architecture
+
+### Error Type Hierarchy
+
+```
+AgentError (base)
+├── ProviderError     ─► Rate limits, auth failures, network issues
+├── ConfigError       ─► Validation failures, missing required fields
+├── ToolError         ─► Tool execution failures
+└── PermissionError   ─► Permission denied for operation
+```
+
+### Error Handling by Layer
+
+| Layer | Strategy |
+|-------|----------|
+| **Tools** | Return `ToolResponse` at boundary, never throw |
+| **Agent/Model** | May throw `AgentError` subclasses |
+| **CLI** | Catches all errors, displays user-friendly messages |
+
+### Error Flow
+
+```
+Tool Layer                    Agent Layer                   CLI Layer
+──────────                    ───────────                   ─────────
+
+try/catch internally          May throw AgentError          try {
+       │                             │                        agent.run()
+       ▼                             │                      } catch {
+Return ToolResponse ─────────►  Handles tool errors           display error
+  (never throw)                      │                        reset cleanly
+                                     ▼                      }
+                              Throws for fatal errors ─────►
+```
+
+### Retry Strategy
+
+External API calls use exponential backoff with jitter:
+- Base delay: 1 second
+- Max delay: 10 seconds
+- Max retries: 3
+- Retryable: rate limits, transient network errors
+- Non-retryable: auth failures, validation errors
+
+### Graceful Degradation
+
+| Failure | Fallback |
+|---------|----------|
+| LLM parsing fails | Extract text content, skip structure |
+| History selection fails | Proceed without context |
+| Telemetry fails | Continue with no-op tracer |
+| Non-critical operations | Log and continue |
+
+---
+
+## Permissions Architecture
+
+### Permission Model
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Permission Check                      │
+│                                                          │
+│  Tool requests permission ──► Check settings hierarchy   │
+│                                      │                   │
+│                    ┌─────────────────┼─────────────────┐ │
+│                    ▼                 ▼                 ▼ │
+│              Project rules     User rules      Interactive│
+│              (committed)       (personal)       prompt    │
+│                    │                 │              │     │
+│                    └─────────────────┴──────────────┘     │
+│                                      │                    │
+│                                      ▼                    │
+│                              Allow / Deny                 │
+└─────────────────────────────────────────────────────────┘
+```
+
+### Permission Scopes
+
+| Scope | Description | Default |
+|-------|-------------|---------|
+| `fs-read` | Read files in working directory | Allowed within project |
+| `fs-write` | Create/modify files | Denied |
+| `fs-delete` | Delete files | Denied |
+| `shell-run` | Execute shell commands | Denied |
+
+### Sensitive Paths (Always Prompt)
+
+Even with `fs-read` allowed, these paths require explicit per-session approval:
+- `~/.ssh/*`, `~/.gnupg/*` - Credentials and keys
+- `.env*`, `*credentials*`, `*secret*` - Environment secrets
+- OS keychains and credential stores
+
+### Permission Callback Flow
+
+```
+Tool.execute(input)
+       │
+       ▼
+callbacks.onPermissionRequest({
+  scope: 'fs-write',
+  resource: '/path/to/file',
+  action: 'write file'
+})
+       │
+       ▼
+┌──────┴──────┐
+│   Allowed?  │
+└──────┬──────┘
+       │
+  ┌────┴────┐
+  ▼         ▼
+true      false
+  │         │
+  ▼         ▼
+Proceed   Return PermissionDenied
+```
+
+---
+
+## Session Architecture
+
+### Session Lifecycle
+
+```
+Session Start                    During Session                 Session End
+─────────────                    ──────────────                 ───────────
+
+Create session ID                Log events:                    Save session file
+       │                         • LLM calls                    Clear context dir
+       ▼                         • Tool calls                          │
+Initialize context dir           • Errors                              ▼
+       │                                │                        Sessions stored in
+       ▼                                ▼                        ~/<config-dir>/sessions/
+Begin logging              Persist large outputs to
+                           ~/<config-dir>/context/
+```
+
+### Session Storage
+
+| Location | Purpose | Lifecycle |
+|----------|---------|-----------|
+| `~/<config-dir>/sessions/` | Conversation history, event logs | Persisted |
+| `~/<config-dir>/context/` | Tool outputs, large results | Cleared per session |
+
+### Logged Events
+
+- Session lifecycle (start, end, duration)
+- LLM calls (model, token usage, latency)
+- Tool calls (name, args, result status, duration)
+- Errors (type, message, sanitized context)
+
+**Redaction Required:** API keys, tokens, and sensitive file contents must never appear in logs.
+
+---
+
 ## Context Storage Strategy
 
 ### Problem
@@ -264,6 +448,121 @@ Each file contains:
 1. **During execution:** Tool outputs saved, pointers tracked
 2. **During answer:** LLM selects relevant pointers, full data loaded
 3. **End of session:** Context directory cleared
+
+---
+
+## Skills Architecture
+
+### Skill Structure
+
+```
+skills/
+└── hello-extended/
+    ├── SKILL.md              # Manifest (YAML front matter + instructions)
+    ├── toolsets/
+    │   ├── __init__.py       # Exports toolset classes
+    │   └── hello.py          # Tool implementations
+    └── scripts/
+        └── advanced_greeting.py  # Standalone scripts (sandboxed)
+```
+
+### Manifest Format (SKILL.md)
+
+```yaml
+---
+name: hello-extended
+description: Extended greeting capabilities
+version: 1.0.0
+toolsets:
+  - "toolsets.hello:HelloToolset"     # module:Class format
+triggers:
+  keywords: ["hello", "greet", "greeting"]
+  verbs: ["say", "wave"]
+  patterns: ["greet\\s+\\w+"]
+---
+
+# Hello Extended Skill
+
+Instructions for using this skill...
+```
+
+### Manifest Fields
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Skill identifier (alphanumeric, hyphens, max 64 chars) |
+| `description` | Yes | Brief description (max 500 chars) |
+| `version` | No | Semantic version (e.g., "1.0.0") |
+| `toolsets` | No | Python toolset classes ("module:Class" format) |
+| `scripts` | No | Script list (auto-discovered if omitted) |
+| `triggers.keywords` | No | Direct keyword matches |
+| `triggers.verbs` | No | Action verbs |
+| `triggers.patterns` | No | Regex patterns |
+| `permissions` | No | Environment variable allowlist for scripts |
+
+### Progressive Disclosure
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Three-Tier Disclosure                         │
+│                                                                  │
+│  Tier 1: Breadcrumb (~10 tokens)                                │
+│  ├── When: Skills exist but don't match query                   │
+│  └── Shows: "Skills available. Ask about capabilities."         │
+│                                                                  │
+│  Tier 2: Registry (~15 tokens/skill)                            │
+│  ├── When: User asks "what can you do?" / "list skills"         │
+│  └── Shows: Skill names + brief descriptions                    │
+│                                                                  │
+│  Tier 3: Full Documentation (hundreds of tokens)                │
+│  ├── When: Triggers match user query                            │
+│  └── Shows: Complete skill instructions                         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Trigger Matching Flow
+
+```
+User Query
+    │
+    ▼
+┌─────────────────────────────┐
+│  Match against all skills:  │
+│  • Keywords (exact match)   │
+│  • Verbs (action words)     │
+│  • Patterns (regex)         │
+└─────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────┐
+│  Rank matches by:           │
+│  1. Explicit mention        │
+│  2. Exact phrase match      │
+│  3. Recent usage            │
+└─────────────────────────────┘
+    │
+    ▼
+┌─────────────────────────────┐
+│  Inject top N skills        │
+│  (max_skills default: 3)    │
+└─────────────────────────────┘
+```
+
+### Skill Sources
+
+| Source | Location | Lifecycle |
+|--------|----------|-----------|
+| Bundled | `src/_bundled_skills/` | Shipped with agent |
+| User plugins | `~/<config-dir>/skills/` | Installed by user |
+| Project | `./<config-dir>/skills/` | Project-specific |
+
+### Script Execution
+
+Scripts run in a sandboxed Bun subprocess:
+- Working directory restricted to skill directory
+- Timeout enforced (configurable)
+- Environment variables filtered by `permissions` allowlist
+- Returns structured `ToolResponse` format
 
 ---
 
@@ -407,16 +706,3 @@ src/
 | **Lazy Loading** | Context loaded only when needed |
 | **Graceful Degradation** | Failures logged, agent continues |
 | **Layer Isolation** | Only Agent calls Model; CLI never imports Agent internals |
-
----
-
-## References
-
-| Source | Pattern |
-|--------|---------|
-| `agent-base/src/agent/agent.py` | Orchestration, DI |
-| `agent-base/src/agent/middleware.py` | Callback/event patterns |
-| `agent-base/src/agent/observability.py` | OTel integration |
-| `dexter/src/agent/agent.ts` | TypeScript agent structure |
-| `dexter/src/model/llm.ts` | Provider routing |
-| `dexter/src/utils/context.ts` | Context storage |
