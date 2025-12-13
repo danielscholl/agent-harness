@@ -30,7 +30,7 @@ import { LLMClient } from '../model/llm.js';
 import { loadSystemPrompt } from './prompts.js';
 import { createSpanContext, createChildSpanContext } from './callbacks.js';
 import { extractTokenUsage } from '../model/base.js';
-import { errorResponse } from '../errors/index.js';
+import { errorResponse, mapModelErrorCodeToAgentErrorCode } from '../errors/index.js';
 
 /** Default maximum iterations for tool execution loop */
 const DEFAULT_MAX_ITERATIONS = 10;
@@ -344,11 +344,16 @@ export class Agent {
 
           if (!response.success) {
             this.callbacks?.onSpinnerStop?.();
-            // Map model error code to agent error code
-            this.emitError(rootCtx, response.error, response.message, {
-              provider: this.getProviderName(),
-              model: this.getModelName(),
-            });
+            // Map model error code to agent error code for type safety
+            this.emitError(
+              rootCtx,
+              mapModelErrorCodeToAgentErrorCode(response.error),
+              response.message,
+              {
+                provider: this.getProviderName(),
+                model: this.getModelName(),
+              }
+            );
             return `Error: ${response.message}`;
           }
 
@@ -461,11 +466,16 @@ export class Agent {
 
       if (!streamResponse.success) {
         this.callbacks?.onSpinnerStop?.();
-        // Emit structured error
-        this.emitError(rootCtx, streamResponse.error, streamResponse.message, {
-          provider: this.getProviderName(),
-          model: this.getModelName(),
-        });
+        // Emit structured error with mapped error code for type safety
+        this.emitError(
+          rootCtx,
+          mapModelErrorCodeToAgentErrorCode(streamResponse.error),
+          streamResponse.message,
+          {
+            provider: this.getProviderName(),
+            model: this.getModelName(),
+          }
+        );
         yield `Error: ${streamResponse.message}`;
         return;
       }
