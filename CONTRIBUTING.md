@@ -18,6 +18,34 @@ bun run test
 bun run build
 ```
 
+## Git Hooks (Automatic Quality Gates)
+
+Git hooks are automatically installed when you run `bun install` (via Husky).
+
+### Pre-commit Hook
+
+Runs `lint-staged` on staged files before each commit:
+
+| File Type | Checks |
+|-----------|--------|
+| `*.ts`, `*.tsx` | Prettier format + ESLint fix |
+| `*.json`, `*.md` | Prettier format |
+
+If any check fails, the commit is blocked until you fix the issues.
+
+### Commit Message Hook
+
+Enforces commit message standards:
+- Blocks commits with `Co-Authored-By: Claude` in the footer
+- Use `aipr` tool to generate commit messages (see Commit Convention below)
+
+### Bypassing Hooks (Not Recommended)
+
+```bash
+# Skip pre-commit checks (emergency only)
+git commit --no-verify -m "message"
+```
+
 ## Development Workflow
 
 ### 1. Run Quality Checks Before Changes
@@ -266,7 +294,36 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 
 **Scopes:** `agent`, `tools`, `skills`, `config`, `cli`, `model`, `utils`, `tests`
 
-**Examples:**
+### Using `aipr` for Commit Messages (Recommended)
+
+This project uses `aipr` (AI Pull Request) to generate commit messages and PR descriptions.
+
+**Install from PyPI:**
+
+```bash
+# Install globally with pip
+pip install aipr
+
+# Or with pipx (recommended for CLI tools)
+pipx install aipr
+```
+
+**PyPI:** https://pypi.org/project/aipr/
+
+**Usage:**
+
+```bash
+# Generate commit message from staged changes
+git commit -m "$(aipr commit -s)"
+
+# Generate PR description
+gh pr create --title "feat: add new feature" --body "$(aipr pr -s)"
+```
+
+The commit-msg hook blocks manually-added `Co-Authored-By: Claude` footers to encourage using `aipr`.
+
+### Manual Commit Examples
+
 ```bash
 git commit -m "feat(config): add Azure Foundry provider support"
 git commit -m "fix(agent): handle empty tool list gracefully"
