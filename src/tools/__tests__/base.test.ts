@@ -151,6 +151,7 @@ describe('createTool', () => {
       description: 'A test tool',
       schema: testSchema,
       execute: (input) => {
+        // String() ensures type safety for template literal (ESLint restrict-template-expressions)
         const name = String(input.name);
         return Promise.resolve(successResponse({ processed: name }, `Processed ${name}`));
       },
