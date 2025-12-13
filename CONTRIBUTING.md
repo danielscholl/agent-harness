@@ -18,7 +18,39 @@ bun run test
 bun run build
 ```
 
-## AI-Assisted Development with Archon
+## AI-Assisted Development
+
+This project is optimized for development with [Claude Code](https://claude.ai/code). We use structured workflows and tooling to streamline AI-assisted development.
+
+### Recommended Tools
+
+| Tool | Purpose | Link |
+|------|---------|------|
+| **Claude Code** | AI coding assistant | [claude.ai/code](https://claude.ai/code) |
+| **claude-sdlc** | SDLC workflow plugin for Claude Code | [github.com/danielscholl/claude-sdlc](https://github.com/danielscholl/claude-sdlc) |
+| **Archon** | Task management & knowledge base (MCP server) | [github.com/coleam00/Archon](https://github.com/coleam00/Archon) |
+
+### Claude SDLC Workflows
+
+Install the [claude-sdlc](https://github.com/danielscholl/claude-sdlc) plugin to access structured development commands:
+
+```bash
+# Create feature specifications
+/sdlc:feature <description>
+
+# Implement from a spec file
+/sdlc:implement docs/specs/feature-xxx.md
+
+# Create bug fix specifications
+/sdlc:bug <description>
+
+# Maintenance tasks
+/sdlc:chore <description>
+```
+
+These workflows generate detailed specs in `docs/specs/`, integrate with Archon for task tracking, and follow the patterns defined in [CLAUDE.md](CLAUDE.md).
+
+### Archon Integration
 
 When using AI coding assistants (Claude Code, Cursor, Windsurf, etc.) on this project, we recommend [Archon](https://github.com/coleam00/Archon) as a backing system for task management and knowledge sharing.
 
