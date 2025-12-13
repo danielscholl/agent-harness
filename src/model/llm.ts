@@ -275,6 +275,16 @@ export class LLMClient {
   }
 
   /**
+   * Get the underlying LangChain model for advanced operations.
+   * Use this when you need to bind tools or use structured output.
+   *
+   * @returns ModelResponse with BaseChatModel or error
+   */
+  getModel(): ModelResponse<BaseChatModel> {
+    return this.getClient();
+  }
+
+  /**
    * Get the current provider name.
    */
   getProviderName(): ProviderName {
