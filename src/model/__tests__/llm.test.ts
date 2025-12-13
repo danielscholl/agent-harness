@@ -70,14 +70,14 @@ const { LLMClient } = await import('../llm.js');
 
 // Mock BaseChatModel
 function createMockModel(invokeResponse: MockResponse = mockInvokeResponse): {
-  invoke: jest.MockedFunction<() => Promise<MockResponse>>;
-  stream: jest.MockedFunction<() => Promise<AsyncIterable<MockChunk>>>;
+  invoke: jest.MockedFunction<(input: unknown) => Promise<MockResponse>>;
+  stream: jest.MockedFunction<(input: unknown) => Promise<AsyncIterable<MockChunk>>>;
   bind: jest.MockedFunction<(options: Record<string, unknown>) => unknown>;
 } {
   return {
-    invoke: jest.fn<() => Promise<MockResponse>>().mockResolvedValue(invokeResponse),
+    invoke: jest.fn<(input: unknown) => Promise<MockResponse>>().mockResolvedValue(invokeResponse),
     stream: jest
-      .fn<() => Promise<AsyncIterable<MockChunk>>>()
+      .fn<(input: unknown) => Promise<AsyncIterable<MockChunk>>>()
       .mockResolvedValue(createMockStream(['Hello', ' world', '!'])),
     bind: jest.fn<(options: Record<string, unknown>) => unknown>().mockReturnThis(),
   };

@@ -67,7 +67,7 @@ Port `agent-base/src/agent/observability.py` patterns to `telemetry/setup.ts`. C
 
 ### Feature 10: Add GenAI semantic conventions for spans
 Implement `telemetry/spans.ts` with helpers that follow OpenTelemetry GenAI semantic conventions:
-- `gen_ai.operation.name`, `gen_ai.system`, `gen_ai.request.model`
+- `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`
 - `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`
 - `tool.name`, `tool.result` for tool execution spans
 - Integrate with callback system so all LLM/tool calls are automatically traced

@@ -151,8 +151,8 @@ describe('createTool', () => {
       description: 'A test tool',
       schema: testSchema,
       execute: (input) => {
-        // String() ensures type safety for template literal (ESLint restrict-template-expressions)
-        const name = String(input.name);
+        // Cast input to schema type for type-safe access
+        const { name } = input as z.infer<typeof testSchema>;
         return Promise.resolve(successResponse({ processed: name }, `Processed ${name}`));
       },
     });
@@ -302,9 +302,9 @@ describe('createTool', () => {
       description: 'Tool with complex schema',
       schema: complexSchema,
       execute: (input) => {
-        return Promise.resolve(
-          successResponse({ query: input.query, limit: input.limit }, 'Search executed')
-        );
+        // Cast input to schema type for type-safe access
+        const { query, limit } = input as z.infer<typeof complexSchema>;
+        return Promise.resolve(successResponse({ query, limit }, 'Search executed'));
       },
     });
 

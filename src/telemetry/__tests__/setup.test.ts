@@ -392,8 +392,8 @@ describe('Smoke Test: Bun + OTel', () => {
 
     expect(span).toBeDefined();
 
-    // Set some attributes
-    span.setAttribute('gen_ai.system', 'openai');
+    // Set some attributes using GenAI semantic conventions
+    span.setAttribute('gen_ai.provider.name', 'openai');
     span.setAttribute('gen_ai.request.model', 'gpt-4o');
 
     // End the span (would export in real scenario)
