@@ -41,18 +41,23 @@ describe('Agent Integration', () => {
   let callbacks: AgentCallbacks;
 
   // Create a simple greeting tool for testing
+  const greetingSchema = z.object({
+    name: z.string().describe('The name of the person to greet'),
+  });
+
   const greetingTool = createTool({
     name: 'greet',
     description: 'Greet a person by name',
-    schema: z.object({
-      name: z.string().describe('The name of the person to greet'),
-    }),
-    execute: ({ name }) =>
-      Promise.resolve({
+    schema: greetingSchema,
+    execute: (input) => {
+      // Cast input to schema type for type-safe access
+      const { name } = input as z.infer<typeof greetingSchema>;
+      return Promise.resolve({
         success: true as const,
         result: `Hello, ${name}!`,
         message: 'Greeting generated',
-      }),
+      });
+    },
   });
 
   beforeEach(() => {

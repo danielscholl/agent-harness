@@ -5,8 +5,14 @@
 import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 
 // Mock @langchain/openai before importing
+interface MockOpenAIConfig {
+  model: string;
+  openAIApiKey?: string;
+  configuration?: { baseURL?: string };
+}
+
 const mockChatOpenAI = jest
-  .fn<(config: { model: string }) => { model: string; _type: string }>()
+  .fn<(config: MockOpenAIConfig) => { model: string; _type: string }>()
   .mockImplementation((config) => ({
     model: config.model,
     _type: 'chat_model',

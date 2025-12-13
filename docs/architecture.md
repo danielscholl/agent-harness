@@ -625,7 +625,7 @@ Scripts will run as isolated Bun subprocesses with safety limits:
 ```
 agent.run (root span)
 ├── gen_ai.chat (LLM call)
-│   ├── gen_ai.system: "openai"
+│   ├── gen_ai.provider.name: "openai"
 │   ├── gen_ai.request.model: "gpt-4o"
 │   ├── gen_ai.usage.input_tokens: 150
 │   └── gen_ai.usage.output_tokens: 50

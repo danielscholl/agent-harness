@@ -146,8 +146,12 @@ export async function initializeTelemetry(
   // Determine exporter type
   let exporterType: ExporterType = options.exporterType ?? 'otlp';
 
-  // Auto-detect endpoint availability if using OTLP
-  if (exporterType === 'otlp' && options.skipEndpointCheck !== true) {
+  // Auto-detect endpoint availability if using OTLP (skip when using custom exporter)
+  if (
+    exporterType === 'otlp' &&
+    options.skipEndpointCheck !== true &&
+    options.customExporter === undefined
+  ) {
     debug(`Checking endpoint availability: ${endpoint}`);
     const reachable = await isEndpointReachable(endpoint);
     if (!reachable) {
@@ -158,8 +162,8 @@ export async function initializeTelemetry(
     }
   }
 
-  // Handle no-op case first to avoid any allocations
-  if (exporterType === 'none') {
+  // Handle no-op case first to avoid any allocations (unless custom exporter provided)
+  if (exporterType === 'none' && options.customExporter === undefined) {
     debug('No exporter configured (no-op mode)');
     // True no-op: skip provider/resource creation entirely, use OTel's built-in no-op
     initResult = {
@@ -171,19 +175,34 @@ export async function initializeTelemetry(
     return successResponse(initResult, 'Telemetry initialized with none exporter');
   }
 
-  // Create exporter based on type
+  // Create exporter based on type (or use custom exporter for testing)
   let exporter: SpanExporter;
-  switch (exporterType) {
-    case 'otlp':
-      debug(`Creating OTLP exporter for ${endpoint}`);
-      exporter = new OTLPTraceExporter({
-        url: endpoint,
-      });
-      break;
-    case 'console':
-      debug('Creating console exporter');
-      exporter = new ConsoleSpanExporter();
-      break;
+  if (options.customExporter !== undefined) {
+    debug('Using custom span exporter');
+    exporter = options.customExporter;
+  } else {
+    switch (exporterType) {
+      case 'otlp':
+        debug(`Creating OTLP exporter for ${endpoint}`);
+        exporter = new OTLPTraceExporter({
+          url: endpoint,
+        });
+        break;
+      case 'console':
+        debug('Creating console exporter');
+        exporter = new ConsoleSpanExporter();
+        break;
+      case 'none':
+        // Should not reach here if customExporter is undefined, but TypeScript needs this
+        debug('No exporter configured (no-op mode)');
+        initResult = {
+          enabled: false,
+          exporterType: 'none',
+          serviceName,
+        };
+        initialized = true;
+        return successResponse(initResult, 'Telemetry initialized with none exporter');
+    }
   }
 
   // Create resource and provider only when we have an exporter
@@ -282,6 +301,9 @@ export async function shutdown(): Promise<TelemetryResponse> {
       await tracerProvider.shutdown();
       tracerProvider = null;
     }
+    // Disable the global tracer provider to allow re-initialization
+    // This is necessary for testing scenarios where we need fresh state
+    trace.disable();
     initialized = false;
     initResult = null;
     return successResponse(undefined, 'Telemetry shutdown complete');
