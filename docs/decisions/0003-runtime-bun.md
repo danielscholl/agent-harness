@@ -154,3 +154,37 @@ bun build src/index.tsx --outdir dist
 bun install
 bun add <package>
 ```
+
+---
+
+## Addendum: Node 24 + Bun 1.3.x (2025-12-13)
+
+### Background
+
+Bun 1.3.4 reports `process.versions.node` as **24.3.0**, indicating full Node 24 API compatibility. This enables upgrading the project to Node 24 LTS baseline.
+
+### Updated Version Requirements
+
+- **Minimum Bun version**: 1.3.4 (implements Node 24.3.0)
+- **Minimum Node version**: 24.0.0 (for compatibility documentation)
+- **@types/node**: ^24.0.0
+
+### Verification
+
+All project validations pass with Bun 1.3.4:
+- `bun install` - No errors
+- `bun run typecheck` - Passes
+- `bun run lint` - Passes
+- `bun run test` - 478 tests pass
+- `bun run build` - Successful
+
+### Developer Convenience
+
+Version manager files added:
+- `.nvmrc` - Contains `24` for nvm users
+- `.node-version` - Contains `24` for other version managers
+
+### References
+
+- [Bun v1.3.4 Release Notes](https://bun.sh/blog/bun-v1.3.4)
+- Feature spec: `docs/specs/version-upgrade-node-bun.md`

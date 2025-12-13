@@ -132,7 +132,7 @@ export class LLMClient {
    */
   async invoke(
     input: string | BaseMessage[],
-    options?: LLMCallOptions
+    _options?: LLMCallOptions
   ): Promise<ModelResponse<InvokeResult>> {
     const clientResult = this.getClient();
     if (!clientResult.success) {
@@ -143,21 +143,10 @@ export class LLMClient {
     const messages = this.toMessages(input);
 
     try {
-      // Apply call options if provided
-      let modelToUse = client;
-      if (options !== undefined) {
-        const bindOptions: Record<string, unknown> = {};
-        if (options.temperature !== undefined) bindOptions.temperature = options.temperature;
-        if (options.maxTokens !== undefined) bindOptions.max_tokens = options.maxTokens;
-
-        if (Object.keys(bindOptions).length > 0) {
-          // Note: bind is deprecated but withConfig doesn't support temperature/max_tokens directly
-          // eslint-disable-next-line @typescript-eslint/no-deprecated
-          modelToUse = client.bind(bindOptions) as BaseChatModel;
-        }
-      }
-
-      const response = await modelToUse.invoke(messages);
+      // Note: In LangChain 1.x, temperature and maxTokens must be set at model construction.
+      // Runtime options are not supported via bind() anymore. If runtime options are needed,
+      // consider caching multiple model instances or setting values at provider configuration.
+      const response = await client.invoke(messages);
 
       // Extract content - handle both string and complex content
       const content =
@@ -184,7 +173,7 @@ export class LLMClient {
    */
   async stream(
     input: string | BaseMessage[],
-    options?: LLMCallOptions
+    _options?: LLMCallOptions
   ): Promise<ModelResponse<StreamResult>> {
     const clientResult = this.getClient();
     if (!clientResult.success) {
@@ -195,23 +184,12 @@ export class LLMClient {
     const messages = this.toMessages(input);
 
     try {
-      // Apply call options if provided
-      let modelToUse = client;
-      if (options !== undefined) {
-        const bindOptions: Record<string, unknown> = {};
-        if (options.temperature !== undefined) bindOptions.temperature = options.temperature;
-        if (options.maxTokens !== undefined) bindOptions.max_tokens = options.maxTokens;
-
-        if (Object.keys(bindOptions).length > 0) {
-          // Note: bind is deprecated but withConfig doesn't support temperature/max_tokens directly
-          // eslint-disable-next-line @typescript-eslint/no-deprecated
-          modelToUse = client.bind(bindOptions) as BaseChatModel;
-        }
-      }
-
+      // Note: In LangChain 1.x, temperature and maxTokens must be set at model construction.
+      // Runtime options are not supported via bind() anymore. If runtime options are needed,
+      // consider caching multiple model instances or setting values at provider configuration.
       this.callbacks?.onStreamStart?.();
 
-      const stream = await modelToUse.stream(messages);
+      const stream = await client.stream(messages);
 
       // Wrap the stream to emit callbacks
       const wrappedStream = this.wrapStreamWithCallbacks(stream);

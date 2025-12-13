@@ -38,11 +38,7 @@ import {
  * Local provider configuration (e.g., Ollama).
  */
 export const LocalProviderConfigSchema = z.object({
-  baseUrl: z
-    .string()
-    .url()
-    .default(DEFAULT_LOCAL_BASE_URL)
-    .describe('Base URL for local LLM server'),
+  baseUrl: z.url().default(DEFAULT_LOCAL_BASE_URL).describe('Base URL for local LLM server'),
   model: z.string().default(DEFAULT_LOCAL_MODEL).describe('Model name to use'),
 });
 
@@ -54,7 +50,7 @@ export type LocalProviderConfig = z.infer<typeof LocalProviderConfigSchema>;
 export const OpenAIProviderConfigSchema = z.object({
   apiKey: z.string().optional().describe('OpenAI API key'),
   model: z.string().default(DEFAULT_OPENAI_MODEL).describe('Model name to use'),
-  baseUrl: z.string().url().optional().describe('Custom base URL for OpenAI-compatible APIs'),
+  baseUrl: z.url().optional().describe('Custom base URL for OpenAI-compatible APIs'),
 });
 
 export type OpenAIProviderConfig = z.infer<typeof OpenAIProviderConfigSchema>;
@@ -73,7 +69,7 @@ export type AnthropicProviderConfig = z.infer<typeof AnthropicProviderConfigSche
  * Azure OpenAI provider configuration.
  */
 export const AzureOpenAIProviderConfigSchema = z.object({
-  endpoint: z.string().url().optional().describe('Azure OpenAI endpoint URL'),
+  endpoint: z.url().optional().describe('Azure OpenAI endpoint URL'),
   deployment: z.string().optional().describe('Deployment name'),
   apiVersion: z.string().default(DEFAULT_AZURE_API_VERSION).describe('API version'),
   apiKey: z.string().optional().describe('Azure OpenAI API key'),
@@ -85,7 +81,7 @@ export type AzureOpenAIProviderConfig = z.infer<typeof AzureOpenAIProviderConfig
  * Azure AI Foundry provider configuration.
  */
 export const FoundryProviderConfigSchema = z.object({
-  projectEndpoint: z.string().url().optional().describe('Azure AI Foundry project endpoint'),
+  projectEndpoint: z.url().optional().describe('Azure AI Foundry project endpoint'),
   modelDeployment: z.string().optional().describe('Model deployment name'),
 });
 
@@ -116,7 +112,7 @@ export type GeminiProviderConfig = z.infer<typeof GeminiProviderConfigSchema>;
 export const GitHubProviderConfigSchema = z.object({
   token: z.string().optional().describe('GitHub token'),
   model: z.string().default(DEFAULT_GITHUB_MODEL).describe('Model name to use'),
-  endpoint: z.string().url().default(DEFAULT_GITHUB_ENDPOINT).describe('GitHub Models endpoint'),
+  endpoint: z.url().default(DEFAULT_GITHUB_ENDPOINT).describe('GitHub Models endpoint'),
   org: z.string().optional().describe('GitHub organization'),
 });
 
@@ -171,7 +167,7 @@ export const TelemetryConfigSchema = z.object({
     .boolean()
     .default(DEFAULT_ENABLE_SENSITIVE_DATA)
     .describe('Include sensitive data in telemetry'),
-  otlpEndpoint: z.string().url().optional().describe('OpenTelemetry Protocol endpoint'),
+  otlpEndpoint: z.url().optional().describe('OpenTelemetry Protocol endpoint'),
   applicationinsightsConnectionString: z
     .string()
     .optional()
@@ -249,11 +245,21 @@ export type SkillsConfig = z.infer<typeof SkillsConfigSchema>;
  */
 export const AppConfigSchema = z.object({
   version: z.string().default(CONFIG_VERSION).describe('Configuration schema version'),
-  providers: ProvidersConfigSchema.default({}).describe('LLM provider configurations'),
-  agent: AgentConfigSchema.default({}).describe('Agent behavior configuration'),
-  telemetry: TelemetryConfigSchema.default({}).describe('Telemetry configuration'),
-  memory: MemoryConfigSchema.default({}).describe('Memory configuration'),
-  skills: SkillsConfigSchema.default({}).describe('Skills configuration'),
+  providers: ProvidersConfigSchema.default(() => ProvidersConfigSchema.parse({})).describe(
+    'LLM provider configurations'
+  ),
+  agent: AgentConfigSchema.default(() => AgentConfigSchema.parse({})).describe(
+    'Agent behavior configuration'
+  ),
+  telemetry: TelemetryConfigSchema.default(() => TelemetryConfigSchema.parse({})).describe(
+    'Telemetry configuration'
+  ),
+  memory: MemoryConfigSchema.default(() => MemoryConfigSchema.parse({})).describe(
+    'Memory configuration'
+  ),
+  skills: SkillsConfigSchema.default(() => SkillsConfigSchema.parse({})).describe(
+    'Skills configuration'
+  ),
 });
 
 export type AppConfig = z.infer<typeof AppConfigSchema>;
@@ -274,6 +280,6 @@ export function getDefaultConfig(): AppConfig {
  * Applies schema defaults and returns the parsed config.
  * Unknown fields are stripped by Zod.
  */
-export function parseConfig(input: unknown): z.SafeParseReturnType<unknown, AppConfig> {
+export function parseConfig(input: unknown): z.ZodSafeParseResult<AppConfig> {
   return AppConfigSchema.safeParse(input);
 }

@@ -2,7 +2,7 @@
 
 A TypeScript agent framework for building AI agents with multi-provider LLM support and built-in observability.
 
-[![Bun 1.0+](https://img.shields.io/badge/bun-1.0+-black.svg)](https://bun.sh/)
+[![Bun 1.3.4+](https://img.shields.io/badge/bun-1.3.4+-black.svg)](https://bun.sh/)
 [![TypeScript 5.x](https://img.shields.io/badge/typescript-5.x-blue.svg)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
@@ -22,8 +22,8 @@ bun run dev
 
 ### Required
 
-- [Bun](https://bun.sh/) 1.0+
-- Node.js 20+ (for compatibility)
+- [Bun](https://bun.sh/) 1.3.4+
+- Node.js 24+ (Bun 1.3.4 implements Node 24.3.0)
 
 ### LLM Providers
 

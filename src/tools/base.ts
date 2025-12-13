@@ -3,7 +3,8 @@
  * Provides the createTool factory that wraps LangChain's tool() function.
  */
 
-import { tool } from '@langchain/core/tools';
+import { DynamicStructuredTool } from '@langchain/core/tools';
+import type { CallbackManagerForToolRun } from '@langchain/core/callbacks/manager';
 import type { RunnableConfig } from '@langchain/core/runnables';
 import type { StructuredToolInterface } from '@langchain/core/tools';
 import { z, ZodError } from 'zod';
@@ -29,19 +30,19 @@ export function errorResponse(error: ToolErrorCode, message: string): ErrorRespo
 
 /**
  * Options for creating a tool.
+ * TInput is the inferred input type from the schema.
+ * TResult is the result type in the ToolResponse.
  */
-export interface CreateToolOptions<TInput extends z.ZodRawShape, TResult> {
+export interface CreateToolOptions<TInput, TResult> {
   /** Tool name (used for LangChain binding) */
   name: string;
   /** Tool description (keep under 40 tokens for LLM consumption) */
   description: string;
-  /** Zod schema for input validation */
-  schema: z.ZodObject<TInput>;
+  /** Zod schema for input validation - use z.object({...}) */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  schema: z.ZodObject<any>;
   /** Tool execution function */
-  execute: (
-    input: z.infer<z.ZodObject<TInput>>,
-    config?: RunnableConfig
-  ) => Promise<ToolResponse<TResult>>;
+  execute: (input: TInput, config?: RunnableConfig) => Promise<ToolResponse<TResult>>;
 }
 
 /**
@@ -56,34 +57,40 @@ export interface CreateToolOptions<TInput extends z.ZodRawShape, TResult> {
  * The execute() function itself will never throw - all errors are caught and
  * converted to error responses.
  */
-export function createTool<TInput extends z.ZodRawShape, TResult>(
+export function createTool<TInput, TResult>(
   options: CreateToolOptions<TInput, TResult>
 ): StructuredToolInterface {
   const { name, description, schema, execute } = options;
 
-  return tool(
-    async (
-      input: z.infer<z.ZodObject<TInput>>,
-      config?: RunnableConfig
-    ): Promise<ToolResponse<TResult>> => {
-      try {
-        return await execute(input, config);
-      } catch (e) {
-        // Catch any uncaught errors from execute and convert to error response
-        if (e instanceof ZodError) {
-          const issues = e.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
-          return errorResponse('VALIDATION_ERROR', `Validation failed: ${issues}`);
-        }
-        const message = e instanceof Error ? e.message : 'Unknown error occurred';
-        return errorResponse('UNKNOWN', message);
+  // Use explicit function signature matching DynamicStructuredTool's func parameter
+  const toolFn = async (
+    input: unknown,
+    _runManager?: CallbackManagerForToolRun,
+    config?: RunnableConfig
+  ): Promise<ToolResponse<TResult>> => {
+    try {
+      // Input is already validated by LangChain's tool() wrapper
+      return await execute(input as TInput, config);
+    } catch (e) {
+      // Catch any uncaught errors from execute and convert to error response
+      if (e instanceof ZodError) {
+        const issues = e.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+        return errorResponse('VALIDATION_ERROR', `Validation failed: ${issues}`);
       }
-    },
-    {
-      name,
-      description,
-      schema,
+      const message = e instanceof Error ? e.message : 'Unknown error occurred';
+      return errorResponse('UNKNOWN', message);
     }
-  );
+  };
+
+  // Use DynamicStructuredTool directly to avoid type inference issues with tool() helper
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const toolInstance = new DynamicStructuredTool<any>({
+    name,
+    description,
+    schema,
+    func: toolFn,
+  });
+  return toolInstance as unknown as StructuredToolInterface;
 }
 
 /**

@@ -10,7 +10,7 @@
 
 import { trace, metrics, diag, DiagConsoleLogger, DiagLogLevel } from '@opentelemetry/api';
 import type { Tracer, Meter } from '@opentelemetry/api';
-import { Resource } from '@opentelemetry/resources';
+import { resourceFromAttributes } from '@opentelemetry/resources';
 import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import { BasicTracerProvider, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
@@ -187,7 +187,8 @@ export async function initializeTelemetry(
   }
 
   // Create resource and provider only when we have an exporter
-  const resource = new Resource({
+  // In OTel SDK 2.x, use resourceFromAttributes instead of new Resource()
+  const resource = resourceFromAttributes({
     [ATTR_SERVICE_NAME]: serviceName,
     [ATTR_SERVICE_VERSION]: serviceVersion,
   });
@@ -197,7 +198,8 @@ export async function initializeTelemetry(
     spanProcessors: [new SimpleSpanProcessor(exporter)],
   });
 
-  tracerProvider.register();
+  // In OTel SDK 2.x, use trace.setGlobalTracerProvider() instead of provider.register()
+  trace.setGlobalTracerProvider(tracerProvider);
 
   // Enable debug logging if DEBUG_OTEL is set
   if (process.env['DEBUG_OTEL'] === 'true') {
