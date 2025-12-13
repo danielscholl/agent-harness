@@ -988,7 +988,7 @@ Before starting any migration:
 - [ ] Changelog/migration guides reviewed for each library
 - [ ] Breaking changes identified in upgrade paths
 - [ ] Rollback plan prepared (git branches, version pins)
-- [ ] Local development environment matches engine requirements (Node >=20.11.0)
+- [ ] Local development environment matches engine requirements (Node >=24.0.0, Bun >=1.3.4)
 
 ---
 

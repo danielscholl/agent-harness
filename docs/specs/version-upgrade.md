@@ -107,7 +107,7 @@ Project ID: `cf3289a3-336f-4e8b-9488-1bfda7758676`
 - `src/model/llm.ts` - LangChain integration
 - `src/telemetry/setup.ts` - OpenTelemetry setup
 - `docs/plans/version-upgrade-plan.md` - Detailed version plan
-- `docs/plans/codebase-analysis-for-upgrades.md` - Codebase analysis
+- `docs/plans/version-upgrade-analysis.md` - Codebase analysis
 
 ### New Files
 - None required - this is an upgrade, not new functionality
@@ -116,7 +116,7 @@ Project ID: `cf3289a3-336f-4e8b-9488-1bfda7758676`
 
 ### Phase 1: Foundation
 Update engine requirements and tooling that everything else depends on:
-- Bump `engines.node` to `>=20.11.0`
+- Bump `engines.node` to `>=20.11.0` (later upgraded to `>=24.0.0` - see version-upgrade-node-bun)
 - Update TypeScript to ^5.9.3
 - Update ESLint to ^9.39.2, @eslint/js to ^9.39.2
 - Update typescript-eslint to ^8.49.0
@@ -238,7 +238,7 @@ Update remaining packages:
 
 ```bash
 # After each phase
-node --version  # Must be >=20.11.0
+node --version  # Must be >=24.0.0 (upgraded from 20.11.0 in version-upgrade-node-bun)
 bun install
 bun run typecheck
 bun run lint

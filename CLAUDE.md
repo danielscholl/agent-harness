@@ -71,8 +71,8 @@ All LLM calls and external API calls include fallback handling. If summarization
 | Component | Technology | Notes |
 |-----------|------------|-------|
 | Language | TypeScript 5.9+ | Strict mode required |
-| Runtime | Bun 1.x | Development and runtime |
-| Node Engine | >=20.11.0 | Required by ESLint 9.39+, OTel 2.x |
+| Runtime | Bun 1.3.x | Development and runtime (Node 24 APIs) |
+| Node Engine | >=24.0.0 | Bun 1.3.4 implements Node 24.3.0 |
 | UI Framework | React 19 + Ink 6 | Terminal UI rendering |
 | LLM Integration | LangChain.js 1.x | Multi-provider abstraction (@langchain/core, @langchain/openai) |
 | Schema Validation | Zod 4.x | Runtime validation + type inference |

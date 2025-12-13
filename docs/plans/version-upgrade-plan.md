@@ -28,6 +28,8 @@ This plan upgrades all dependencies to match the project constitution's tech sta
 
 **Rationale:** ESLint 9.39.x requires >=20.9.0, OpenTelemetry 2.x requires >=20.6.0, typescript-eslint 8.49.x requires >=20.11.0. Node 20.11.0 is within Node 20 LTS (maintained until April 2026).
 
+**Note:** Later upgraded to `>=24.0.0` and `>=1.3.4` respectively - see `docs/specs/version-upgrade-node-bun.md`.
+
 ### Production Dependencies
 
 | Package | Current | Target | Notes |
@@ -117,8 +119,8 @@ Jest 30 has new features and config changes:
 ```json
 {
   "engines": {
-    "node": ">=20.11.0",
-    "bun": ">=1.0.0"
+    "node": ">=24.0.0",
+    "bun": ">=1.3.4"
   },
   "dependencies": {
     "react": "^19.2.3",
@@ -166,7 +168,7 @@ The upgrades should be done in this order to manage risk:
 ### Step 1: Foundation (Single Commit)
 
 Update engine and tooling that everything else depends on:
-- Bump `engines.node` to `>=20.11.0`
+- Bump `engines.node` (later upgraded to `>=24.0.0` - see version-upgrade-node-bun)
 - Update TypeScript, ESLint, Prettier, typescript-eslint
 - Update React, Ink, react-devtools-core
 - Run validation
@@ -219,7 +221,7 @@ Update remaining packages:
 
 After each step:
 
-- [x] Verify local Node version is >=20.11.0 (`node --version`)
+- [x] Verify local Node version is >=24.0.0 (`node --version`) (upgraded from 20.11.0)
 - [x] `bun install` completes without errors or peer dependency warnings
 - [x] `bun run typecheck` passes
 - [x] `bun run lint` passes

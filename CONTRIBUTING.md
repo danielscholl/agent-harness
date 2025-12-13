@@ -443,10 +443,10 @@ See existing ADRs in `docs/decisions/` for examples.
 | Component | Technology | Notes |
 |-----------|------------|-------|
 | Language | TypeScript 5.x | Strict mode required |
-| Runtime | Bun 1.x | Development and runtime |
+| Runtime | Bun 1.3.x | Development and runtime (Node 24 APIs) |
 | UI Framework | React 19 + Ink 6 | Terminal UI rendering |
 | LLM Integration | LangChain.js 1.x | Multi-provider abstraction |
-| Schema Validation | Zod 3.x | Runtime validation + type inference |
+| Schema Validation | Zod 4.x | Runtime validation + type inference |
 | Observability | OpenTelemetry | OTLP export |
 | Testing | Jest + ts-jest | Run via `bun run test` |
 | Linting | ESLint + Prettier | Consistent code style |
