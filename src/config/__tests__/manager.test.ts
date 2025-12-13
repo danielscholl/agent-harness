@@ -3,6 +3,7 @@
  */
 
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import os from 'node:os';
 
 import { ConfigManager, deepMerge, loadConfig, NodeFileSystem } from '../manager.js';
 import { getDefaultConfig } from '../schema.js';
@@ -820,5 +821,50 @@ describe('NodeFileSystem', () => {
     const cwd = nodeFs.getCwd();
     expect(cwd).toBeDefined();
     expect(typeof cwd).toBe('string');
+  });
+
+  it('should get dirname of a path', () => {
+    const dir = nodeFs.dirname('/home/user/.agent/settings.json');
+    expect(dir).toBe('/home/user/.agent');
+  });
+
+  it('should check if file exists', async () => {
+    // Check a known file that exists in the project
+    const exists = await nodeFs.exists('./package.json');
+    expect(exists).toBe(true);
+  });
+
+  it('should return false for non-existent file', async () => {
+    const exists = await nodeFs.exists('./nonexistent-file-12345.txt');
+    expect(exists).toBe(false);
+  });
+
+  it('should read an existing file', async () => {
+    // Read package.json which we know exists
+    const content = await nodeFs.readFile('./package.json');
+    expect(content).toContain('"name"');
+    expect(content).toContain('"version"');
+  });
+
+  it('should create directories recursively', async () => {
+    // Test mkdir with a temp directory that will be cleaned up
+    const tempDir = `${os.tmpdir()}/agent-test-${String(Date.now())}`;
+    await nodeFs.mkdir(`${tempDir}/nested/dir`);
+    const exists = await nodeFs.exists(`${tempDir}/nested/dir`);
+    expect(exists).toBe(true);
+    // Cleanup
+    const fs = await import('node:fs/promises');
+    await fs.rm(tempDir, { recursive: true });
+  });
+
+  it('should apply chmod on unix systems', async () => {
+    // Create a temp file and apply chmod
+    const tempFile = `${os.tmpdir()}/agent-test-chmod-${String(Date.now())}.txt`;
+    const fs = await import('node:fs/promises');
+    await fs.writeFile(tempFile, 'test');
+    // This should not throw
+    await nodeFs.chmod(tempFile, 0o600);
+    // Cleanup
+    await fs.unlink(tempFile);
   });
 });
