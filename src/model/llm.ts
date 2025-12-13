@@ -240,28 +240,34 @@ export class LLMClient {
 
         return {
           async next(): Promise<IteratorResult<AIMessageChunk>> {
-            const result = await iterator.next();
+            try {
+              const result = await iterator.next();
 
-            if (result.done === true) {
-              callbacks?.onStreamEnd?.(lastUsage);
+              if (result.done === true) {
+                callbacks?.onStreamEnd?.(lastUsage);
+                return result;
+              }
+
+              const chunk = result.value;
+              // Extract content for callback
+              const content = typeof chunk.content === 'string' ? chunk.content : '';
+
+              if (content !== '') {
+                callbacks?.onStreamChunk?.(content);
+              }
+
+              // Try to extract usage from chunk metadata
+              const metadata = chunk.response_metadata as Record<string, unknown> | undefined;
+              if (metadata !== undefined) {
+                lastUsage = extractTokenUsage(metadata);
+              }
+
               return result;
+            } catch (error) {
+              // Ensure cleanup callbacks are always invoked on error
+              callbacks?.onStreamEnd?.(lastUsage);
+              throw error;
             }
-
-            const chunk = result.value;
-            // Extract content for callback
-            const content = typeof chunk.content === 'string' ? chunk.content : '';
-
-            if (content !== '') {
-              callbacks?.onStreamChunk?.(content);
-            }
-
-            // Try to extract usage from chunk metadata
-            const metadata = chunk.response_metadata as Record<string, unknown> | undefined;
-            if (metadata !== undefined) {
-              lastUsage = extractTokenUsage(metadata);
-            }
-
-            return result;
           },
         };
       },

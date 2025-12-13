@@ -3,6 +3,7 @@
  */
 
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import os from 'node:os';
 
 import { ConfigManager, deepMerge, loadConfig, NodeFileSystem } from '../manager.js';
 import { getDefaultConfig } from '../schema.js';
@@ -847,7 +848,7 @@ describe('NodeFileSystem', () => {
 
   it('should create directories recursively', async () => {
     // Test mkdir with a temp directory that will be cleaned up
-    const tempDir = `/tmp/agent-test-${String(Date.now())}`;
+    const tempDir = `${os.tmpdir()}/agent-test-${String(Date.now())}`;
     await nodeFs.mkdir(`${tempDir}/nested/dir`);
     const exists = await nodeFs.exists(`${tempDir}/nested/dir`);
     expect(exists).toBe(true);
@@ -858,7 +859,7 @@ describe('NodeFileSystem', () => {
 
   it('should apply chmod on unix systems', async () => {
     // Create a temp file and apply chmod
-    const tempFile = `/tmp/agent-test-chmod-${String(Date.now())}.txt`;
+    const tempFile = `${os.tmpdir()}/agent-test-chmod-${String(Date.now())}.txt`;
     const fs = await import('node:fs/promises');
     await fs.writeFile(tempFile, 'test');
     // This should not throw

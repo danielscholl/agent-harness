@@ -78,6 +78,24 @@ describe('createOpenAIClient', () => {
     }
   });
 
+  it('uses default model when model field is undefined', () => {
+    const config: Record<string, unknown> = {
+      apiKey: 'test-key',
+    };
+
+    const result = createOpenAIClient(config);
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.message).toContain('gpt-4o');
+    }
+    expect(mockChatOpenAI).toHaveBeenCalledWith({
+      model: 'gpt-4o',
+      openAIApiKey: 'test-key',
+      configuration: undefined,
+    });
+  });
+
   it('passes correct parameters to ChatOpenAI', () => {
     createOpenAIClient({
       model: 'gpt-4o',
