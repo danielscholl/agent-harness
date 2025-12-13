@@ -70,21 +70,22 @@ All LLM calls and external API calls include fallback handling. If summarization
 
 | Component | Technology | Notes |
 |-----------|------------|-------|
-| Language | TypeScript 5.x | Strict mode required |
+| Language | TypeScript 5.9+ | Strict mode required |
 | Runtime | Bun 1.x | Development and runtime |
+| Node Engine | >=20.11.0 | Required by ESLint 9.39+, OTel 2.x |
 | UI Framework | React 19 + Ink 6 | Terminal UI rendering |
-| LLM Integration | LangChain.js 1.x | Multi-provider abstraction |
-| Schema Validation | Zod 4.x | Runtime validation + type inference (see ADR-0004) |
-| Observability | OpenTelemetry | OTLP export, GenAI semantic conventions |
-| Testing | Jest + ts-jest | Run via `bun run test` |
-| Linting | ESLint + Prettier | Consistent code style |
+| LLM Integration | LangChain.js 1.x | Multi-provider abstraction (@langchain/core, @langchain/openai) |
+| Schema Validation | Zod 4.x | Runtime validation + type inference |
+| Observability | OpenTelemetry 2.x | OTLP export, GenAI semantic conventions |
+| Testing | Jest 30 + ts-jest | Run via `bun run test` |
+| Linting | ESLint 9 + Prettier 3 | Flat config, consistent code style |
 
 ### Runtime Notes
 - **Development**: Bun 1.x for fast TS execution and bundling
 - **Runtime**: Bun 1.x (users must have Bun installed)
 - We chose Bun-only runtime for native TypeScript execution without transpilation
 
-**Version Authority**: `package.json` is the source of truth for exact versions. This table records intended technologies; the package manifest may specify newer compatible versions.
+**Version Authority**: `package.json` is the source of truth for exact versions. This table records intended technologies; the package manifest may specify newer compatible versions. See `docs/plans/version-upgrade-plan.md` for detailed version analysis.
 
 ---
 

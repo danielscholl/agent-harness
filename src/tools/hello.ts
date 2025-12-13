@@ -25,7 +25,7 @@ interface HelloWorldResult {
  * const result = await helloWorldTool.invoke({ name: 'Alice' });
  * // { success: true, result: { greeting: 'Hello, Alice!' }, message: 'Greeted Alice' }
  */
-export const helloWorldTool = createTool<typeof HelloWorldInputSchema.shape, HelloWorldResult>({
+export const helloWorldTool = createTool<z.infer<typeof HelloWorldInputSchema>, HelloWorldResult>({
   name: 'hello_world',
   description: 'Say hello to someone. Returns greeting message.',
   schema: HelloWorldInputSchema,
@@ -75,7 +75,7 @@ function isSupportedLanguage(lang: string): lang is SupportedLanguage {
  * const result = await greetUserTool.invoke({ name: 'Bob', language: 'de' });
  * // { success: false, error: 'VALIDATION_ERROR', message: "Language 'de' not supported. Use: en, es, fr" }
  */
-export const greetUserTool = createTool<typeof GreetUserInputSchema.shape, GreetUserResult>({
+export const greetUserTool = createTool<z.infer<typeof GreetUserInputSchema>, GreetUserResult>({
   name: 'greet_user',
   description:
     'Greet user in different languages (en, es, fr). Returns localized greeting or error if language unsupported.',

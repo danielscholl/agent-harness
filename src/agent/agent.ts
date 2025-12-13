@@ -6,16 +6,7 @@
  * query -> LLM -> tool -> response cycle.
  */
 
-import {
-  AIMessage,
-  HumanMessage,
-  SystemMessage,
-  ToolMessage,
-  isAIMessage,
-  isHumanMessage,
-  isSystemMessage,
-  isToolMessage,
-} from '@langchain/core/messages';
+import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from '@langchain/core/messages';
 import type { BaseMessage, AIMessageChunk } from '@langchain/core/messages';
 import type { StructuredToolInterface } from '@langchain/core/tools';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
@@ -511,18 +502,19 @@ export class Agent {
 
   /**
    * Get message role from BaseMessage.
+   * Uses static .isInstance() methods (LangChain 1.x recommended approach).
    */
   private getMessageRole(message: BaseMessage): Message['role'] {
-    if (isSystemMessage(message)) {
+    if (SystemMessage.isInstance(message)) {
       return 'system';
     }
-    if (isHumanMessage(message)) {
+    if (HumanMessage.isInstance(message)) {
       return 'user';
     }
-    if (isAIMessage(message)) {
+    if (AIMessage.isInstance(message)) {
       return 'assistant';
     }
-    if (isToolMessage(message)) {
+    if (ToolMessage.isInstance(message)) {
       return 'tool';
     }
     return 'user';

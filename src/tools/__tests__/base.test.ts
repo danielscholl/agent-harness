@@ -151,9 +151,8 @@ describe('createTool', () => {
       description: 'A test tool',
       schema: testSchema,
       execute: (input) => {
-        return Promise.resolve(
-          successResponse({ processed: input.name }, `Processed ${input.name}`)
-        );
+        const name = String(input.name);
+        return Promise.resolve(successResponse({ processed: name }, `Processed ${name}`));
       },
     });
 
