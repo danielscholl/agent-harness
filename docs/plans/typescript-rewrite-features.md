@@ -30,17 +30,26 @@ Introduce a `tools/base.ts` that standardizes the `{ success, result|error, mess
 ### Feature 4: Implement the multi-provider LLM abstraction with OpenAI
 Build `model/llm.ts` with config-based provider routing. Provider is selected by `config.providers.default` (e.g., "openai"), not by parsing model name prefixes. Start with OpenAI (`@langchain/openai`) and wire it into config so the agent can make a single end-to-end LLM call. Include basic streaming support.
 
-### Feature 5: Create the core Agent orchestration loop
-Port the responsibilities of `agent-base/src/agent/agent.py` into `agent/agent.ts`: system prompt loading (three-tier: env var → user file → package default), placeholder replacement (`{{MODEL}}`, `{{DATA_DIR}}`), message assembly, tool binding, and the main `run()` loop. Keep the architecture compatible with LangChain calling patterns while preserving agent-base behavior (tool choice, retries, error surfaces).
+### Feature 5: Create the core Agent orchestration loop ✅
+Port the responsibilities of `../agent-base/src/agent/agent.py` into `agent/agent.ts`: system prompt loading (three-tier: env var → user file → package default), placeholder replacement (`{{MODEL}}`, `{{DATA_DIR}}`), message assembly, tool binding, and the main `run()` loop. Keep the architecture compatible with LangChain calling patterns while preserving agent-base behavior (tool choice, retries, error surfaces).
+
+**Implemented:**
+- `src/agent/types.ts` - Core types (SpanContext, Message, AgentOptions, etc.)
+- `src/agent/callbacks.ts` - AgentCallbacks interface with span context helpers
+- `src/agent/prompts.ts` - Three-tier system prompt loading with placeholder replacement
+- `src/prompts/system.md` - Default system prompt template
+- `src/agent/agent.ts` - Core Agent class with run() and runStream() methods
+- `src/agent/index.ts` - Public exports
+- Full test coverage in `src/agent/__tests__/`
 
 ### Feature 6: Replace the EventBus with typed callbacks
-Add `agent/callbacks.ts` and thread callbacks through the agent, tools, and UI, modeled after `dexter/src/agent/agent.ts`. Expose hooks for LLM request/response, tool start/finish, task/session lifecycle, debug output, and trace logging for development troubleshooting. This is required for Ink rendering and for deterministic testing.
+Add `agent/callbacks.ts` and thread callbacks through the agent, tools, and UI, modeled after `../dexter/src/agent/agent.ts`. Expose hooks for LLM request/response, tool start/finish, task/session lifecycle, debug output, and trace logging for development troubleshooting. This is required for Ink rendering and for deterministic testing.
 
 ### Feature 7: Define structured error types and hierarchy
-Port `agent-base/src/agent/exceptions.py` to `errors/index.ts` with typed error classes for provider errors (rate limits, auth failures), tool failures, config validation, and user-facing messages. Ensure errors surface cleanly through callbacks and are distinguishable by type.
+Port `../agent-base/src/agent/exceptions.py` to `errors/index.ts` with typed error classes for provider errors (rate limits, auth failures), tool failures, config validation, and user-facing messages. Ensure errors surface cleanly through callbacks and are distinguishable by type.
 
 ### Feature 8: Port the built-in Hello tool
-Reimplement `agent-base/src/agent/tools/hello.py` in TypeScript using the new tool base. This validates the tool wrapper pattern and provides a simple test case for the agent loop.
+Reimplement `../agent-base/src/agent/tools/hello.py` in TypeScript using the new tool base. This validates the tool wrapper pattern and provides a simple test case for the agent loop.
 
 ---
 
