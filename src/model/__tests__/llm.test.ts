@@ -594,5 +594,83 @@ describe('LLMClient', () => {
       expect(onRetry).toHaveBeenCalledTimes(2);
       expect(callbacks.onError).toHaveBeenCalledWith('RATE_LIMITED', 'Rate limit exceeded');
     });
+
+    it('stream() with retry disabled fires onError on failure', async () => {
+      mockModel.stream.mockRejectedValue(new Error('Network error'));
+
+      const onRetry = jest.fn();
+      const onError = jest.fn();
+      const callbacks: LLMCallbacks = { onRetry, onError };
+
+      // Disable retry
+      config.retry = {
+        enabled: false,
+        maxRetries: 3,
+        baseDelayMs: 100,
+        maxDelayMs: 1000,
+        enableJitter: false,
+      };
+
+      const client = new LLMClient({ config, callbacks });
+      const result = await client.stream('Hello');
+
+      expect(result.success).toBe(false);
+      expect(mockModel.stream).toHaveBeenCalledTimes(1); // No retries
+      expect(onRetry).not.toHaveBeenCalled();
+      expect(onError).toHaveBeenCalledWith('NETWORK_ERROR', 'Network error');
+    });
+
+    it('stream iteration error triggers onStreamEnd callback', async () => {
+      // Create a stream that throws an error during iteration
+      const errorStream = {
+        [Symbol.asyncIterator](): AsyncIterator<MockChunk> {
+          let count = 0;
+          return {
+            next(): Promise<IteratorResult<MockChunk>> {
+              count++;
+              if (count === 1) {
+                return Promise.resolve({
+                  done: false,
+                  value: { content: 'First chunk', response_metadata: {} },
+                });
+              }
+              // Second call throws an error
+              return Promise.reject(new Error('Stream interrupted'));
+            },
+          };
+        },
+      };
+
+      mockModel.stream.mockResolvedValue(errorStream);
+
+      const onStreamChunk = jest.fn();
+      const onStreamEnd = jest.fn();
+      const callbacks: LLMCallbacks = { onStreamChunk, onStreamEnd };
+
+      config.retry = {
+        enabled: false,
+        maxRetries: 0,
+        baseDelayMs: 100,
+        maxDelayMs: 1000,
+        enableJitter: false,
+      };
+
+      const client = new LLMClient({ config, callbacks });
+      const result = await client.stream('Hello');
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        // Consume the stream to trigger the error
+        await expect(async () => {
+          for await (const _chunk of result.result) {
+            // consume chunks
+          }
+        }).rejects.toThrow('Stream interrupted');
+      }
+
+      // onStreamEnd should be called even on error (in the catch block)
+      expect(onStreamChunk).toHaveBeenCalledWith('First chunk');
+      expect(onStreamEnd).toHaveBeenCalled();
+    });
   });
 });
