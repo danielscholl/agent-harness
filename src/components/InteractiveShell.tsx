@@ -110,6 +110,21 @@ export function InteractiveShell({
     }));
   }, []);
 
+  /**
+   * Synchronize filesystem writes config to env var.
+   * This must be called before each agent run to ensure config changes are propagated.
+   */
+  const syncFilesystemWritesEnvVar = useCallback((config: AppConfig | null) => {
+    if (config === null) return;
+
+    if (!config.agent.filesystemWritesEnabled) {
+      process.env['AGENT_FILESYSTEM_WRITES_ENABLED'] = 'false';
+    } else {
+      // Ensure env var is set to true if config allows writes
+      process.env['AGENT_FILESYSTEM_WRITES_ENABLED'] = 'true';
+    }
+  }, []);
+
   // Handle input submission
   const handleSubmit = useCallback(async () => {
     let query = state.input.trim();
@@ -211,16 +226,12 @@ export function InteractiveShell({
       completedTasks: [],
     }));
 
+    // Synchronize filesystem writes config to env var before each run
+    // This ensures config changes (e.g., via /config command) are propagated
+    syncFilesystemWritesEnvVar(state.config);
+
     // Initialize agent lazily with callbacks wired to state
     if (agentRef.current === null && state.config !== null) {
-      // Propagate filesystem writes config to env var for tools to check
-      if (!state.config.agent.filesystemWritesEnabled) {
-        process.env['AGENT_FILESYSTEM_WRITES_ENABLED'] = 'false';
-      } else {
-        // Ensure env var is set to true if config allows writes
-        process.env['AGENT_FILESYSTEM_WRITES_ENABLED'] = 'true';
-      }
-
       const callbacks = createCallbacks({
         setSpinnerMessage: (msg) => {
           setState((s) => ({ ...s, spinnerMessage: msg ?? '' }));
@@ -345,7 +356,14 @@ export function InteractiveShell({
         isProcessing: false,
       }));
     }
-  }, [state.input, state.config, state.messages, exit, addSystemMessage]);
+  }, [
+    state.input,
+    state.config,
+    state.messages,
+    exit,
+    addSystemMessage,
+    syncFilesystemWritesEnvVar,
+  ]);
 
   // Handle key input - gated until config loads
   useInput((input, key) => {

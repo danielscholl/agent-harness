@@ -678,6 +678,8 @@ export const readFileTool = createTool<z.infer<typeof ReadFileInputSchema>, Read
       }
 
       // Read file content
+      // Note: TOCTOU race between stat/binary check and read is acceptable for CLI tools
+      // where user controls filesystem. Errors are handled gracefully below.
       const content = await fs.readFile(resolved, { encoding: 'utf-8' });
       const lines = content.split('\n');
       const totalLines = lines.length;
@@ -826,6 +828,8 @@ export const searchTextTool = createTool<z.infer<typeof SearchTextInputSchema>, 
           // Skip binary files
           if (await isBinaryFile(filePath)) continue;
 
+          // Note: TOCTOU race between checks and read is acceptable for CLI tools.
+          // File changes during search result in graceful handling via try-catch.
           const content = await fs.readFile(filePath, { encoding: 'utf-8' });
           const lines = content.split('\n');
 
@@ -881,7 +885,7 @@ export const searchTextTool = createTool<z.infer<typeof SearchTextInputSchema>, 
                   line: lineNum + 1, // 1-based
                   snippet,
                   matchStart,
-                  matchEnd: matchStart + input.query.length,
+                  matchEnd: matchStart + searchQuery.length,
                 });
                 searchStart = matchStart + 1;
               }
@@ -1078,6 +1082,8 @@ export const applyTextEditTool = createTool<
       }
 
       // Read original content
+      // Note: TOCTOU race between stat and read is acceptable for CLI tools.
+      // Atomic write (temp+rename) ensures consistency of the final output.
       const originalContent = await fs.readFile(resolved, { encoding: 'utf-8' });
       const originalSize = Buffer.byteLength(originalContent, 'utf-8');
 
@@ -1279,14 +1285,14 @@ function extractPatchFilePaths(patch: string): { oldPath: string | null; newPath
     // Match --- a/path or --- path
     if (line.startsWith('--- ')) {
       const pathPart = line.slice(4).trim();
-      // Strip a/ prefix if present, also handle /dev/null
-      oldPath = pathPart.replace(/^a\//, '').replace(/^\/dev\/null$/, '');
+      // If /dev/null, treat as empty; else strip a/ prefix if present
+      oldPath = pathPart === '/dev/null' ? '' : pathPart.replace(/^a\//, '');
     }
     // Match +++ b/path or +++ path
     if (line.startsWith('+++ ')) {
       const pathPart = line.slice(4).trim();
-      // Strip b/ prefix if present, also handle /dev/null
-      newPath = pathPart.replace(/^b\//, '').replace(/^\/dev\/null$/, '');
+      // If /dev/null, treat as empty; else strip b/ prefix if present
+      newPath = pathPart === '/dev/null' ? '' : pathPart.replace(/^b\//, '');
     }
     // Stop after finding both or hitting a hunk
     if (line.startsWith('@@')) break;
@@ -1571,6 +1577,8 @@ export const applyFilePatchTool = createTool<
       }
 
       // Read original content
+      // Note: TOCTOU race between binary check and read is acceptable for CLI tools.
+      // SHA256 verification and atomic writes provide consistency guarantees.
       const originalContent = await fs.readFile(resolved, { encoding: 'utf-8' });
       const originalSize = Buffer.byteLength(originalContent, 'utf-8');
       const sha256Before = computeSha256(originalContent);
