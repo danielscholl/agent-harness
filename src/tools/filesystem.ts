@@ -390,16 +390,11 @@ export function mapSystemErrorToToolError(error: unknown): {
 /**
  * Check if file is binary by looking for null bytes in first 8KB.
  */
-async function isBinaryFile(filePath: string): Promise<boolean> {
-  const fd = await fs.open(filePath, 'r');
-  try {
-    const buffer = Buffer.alloc(BINARY_CHECK_SIZE);
-    const { bytesRead } = await fd.read(buffer, 0, BINARY_CHECK_SIZE, 0);
-    const sample = buffer.subarray(0, bytesRead);
-    return sample.includes(0);
-  } finally {
-    await fd.close();
-  }
+async function isBinaryFileHandle(fd: fs.FileHandle): Promise<boolean> {
+  const buffer = Buffer.alloc(BINARY_CHECK_SIZE);
+  const { bytesRead } = await fd.read(buffer, 0, BINARY_CHECK_SIZE, 0);
+  const sample = buffer.subarray(0, bytesRead);
+  return sample.includes(0);
 }
 
 // =============================================================================
@@ -655,32 +650,36 @@ export const readFileTool = createTool<z.infer<typeof ReadFileInputSchema>, Read
     const startLine = Math.max(1, input.startLine);
 
     try {
-      // Check file exists
-      const stats = await fs.stat(resolved);
-      if (!stats.isFile()) {
-        return errorResponse('VALIDATION_ERROR', `Path is not a file: ${input.path}`);
-      }
+      const fd = await fs.open(resolved, 'r');
+      let content: string;
+      try {
+        // Check file exists
+        const stats = await fd.stat();
+        if (!stats.isFile()) {
+          return errorResponse('VALIDATION_ERROR', `Path is not a file: ${input.path}`);
+        }
 
-      // Check file size
-      if (stats.size > DEFAULT_MAX_READ_BYTES) {
-        return errorResponse(
-          'VALIDATION_ERROR',
-          `File size (${String(stats.size)} bytes) exceeds max read limit (${String(DEFAULT_MAX_READ_BYTES)} bytes): ${input.path}`
-        );
-      }
+        // Check file size
+        if (stats.size > DEFAULT_MAX_READ_BYTES) {
+          return errorResponse(
+            'VALIDATION_ERROR',
+            `File size (${String(stats.size)} bytes) exceeds max read limit (${String(DEFAULT_MAX_READ_BYTES)} bytes): ${input.path}`
+          );
+        }
 
-      // Check for binary
-      if (await isBinaryFile(resolved)) {
-        return errorResponse(
-          'VALIDATION_ERROR',
-          `File appears to be binary (contains null bytes): ${input.path}`
-        );
-      }
+        // Check for binary
+        if (await isBinaryFileHandle(fd)) {
+          return errorResponse(
+            'VALIDATION_ERROR',
+            `File appears to be binary (contains null bytes): ${input.path}`
+          );
+        }
 
-      // Read file content
-      // Note: TOCTOU race between stat/binary check and read is acceptable for CLI tools
-      // where user controls filesystem. Errors are handled gracefully below.
-      const content = await fs.readFile(resolved, { encoding: 'utf-8' });
+        // Read file content via the same file descriptor used for checks.
+        content = (await fd.readFile()).toString('utf8');
+      } finally {
+        await fd.close();
+      }
       const lines = content.split('\n');
       const totalLines = lines.length;
 
@@ -821,16 +820,22 @@ export const searchTextTool = createTool<z.infer<typeof SearchTextInputSchema>, 
         filesSearched++;
 
         try {
-          // Skip oversized files (use read limit as max search file size)
-          const fileStats = await fs.stat(filePath);
-          if (fileStats.size > DEFAULT_MAX_READ_BYTES) continue;
+          const fd = await fs.open(filePath, 'r');
+          let content = '';
+          try {
+            // Skip oversized files (use read limit as max search file size)
+            const fileStats = await fd.stat();
+            if (fileStats.size > DEFAULT_MAX_READ_BYTES) continue;
 
-          // Skip binary files
-          if (await isBinaryFile(filePath)) continue;
+            // Skip binary files
+            if (await isBinaryFileHandle(fd)) continue;
 
-          // Note: TOCTOU race between checks and read is acceptable for CLI tools.
-          // File changes during search result in graceful handling via try-catch.
-          const content = await fs.readFile(filePath, { encoding: 'utf-8' });
+            // Read content via the same file descriptor used for checks.
+            content = (await fd.readFile()).toString('utf8');
+          } finally {
+            await fd.close();
+          }
+
           const lines = content.split('\n');
 
           for (let lineNum = 0; lineNum < lines.length; lineNum++) {
@@ -1075,16 +1080,20 @@ export const applyTextEditTool = createTool<
     }
 
     try {
-      // Check file exists and is a file
-      const stats = await fs.stat(resolved);
-      if (!stats.isFile()) {
-        return errorResponse('VALIDATION_ERROR', `Path is not a file: ${input.path}`);
-      }
+      const fd = await fs.open(resolved, 'r');
+      let originalContent: string;
+      try {
+        // Check file exists and is a file
+        const stats = await fd.stat();
+        if (!stats.isFile()) {
+          return errorResponse('VALIDATION_ERROR', `Path is not a file: ${input.path}`);
+        }
 
-      // Read original content
-      // Note: TOCTOU race between stat and read is acceptable for CLI tools.
-      // Atomic write (temp+rename) ensures consistency of the final output.
-      const originalContent = await fs.readFile(resolved, { encoding: 'utf-8' });
+        // Read original content via the same file descriptor used for checks.
+        originalContent = (await fd.readFile()).toString('utf8');
+      } finally {
+        await fd.close();
+      }
       const originalSize = Buffer.byteLength(originalContent, 'utf-8');
 
       // Count occurrences
@@ -1554,32 +1563,36 @@ export const applyFilePatchTool = createTool<
     }
 
     try {
-      // Check file exists and is a file
-      const stats = await fs.stat(resolved);
-      if (!stats.isFile()) {
-        return errorResponse('VALIDATION_ERROR', `Path is not a file: ${input.path}`);
-      }
+      const fd = await fs.open(resolved, 'r');
+      let originalContent: string;
+      try {
+        // Check file exists and is a file
+        const stats = await fd.stat();
+        if (!stats.isFile()) {
+          return errorResponse('VALIDATION_ERROR', `Path is not a file: ${input.path}`);
+        }
 
-      // Check file size
-      if (stats.size > MAX_PATCH_FILE_SIZE) {
-        return errorResponse(
-          'VALIDATION_ERROR',
-          `File size (${String(stats.size)} bytes) exceeds max patch limit (${String(MAX_PATCH_FILE_SIZE)} bytes): ${input.path}`
-        );
-      }
+        // Check file size
+        if (stats.size > MAX_PATCH_FILE_SIZE) {
+          return errorResponse(
+            'VALIDATION_ERROR',
+            `File size (${String(stats.size)} bytes) exceeds max patch limit (${String(MAX_PATCH_FILE_SIZE)} bytes): ${input.path}`
+          );
+        }
 
-      // Check for binary
-      if (await isBinaryFile(resolved)) {
-        return errorResponse(
-          'VALIDATION_ERROR',
-          `File appears to be binary (contains null bytes): ${input.path}`
-        );
-      }
+        // Check for binary
+        if (await isBinaryFileHandle(fd)) {
+          return errorResponse(
+            'VALIDATION_ERROR',
+            `File appears to be binary (contains null bytes): ${input.path}`
+          );
+        }
 
-      // Read original content
-      // Note: TOCTOU race between binary check and read is acceptable for CLI tools.
-      // SHA256 verification and atomic writes provide consistency guarantees.
-      const originalContent = await fs.readFile(resolved, { encoding: 'utf-8' });
+        // Read original content via the same file descriptor used for checks.
+        originalContent = (await fd.readFile()).toString('utf8');
+      } finally {
+        await fd.close();
+      }
       const originalSize = Buffer.byteLength(originalContent, 'utf-8');
       const sha256Before = computeSha256(originalContent);
 
