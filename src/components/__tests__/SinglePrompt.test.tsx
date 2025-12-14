@@ -134,10 +134,19 @@ describe('SinglePrompt', () => {
   it('displays result when agent completes successfully (non-verbose)', async () => {
     const { lastFrame } = render(<SinglePrompt prompt="Say hello" />);
 
-    // Wait for async operations (config load + agent run)
-    await new Promise((resolve) => {
-      setTimeout(resolve, 150);
-    });
+    // Wait for async operations (config load + agent run) with polling
+    // CI environments can be slower, so we poll instead of fixed timeout
+    const maxWait = 2000;
+    const interval = 50;
+    let elapsed = 0;
+    while (elapsed < maxWait) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, interval);
+      });
+      elapsed += interval;
+      const frame = lastFrame();
+      if (frame !== undefined && frame.includes('Hello, world!')) break;
+    }
 
     // Should show the result
     expect(lastFrame()).toContain('Hello, world!');
@@ -146,10 +155,18 @@ describe('SinglePrompt', () => {
   it('streams output in verbose mode using runStream', async () => {
     const { lastFrame } = render(<SinglePrompt prompt="Say hello" verbose={true} />);
 
-    // Wait for async operations
-    await new Promise((resolve) => {
-      setTimeout(resolve, 150);
-    });
+    // Wait for async operations with polling
+    const maxWait = 2000;
+    const interval = 50;
+    let elapsed = 0;
+    while (elapsed < maxWait) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, interval);
+      });
+      elapsed += interval;
+      const frame = lastFrame();
+      if (frame !== undefined && frame.includes('Hello, world!')) break;
+    }
 
     // Should show the streamed output
     expect(lastFrame()).toContain('Hello, world!');

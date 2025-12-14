@@ -90,10 +90,18 @@ describe('InteractiveShell', () => {
   it('renders header with version after config loads', async () => {
     const { lastFrame } = render(<InteractiveShell />);
 
-    // Wait for config load
-    await new Promise((resolve) => {
-      setTimeout(resolve, 50);
-    });
+    // Wait for config load with polling
+    const maxWait = 1000;
+    const interval = 20;
+    let elapsed = 0;
+    while (elapsed < maxWait) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, interval);
+      });
+      elapsed += interval;
+      const frame = lastFrame();
+      if (frame !== undefined && frame.includes('Agent Framework')) break;
+    }
 
     // Should show header with version
     expect(lastFrame()).toContain('Agent Framework v0.1.0');
@@ -102,10 +110,18 @@ describe('InteractiveShell', () => {
   it('renders header with model info after config loads', async () => {
     const { lastFrame } = render(<InteractiveShell />);
 
-    // Wait for config load
-    await new Promise((resolve) => {
-      setTimeout(resolve, 50);
-    });
+    // Wait for config load with polling
+    const maxWait = 1000;
+    const interval = 20;
+    let elapsed = 0;
+    while (elapsed < maxWait) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, interval);
+      });
+      elapsed += interval;
+      const frame = lastFrame();
+      if (frame !== undefined && frame.includes('openai')) break;
+    }
 
     // Should show model info
     expect(lastFrame()).toContain('openai');
@@ -115,10 +131,18 @@ describe('InteractiveShell', () => {
   it('shows welcome message when no messages exist', async () => {
     const { lastFrame } = render(<InteractiveShell />);
 
-    // Wait for config load
-    await new Promise((resolve) => {
-      setTimeout(resolve, 50);
-    });
+    // Wait for config load with polling
+    const maxWait = 1000;
+    const interval = 20;
+    let elapsed = 0;
+    while (elapsed < maxWait) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, interval);
+      });
+      elapsed += interval;
+      const frame = lastFrame();
+      if (frame !== undefined && frame.includes('Type a message')) break;
+    }
 
     // Should show welcome message
     expect(lastFrame()).toContain('Type a message to chat');
@@ -127,10 +151,18 @@ describe('InteractiveShell', () => {
   it('shows input prompt when not processing', async () => {
     const { lastFrame } = render(<InteractiveShell />);
 
-    // Wait for config load
-    await new Promise((resolve) => {
-      setTimeout(resolve, 50);
-    });
+    // Wait for config load with polling
+    const maxWait = 1000;
+    const interval = 20;
+    let elapsed = 0;
+    while (elapsed < maxWait) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, interval);
+      });
+      elapsed += interval;
+      const frame = lastFrame();
+      if (frame !== undefined && frame.includes('>')) break;
+    }
 
     // Should show input prompt (cursor indicator)
     expect(lastFrame()).toContain('>');
@@ -145,10 +177,18 @@ describe('InteractiveShell', () => {
 
     const { lastFrame } = render(<InteractiveShell />);
 
-    // Wait for config load
-    await new Promise((resolve) => {
-      setTimeout(resolve, 50);
-    });
+    // Wait for config load with polling
+    const maxWait = 1000;
+    const interval = 20;
+    let elapsed = 0;
+    while (elapsed < maxWait) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, interval);
+      });
+      elapsed += interval;
+      const frame = lastFrame();
+      if (frame !== undefined && frame.includes('Error')) break;
+    }
 
     // Should show error
     expect(lastFrame()).toContain('Error');
