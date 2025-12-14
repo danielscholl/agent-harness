@@ -9,6 +9,16 @@ import { Box, Text, useInput, useApp } from 'ink';
 import { Agent } from '../agent/agent.js';
 import { loadConfig } from '../config/manager.js';
 import { createCallbacks } from '../cli/callbacks.js';
+import {
+  getPathInfoTool,
+  listDirectoryTool,
+  readFileTool,
+  searchTextTool,
+  writeFileTool,
+  applyTextEditTool,
+  createDirectoryTool,
+  applyFilePatchTool,
+} from '../tools/index.js';
 import { VERSION } from '../cli/version.js';
 import { executeCommand, isCommand } from '../cli/commands/index.js';
 import { unescapeSlash } from '../cli/constants.js';
@@ -203,6 +213,14 @@ export function InteractiveShell({
 
     // Initialize agent lazily with callbacks wired to state
     if (agentRef.current === null && state.config !== null) {
+      // Propagate filesystem writes config to env var for tools to check
+      if (!state.config.agent.filesystemWritesEnabled) {
+        process.env['AGENT_FILESYSTEM_WRITES_ENABLED'] = 'false';
+      } else {
+        // Ensure env var is set to true if config allows writes
+        process.env['AGENT_FILESYSTEM_WRITES_ENABLED'] = 'true';
+      }
+
       const callbacks = createCallbacks({
         setSpinnerMessage: (msg) => {
           setState((s) => ({ ...s, spinnerMessage: msg ?? '' }));
@@ -268,9 +286,22 @@ export function InteractiveShell({
         },
       });
 
+      // Create filesystem tools array
+      const filesystemTools = [
+        getPathInfoTool,
+        listDirectoryTool,
+        readFileTool,
+        searchTextTool,
+        writeFileTool,
+        applyTextEditTool,
+        createDirectoryTool,
+        applyFilePatchTool,
+      ];
+
       agentRef.current = new Agent({
         config: state.config,
         callbacks,
+        tools: filesystemTools,
       });
     }
 
@@ -287,8 +318,8 @@ export function InteractiveShell({
       return;
     }
 
-    // Run the agent with streaming - runStream() emits onLLMStream callbacks
-    // Note: runStream() does not support tool calling (documented limitation)
+    // Run the agent with tools - run() supports tool calling
+    // (runStream() does not support tool calling - documented limitation)
     // Convert ShellMessage[] to Message[] for agent history
     // state.messages is from closure (before current user message was added)
     const history: Message[] = state.messages.map((msg) => ({
@@ -297,11 +328,11 @@ export function InteractiveShell({
     }));
 
     try {
-      for await (const _chunk of agentRef.current.runStream(query, history)) {
-        // Chunks are handled via onLLMStream callback (appendToOutput)
-        // The loop just drives iteration; we don't need to use _chunk here
-      }
-      // onAgentEnd callback fires at end of runStream, triggering onComplete
+      // Use run() instead of runStream() to support tool calling
+      // The result is handled by onComplete callback - do NOT duplicate message here
+      await agentRef.current.run(query, history);
+      // onAgentEnd callback fires at end of run, triggering onComplete
+      // which adds the assistant message and sets isProcessing=false
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setState((s) => ({

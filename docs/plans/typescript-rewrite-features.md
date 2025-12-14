@@ -107,17 +107,31 @@ Port the interactive affordances from `../agent-base/src/agent/cli/interactive.p
 ### Feature 16: Add basic terminal display components
 Implement Ink equivalents of Rich UI pieces as `components/Spinner.tsx`, `TaskProgress.tsx`, and an initial `AnswerBox.tsx`. Wire them via callbacks so planning/execution state is visible without relying on global events.
 
-### Feature 17: Port FileSystem tools
-Reimplement `../agent-base/src/agent/tools/filesystem.py` in TypeScript. Ensure parity on behaviors like path validation, error formatting, and large file handling. These fundamental tools enable real-world agent testing and demos.
+### Feature 17: Port FileSystem tools ✅
+Implement a **minimal, optimized** filesystem toolset in TypeScript focused on real workflows (read/search/edit project files like `pom.xml`) while maintaining the core sandboxing/safety behaviors from `../agent-base/src/agent/tools/filesystem.py` (path validation, consistent errors, and large-file handling).
 
-**CLI integration (part of this feature):** Wire the FileSystem tools into `Agent` construction in `InteractiveShell` and `SinglePrompt` so they are usable immediately for manual testing/demos.
+**Implemented (2025-12-14):**
+- `get_path_info` - File/directory metadata (exists, type, size, permissions)
+- `list_directory` - Directory listing with recursive mode, hidden file filtering
+- `read_file` - Text file reading with line range support, binary detection
+- `search_text` - Pattern search with regex/literal modes, finds all matches per line
+- `write_file` - File creation with create/overwrite/append modes (atomic writes)
+- `apply_text_edit` - Exact text replacement with atomic writes via temp file + rename
+- `create_directory` - Directory creation with parent support
+- `apply_file_patch` - **Primary edit tool**: unified diff patch application with context validation, SHA256 verification, and dryRun mode
 
-**Streaming vs tool-calling (MVP approach):**
-- `Agent.runStream()` does not support tool calling (tools are explicitly ignored in streaming mode)
-- When tools are enabled, use `run()` (non-streaming) for full tool support
-- Offer streaming only in an explicit "chat-only" mode (flag/env) with tools disabled until true streaming-with-tools is implemented
+**Security Features:**
+- Workspace sandboxing via `resolveWorkspacePathSafe()` with symlink escape protection
+- Write permission enforcement via `AGENT_FILESYSTEM_WRITES_ENABLED` env var
+- Binary file detection (null byte check in first 8KB)
+- Oversized file protection in search_text (skips files > 1MB)
+- Atomic writes for all file modifications (temp file + rename)
 
-**Config parity/safety:** Match Python defaults for filesystem tooling (writes disabled by default; enforce read/write size limits via config).
+**CLI integration:** Tools wired into `InteractiveShell` and `SinglePrompt` via Agent constructor.
+
+**Test Coverage:** 101 filesystem-specific tests, all passing.
+
+See `docs/specs/feature-017-filesystem-tools.md` for detailed specification.
 
 ---
 

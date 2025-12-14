@@ -9,6 +9,16 @@ import { Box, Text, useApp } from 'ink';
 import { Agent } from '../agent/agent.js';
 import { loadConfig } from '../config/manager.js';
 import { createCallbacks } from '../cli/callbacks.js';
+import {
+  getPathInfoTool,
+  listDirectoryTool,
+  readFileTool,
+  searchTextTool,
+  writeFileTool,
+  applyTextEditTool,
+  createDirectoryTool,
+  applyFilePatchTool,
+} from '../tools/index.js';
 import { Spinner } from './Spinner.js';
 import { getUserFriendlyMessage } from '../errors/index.js';
 import type { SinglePromptProps } from '../cli/types.js';
@@ -74,6 +84,14 @@ export function SinglePrompt({ prompt, verbose }: SinglePromptProps): React.Reac
         spinnerMessage: 'Thinking...',
       }));
 
+      // Propagate filesystem writes config to env var for tools to check
+      if (!config.agent.filesystemWritesEnabled) {
+        process.env['AGENT_FILESYSTEM_WRITES_ENABLED'] = 'false';
+      } else {
+        // Ensure env var is set to true if config allows writes
+        process.env['AGENT_FILESYSTEM_WRITES_ENABLED'] = 'true';
+      }
+
       // Create agent with callbacks wired to state
       const callbacks = createCallbacks(
         {
@@ -110,35 +128,41 @@ export function SinglePrompt({ prompt, verbose }: SinglePromptProps): React.Reac
         { verbose: verbose === true }
       );
 
+      // Create filesystem tools array
+      const filesystemTools = [
+        getPathInfoTool,
+        listDirectoryTool,
+        readFileTool,
+        searchTextTool,
+        writeFileTool,
+        applyTextEditTool,
+        createDirectoryTool,
+        applyFilePatchTool,
+      ];
+
       const agent = new Agent({
         config,
         callbacks,
+        tools: filesystemTools,
       });
 
       try {
-        if (verbose === true) {
-          // Verbose mode: use runStream() to get streaming via onLLMStream callback
-          for await (const _chunk of agent.runStream(prompt)) {
-            // Chunks are handled via onLLMStream callback (appendToOutput)
-            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mountedRef may change during iteration
-            if (!mountedRef.current) return;
-          }
-          // Note: onAgentEnd callback is fired by runStream, which triggers onComplete
-        } else {
-          // Non-verbose mode: use run() for clean final answer
-          const result = await agent.run(prompt);
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mountedRef may be false after await
-          if (mountedRef.current) {
-            setState((s) => {
-              // Don't override error state - onError callback may have already set it
-              if (s.phase === 'error') return s;
-              return {
-                ...s,
-                phase: 'done',
-                output: result,
-              };
-            });
-          }
+        // Both modes use run() to support tool calling
+        // Verbose mode gets streaming output via onLLMStream callback
+        // Non-verbose mode gets clean final answer
+        const result = await agent.run(prompt);
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mountedRef may be false after await
+        if (mountedRef.current) {
+          setState((s) => {
+            // Don't override error state - onError callback may have already set it
+            if (s.phase === 'error') return s;
+            return {
+              ...s,
+              phase: 'done',
+              // In verbose mode, prefer streamed output if available; otherwise use final result
+              output: verbose === true && s.output !== '' ? s.output : result,
+            };
+          });
         }
       } catch (error) {
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mountedRef may be false after await
