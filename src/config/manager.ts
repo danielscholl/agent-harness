@@ -142,6 +142,10 @@ export class NodeFileSystem implements IFileSystem {
   async readdir(dirPath: string): Promise<string[]> {
     return fs.readdir(dirPath);
   }
+
+  async rename(oldPath: string, newPath: string): Promise<void> {
+    await fs.rename(oldPath, newPath);
+  }
 }
 
 // -----------------------------------------------------------------------------

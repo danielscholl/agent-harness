@@ -173,3 +173,17 @@ export const DEFAULT_SKILLS_CONFIG = {
   userDir: undefined,
   scriptTimeout: DEFAULT_SKILL_SCRIPT_TIMEOUT,
 } as const;
+
+// Session defaults
+export const DEFAULT_SESSION_DIR = '~/.agent/sessions';
+export const DEFAULT_MAX_SESSIONS = 50;
+export const DEFAULT_AUTO_SAVE = true;
+export const DEFAULT_SESSION_NAME_MAX_LENGTH = 64;
+
+/**
+ * Default session configuration.
+ */
+export const DEFAULT_SESSION_CONFIG = {
+  autoSave: DEFAULT_AUTO_SAVE,
+  maxSessions: DEFAULT_MAX_SESSIONS,
+} as const;

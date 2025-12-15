@@ -9,6 +9,11 @@ import {
   COMMAND_CLEAR,
   COMMAND_HISTORY,
   COMMAND_TELEMETRY,
+  COMMAND_SAVE,
+  COMMAND_SESSIONS,
+  COMMAND_RESUME,
+  COMMAND_PURGE,
+  COMMAND_CONTINUE,
   matchesCommand,
   isShellCommand,
   isSlashCommand,
@@ -21,9 +26,28 @@ import { exitHandler } from './exit.js';
 import { historyHandler } from './history.js';
 import { telemetryHandler } from './telemetry.js';
 import { shellHandler } from './shell.js';
+import {
+  saveHandler,
+  sessionsHandler,
+  resumeHandler,
+  purgeHandler,
+  continueHandler,
+} from './session.js';
 
 export type { CommandDefinition, CommandHandler, CommandContext, CommandResult };
-export { helpHandler, clearHandler, exitHandler, historyHandler, telemetryHandler, shellHandler };
+export {
+  helpHandler,
+  clearHandler,
+  exitHandler,
+  historyHandler,
+  telemetryHandler,
+  shellHandler,
+  saveHandler,
+  sessionsHandler,
+  resumeHandler,
+  purgeHandler,
+  continueHandler,
+};
 
 /** All registered commands */
 export const COMMANDS: CommandDefinition[] = [
@@ -52,6 +76,34 @@ export const COMMANDS: CommandDefinition[] = [
     description: 'Manage telemetry dashboard',
     handler: telemetryHandler,
     usage: '/telemetry [start|stop|status|url]',
+  },
+  {
+    aliases: COMMAND_SAVE,
+    description: 'Save current session',
+    handler: saveHandler,
+    usage: '/save [name]',
+  },
+  {
+    aliases: COMMAND_SESSIONS,
+    description: 'List saved sessions',
+    handler: sessionsHandler,
+  },
+  {
+    aliases: COMMAND_RESUME,
+    description: 'Resume a saved session',
+    handler: resumeHandler,
+    usage: '/resume <session-id>',
+  },
+  {
+    aliases: COMMAND_PURGE,
+    description: 'Delete old or specific sessions',
+    handler: purgeHandler,
+    usage: '/purge [count|session-id]',
+  },
+  {
+    aliases: COMMAND_CONTINUE,
+    description: 'Continue the last session',
+    handler: continueHandler,
   },
 ];
 

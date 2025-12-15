@@ -3,6 +3,7 @@
  */
 
 import type { AppConfig } from '../../config/schema.js';
+import type { StoredMessage } from '../../utils/message-history.js';
 
 /** Result of a command execution */
 export interface CommandResult {
@@ -18,6 +19,18 @@ export interface CommandResult {
   shouldClearHistory?: boolean;
   /** Whether to display conversation history */
   shouldShowHistory?: boolean;
+  /** Whether to save the current session */
+  shouldSaveSession?: boolean;
+  /** Session name for save operation */
+  sessionName?: string;
+  /** Session ID to resume */
+  sessionToResume?: string;
+  /** Restored session messages for resume operation */
+  sessionMessages?: StoredMessage[];
+  /** Context summary for resumed session */
+  sessionContextSummary?: string;
+  /** Whether to list saved sessions */
+  shouldListSessions?: boolean;
   /** Additional data from command */
   data?: unknown;
 }

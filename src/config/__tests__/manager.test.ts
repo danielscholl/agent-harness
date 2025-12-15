@@ -67,6 +67,29 @@ class MockFileSystem implements IFileSystem {
     return parts.join('/') || '/';
   }
 
+  unlink(path: string): Promise<void> {
+    if (!this.files.has(path)) {
+      return Promise.reject(new Error(`ENOENT: no such file or directory: ${path}`));
+    }
+    this.files.delete(path);
+    return Promise.resolve();
+  }
+
+  readdir(_dirPath: string): Promise<string[]> {
+    // Simple implementation for tests
+    return Promise.resolve([]);
+  }
+
+  rename(oldPath: string, newPath: string): Promise<void> {
+    const content = this.files.get(oldPath);
+    if (content === undefined) {
+      return Promise.reject(new Error(`ENOENT: no such file or directory: ${oldPath}`));
+    }
+    this.files.delete(oldPath);
+    this.files.set(newPath, content);
+    return Promise.resolve();
+  }
+
   // Test helpers
   setFile(path: string, content: string): void {
     this.files.set(path, content);

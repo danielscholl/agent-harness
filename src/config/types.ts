@@ -81,6 +81,14 @@ export interface IFileSystem {
    * @returns Array of filenames (not full paths)
    */
   readdir(path: string): Promise<string[]>;
+
+  /**
+   * Rename/move a file atomically.
+   * Used for atomic write pattern: write to temp, then rename.
+   * @param oldPath - Source path
+   * @param newPath - Destination path
+   */
+  rename(oldPath: string, newPath: string): Promise<void>;
 }
 
 // -----------------------------------------------------------------------------
