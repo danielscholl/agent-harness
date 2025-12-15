@@ -23,7 +23,8 @@ import { VERSION } from '../cli/version.js';
 import { executeCommand, isCommand } from '../cli/commands/index.js';
 import { unescapeSlash } from '../cli/constants.js';
 import { InputHistory } from '../cli/input/index.js';
-import { MessageHistory } from '../utils/index.js';
+import { MessageHistory, SessionManager } from '../utils/index.js';
+import type { StoredMessage } from '../utils/index.js';
 import { Header } from './Header.js';
 import { Spinner } from './Spinner.js';
 import { ErrorDisplay } from './ErrorDisplay.js';
@@ -51,21 +52,23 @@ interface ShellState {
   configError: string | null;
   activeTasks: ActiveTask[];
   completedTasks: CompletedTask[];
+  /** Session ID if resuming a session */
+  resumedSessionId: string | null;
 }
 
 /**
  * InteractiveShell component.
  * Provides a chat interface for conversing with the agent.
  */
-export function InteractiveShell({
-  // TODO(Feature 20): _resumeSession is intentionally unused; placeholder for session resume functionality
-  resumeSession: _resumeSession,
-}: InteractiveShellProps): React.ReactElement {
+export function InteractiveShell({ resumeSession }: InteractiveShellProps): React.ReactElement {
   const { exit } = useApp();
   const agentRef = useRef<Agent | null>(null);
   const historyRef = useRef<InputHistory>(new InputHistory());
   const messageHistoryRef = useRef<MessageHistory | null>(null);
+  const sessionManagerRef = useRef<SessionManager | null>(null);
   const currentQueryRef = useRef<string>('');
+  // Track if exit was via Ctrl+C - spec says "do NOT save on Ctrl+C"
+  const exitViaCtrlCRef = useRef(false);
 
   const [state, setState] = useState<ShellState>({
     input: '',
@@ -79,9 +82,10 @@ export function InteractiveShell({
     configError: null,
     activeTasks: [],
     completedTasks: [],
+    resumedSessionId: null,
   });
 
-  // Load config on mount
+  // Load config on mount and handle session resume
   useEffect(() => {
     async function loadConfiguration(): Promise<void> {
       const result = await loadConfig();
@@ -100,6 +104,59 @@ export function InteractiveShell({
             historyLimit: config.memory.historyLimit,
           });
         }
+
+        // Initialize SessionManager (config may be null, use defaults via optional chain)
+        if (sessionManagerRef.current === null) {
+          sessionManagerRef.current = new SessionManager({
+            maxSessions: config?.session.maxSessions,
+          });
+        }
+
+        // Handle session resume from --continue flag
+        if (resumeSession === true) {
+          try {
+            const sessionManager = sessionManagerRef.current;
+            // Get the last session ID first
+            const lastSessionId = await sessionManager.getLastSession();
+
+            if (lastSessionId !== null) {
+              const restored = await sessionManager.restoreSession(lastSessionId);
+
+              if (restored !== null) {
+                // Populate message history with restored messages
+                for (const msg of restored.messages) {
+                  if (messageHistoryRef.current !== null) {
+                    messageHistoryRef.current.add(msg);
+                  }
+                }
+
+                // Convert StoredMessage to ShellMessage for UI (filter out 'tool' roles)
+                const shellMessages: ShellMessage[] = restored.messages
+                  .filter((m) => m.role === 'user' || m.role === 'assistant' || m.role === 'system')
+                  .map((m) => ({
+                    role: m.role as 'user' | 'assistant' | 'system',
+                    content: m.content,
+                    timestamp: new Date(m.timestamp),
+                  }));
+
+                setState((s) => ({
+                  ...s,
+                  config,
+                  configLoaded: true,
+                  messages: shellMessages,
+                  resumedSessionId: lastSessionId,
+                }));
+                return;
+              }
+            }
+          } catch {
+            // Log but continue - session restore failure shouldn't block shell
+            if (process.env.AGENT_DEBUG !== undefined) {
+              process.stderr.write(`[DEBUG] Failed to restore session\n`);
+            }
+          }
+        }
+
         setState((s) => ({
           ...s,
           config,
@@ -115,7 +172,85 @@ export function InteractiveShell({
     }
 
     void loadConfiguration();
-  }, []);
+  }, [resumeSession]);
+
+  // Auto-save session on exit if enabled in config
+  // We use a ref to access latest state in cleanup without causing re-renders
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  useEffect(() => {
+    // Return cleanup function for auto-save on unmount
+    return () => {
+      const currentState = stateRef.current;
+      const sessionManager = sessionManagerRef.current;
+
+      // Skip auto-save if exit was via Ctrl+C (spec requirement)
+      if (exitViaCtrlCRef.current) {
+        return;
+      }
+
+      // Only auto-save if enabled and we have messages
+      if (
+        currentState.config?.session.autoSave !== true ||
+        sessionManager === null ||
+        currentState.messages.length === 0
+      ) {
+        return;
+      }
+
+      // Get messages to save - prefer MessageHistory, fall back to shell messages
+      // Filter out 'tool' role messages (architecture: context/tool outputs are NOT restored)
+      const allStored = messageHistoryRef.current?.getAllStored() ?? [];
+      const storedMessages: StoredMessage[] = allStored.filter((m) => m.role !== 'tool');
+
+      // If no message history, convert current shell messages (adding required id field)
+      if (storedMessages.length === 0) {
+        let msgIndex = 0;
+        for (const msg of currentState.messages) {
+          if (msg.role === 'user' || msg.role === 'assistant') {
+            storedMessages.push({
+              id: `msg-${String(Date.now())}-${String(msgIndex++)}`,
+              role: msg.role,
+              content: msg.content,
+              timestamp: msg.timestamp.toISOString(),
+            });
+          }
+        }
+      }
+
+      if (storedMessages.length === 0) {
+        return;
+      }
+
+      // Fire and forget - we can't await in cleanup
+      // Use existing session name if we resumed one (to update), otherwise create new
+      const sessionName = currentState.resumedSessionId ?? undefined;
+
+      // Extract provider/model from config for session metadata
+      const config = currentState.config;
+      const autoSaveProvider = config.providers.default;
+      const autoSaveProviderConfig = config.providers[
+        autoSaveProvider as keyof typeof config.providers
+      ] as Record<string, unknown> | undefined;
+      const autoSaveModel = (autoSaveProviderConfig?.model ??
+        autoSaveProviderConfig?.deployment ??
+        'unknown') as string;
+
+      void sessionManager
+        .saveSession(storedMessages, {
+          name: sessionName,
+          provider: autoSaveProvider,
+          model: autoSaveModel,
+        })
+        .catch((err: unknown) => {
+          // Log but don't throw - we're in cleanup
+          if (process.env.AGENT_DEBUG !== undefined) {
+            process.stderr.write(`[DEBUG] Auto-save failed: ${String(err)}\n`);
+          }
+        });
+    };
+  }, []); // Empty deps - cleanup runs on unmount
 
   /**
    * Add a system message to the conversation.
@@ -228,6 +363,132 @@ export function InteractiveShell({
           historyRef.current.clear();
           messageHistoryRef.current?.clear();
         }
+        // Handle /save command - save current session
+        if (result.shouldSaveSession === true) {
+          const sessionManager = sessionManagerRef.current;
+          if (sessionManager !== null) {
+            try {
+              // Get all messages from MessageHistory for persistence
+              // Filter out 'tool' role messages (architecture: context/tool outputs are NOT restored)
+              const allStored = messageHistoryRef.current?.getAllStored() ?? [];
+              const storedMessages: StoredMessage[] = allStored.filter((m) => m.role !== 'tool');
+
+              // If no message history, convert current shell messages (adding required id field)
+              if (storedMessages.length === 0 && state.messages.length > 0) {
+                let msgIndex = 0;
+                for (const msg of state.messages) {
+                  if (msg.role === 'user' || msg.role === 'assistant') {
+                    storedMessages.push({
+                      id: `msg-${String(Date.now())}-${String(msgIndex++)}`,
+                      role: msg.role,
+                      content: msg.content,
+                      timestamp: msg.timestamp.toISOString(),
+                    });
+                  }
+                }
+              }
+
+              if (storedMessages.length === 0) {
+                // Update the last system message
+                setState((s) => {
+                  const lastMsgIndex = s.messages.length - 1;
+                  const lastMsg = s.messages[lastMsgIndex];
+                  if (lastMsg && lastMsg.role === 'system') {
+                    const updatedMessages = [...s.messages];
+                    updatedMessages[lastMsgIndex] = {
+                      ...lastMsg,
+                      content: 'No messages to save.',
+                    };
+                    return { ...s, messages: updatedMessages };
+                  }
+                  return s;
+                });
+                return;
+              }
+
+              // Extract provider/model from config for session metadata
+              const saveProvider = state.config?.providers.default ?? 'unknown';
+              const saveProviderConfig = state.config?.providers[
+                saveProvider as keyof typeof state.config.providers
+              ] as Record<string, unknown> | undefined;
+              const saveModel = (saveProviderConfig?.model ??
+                saveProviderConfig?.deployment ??
+                'unknown') as string;
+
+              const sessionMeta = await sessionManager.saveSession(storedMessages, {
+                name: result.sessionName,
+                provider: saveProvider,
+                model: saveModel,
+              });
+
+              // Update the last system message with success
+              setState((s) => {
+                const lastMsgIndex = s.messages.length - 1;
+                const lastMsg = s.messages[lastMsgIndex];
+                if (lastMsg && lastMsg.role === 'system') {
+                  const updatedMessages = [...s.messages];
+                  updatedMessages[lastMsgIndex] = {
+                    ...lastMsg,
+                    content: `Session saved: ${sessionMeta.id}`,
+                  };
+                  return { ...s, messages: updatedMessages, resumedSessionId: sessionMeta.id };
+                }
+                return s;
+              });
+            } catch (error) {
+              const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+              setState((s) => {
+                const lastMsgIndex = s.messages.length - 1;
+                const lastMsg = s.messages[lastMsgIndex];
+                if (lastMsg && lastMsg.role === 'system') {
+                  const updatedMessages = [...s.messages];
+                  updatedMessages[lastMsgIndex] = {
+                    ...lastMsg,
+                    content: `Failed to save session: ${errorMessage}`,
+                  };
+                  return { ...s, messages: updatedMessages };
+                }
+                return s;
+              });
+            }
+          }
+          return;
+        }
+
+        // Handle /resume command - restore session messages
+        if (result.sessionToResume !== undefined && result.sessionMessages !== undefined) {
+          // Clear current message history and populate with restored messages
+          messageHistoryRef.current?.clear();
+          for (const msg of result.sessionMessages) {
+            messageHistoryRef.current?.add(msg);
+          }
+
+          // Convert StoredMessage to ShellMessage for UI (filter out 'tool' roles)
+          const shellMessages: ShellMessage[] = result.sessionMessages
+            .filter((m) => m.role === 'user' || m.role === 'assistant' || m.role === 'system')
+            .map((m) => ({
+              role: m.role as 'user' | 'assistant' | 'system',
+              content: m.content,
+              timestamp: new Date(m.timestamp),
+            }));
+
+          // If there's a context summary, add it as a system message
+          if (result.sessionContextSummary !== undefined) {
+            shellMessages.unshift({
+              role: 'system' as const,
+              content: `Session context: ${result.sessionContextSummary}`,
+              timestamp: new Date(),
+            });
+          }
+
+          setState((s) => ({
+            ...s,
+            messages: shellMessages,
+            resumedSessionId: result.sessionToResume ?? null,
+          }));
+          return;
+        }
+
         // Handle /history command - show conversation history
         if (result.shouldShowHistory === true) {
           const msgHistory = messageHistoryRef.current;
@@ -450,6 +711,8 @@ export function InteractiveShell({
   useInput((input, key) => {
     // Always allow Ctrl+C to exit, even during loading or processing
     if (key.ctrl && input === 'c') {
+      // Mark as Ctrl+C exit to skip auto-save (spec requirement)
+      exitViaCtrlCRef.current = true;
       exit();
       return;
     }

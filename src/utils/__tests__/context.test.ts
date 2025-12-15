@@ -86,6 +86,15 @@ function createMockFileSystem(initialState?: Partial<MockFileSystemState>): IFil
       }
       return Promise.resolve(files);
     },
+    rename(oldPath: string, newPath: string): Promise<void> {
+      const content = state.files.get(oldPath);
+      if (content === undefined) {
+        return Promise.reject(new Error(`File not found: ${oldPath}`));
+      }
+      state.files.delete(oldPath);
+      state.files.set(newPath, content);
+      return Promise.resolve();
+    },
   };
 }
 

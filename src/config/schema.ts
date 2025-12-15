@@ -30,6 +30,8 @@ import {
   DEFAULT_BASE_DELAY_MS,
   DEFAULT_MAX_DELAY_MS,
   DEFAULT_ENABLE_JITTER,
+  DEFAULT_AUTO_SAVE,
+  DEFAULT_MAX_SESSIONS,
   LOG_LEVELS,
   MEMORY_TYPES,
   PROVIDER_NAMES,
@@ -295,6 +297,25 @@ export const RetryConfigSchema = z
 export type RetryConfig = z.infer<typeof RetryConfigSchema>;
 
 // -----------------------------------------------------------------------------
+// Session Schema
+// -----------------------------------------------------------------------------
+
+/**
+ * Session configuration for save/restore functionality.
+ */
+export const SessionConfigSchema = z.object({
+  autoSave: z.boolean().default(DEFAULT_AUTO_SAVE).describe('Auto-save session on exit'),
+  maxSessions: z
+    .number()
+    .int()
+    .positive()
+    .default(DEFAULT_MAX_SESSIONS)
+    .describe('Maximum sessions to keep'),
+});
+
+export type SessionConfig = z.infer<typeof SessionConfigSchema>;
+
+// -----------------------------------------------------------------------------
 // Root Application Config Schema
 // -----------------------------------------------------------------------------
 
@@ -321,6 +342,9 @@ export const AppConfigSchema = z.object({
   ),
   retry: RetryConfigSchema.default(() => RetryConfigSchema.parse({})).describe(
     'Retry configuration for LLM operations'
+  ),
+  session: SessionConfigSchema.default(() => SessionConfigSchema.parse({})).describe(
+    'Session save/restore configuration'
   ),
 });
 

@@ -46,6 +46,36 @@ jest.unstable_mockModule('../../cli/input/index.js', () => ({
   },
 }));
 
+// Mock utils module for SessionManager
+jest.unstable_mockModule('../../utils/index.js', () => ({
+  SessionManager: class MockSessionManager {
+    getLastSession(): Promise<string | null> {
+      return Promise.resolve(null);
+    }
+    restoreSession(): Promise<null> {
+      return Promise.resolve(null);
+    }
+    saveSession(): Promise<{ id: string }> {
+      return Promise.resolve({ id: 'mock-session-id' });
+    }
+    listSessions(): Promise<[]> {
+      return Promise.resolve([]);
+    }
+  },
+  MessageHistory: class MockMessageHistory {
+    add(): void {}
+    addExchange(): void {}
+    getRecent(): [] {
+      return [];
+    }
+    getAllStored(): [] {
+      return [];
+    }
+    isEmpty = true;
+    clear(): void {}
+  },
+}));
+
 // Mock Agent that invokes callbacks properly
 // InteractiveShell uses runStream(), which invokes onLLMStream and onAgentEnd
 jest.unstable_mockModule('../../agent/agent.js', () => ({
@@ -89,6 +119,7 @@ const mockConfig = {
   memory: { enabled: false },
   skills: { plugins: [], disabledBundled: [], enabledBundled: [] },
   retry: { maxRetries: 3, baseDelay: 1000, maxDelay: 30000, multiplier: 2.0 },
+  session: { autoSave: false, maxSessions: 50 },
 };
 
 describe('InteractiveShell', () => {
