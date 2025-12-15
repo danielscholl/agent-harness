@@ -9,6 +9,9 @@ import { createOpenAIClient } from './providers/openai.js';
 import { createAnthropicClient } from './providers/anthropic.js';
 import { createGeminiClient } from './providers/gemini.js';
 import { createAzureOpenAIClient } from './providers/azure-openai.js';
+import { createLocalClient } from './providers/local.js';
+import { createFoundryClient } from './providers/foundry.js';
+import { createGitHubClient } from './providers/github.js';
 
 /**
  * Registry mapping provider names to their factory functions.
@@ -16,7 +19,7 @@ import { createAzureOpenAIClient } from './providers/azure-openai.js';
  * Providers are added incrementally:
  * - Feature 4: OpenAI
  * - Feature 12: Anthropic, Gemini, Azure OpenAI
- * - Feature 25: GitHub Models
+ * - Feature 23: GitHub Models
  * - Feature 26: Local (Docker)
  * - Feature 31: Azure AI Foundry
  */
@@ -25,10 +28,9 @@ export const PROVIDER_REGISTRY: Partial<Record<ProviderName, ProviderFactory>> =
   anthropic: createAnthropicClient,
   gemini: createGeminiClient,
   azure: createAzureOpenAIClient,
-  // Future providers:
-  // github: createGitHubClient,
-  // local: createLocalClient,
-  // foundry: createFoundryClient,
+  local: createLocalClient,
+  foundry: createFoundryClient,
+  github: createGitHubClient,
 };
 
 /**

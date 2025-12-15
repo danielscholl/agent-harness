@@ -28,11 +28,26 @@ describe('Provider Registry', () => {
       expect(PROVIDER_REGISTRY.azure).toBeDefined();
     });
 
+    it('has local provider registered', () => {
+      expect(PROVIDER_REGISTRY.local).toBeDefined();
+    });
+
+    it('has foundry provider registered', () => {
+      expect(PROVIDER_REGISTRY.foundry).toBeDefined();
+    });
+
+    it('has github provider registered', () => {
+      expect(PROVIDER_REGISTRY.github).toBeDefined();
+    });
+
     it('all registered factories are functions', () => {
       expect(typeof PROVIDER_REGISTRY.openai).toBe('function');
       expect(typeof PROVIDER_REGISTRY.anthropic).toBe('function');
       expect(typeof PROVIDER_REGISTRY.gemini).toBe('function');
       expect(typeof PROVIDER_REGISTRY.azure).toBe('function');
+      expect(typeof PROVIDER_REGISTRY.local).toBe('function');
+      expect(typeof PROVIDER_REGISTRY.foundry).toBe('function');
+      expect(typeof PROVIDER_REGISTRY.github).toBe('function');
     });
   });
 
@@ -61,9 +76,22 @@ describe('Provider Registry', () => {
       expect(typeof factory).toBe('function');
     });
 
-    it('returns undefined for unsupported provider', () => {
+    it('returns factory for local provider', () => {
+      const factory = getProviderFactory('local');
+      expect(factory).toBeDefined();
+      expect(typeof factory).toBe('function');
+    });
+
+    it('returns factory for foundry provider', () => {
+      const factory = getProviderFactory('foundry');
+      expect(factory).toBeDefined();
+      expect(typeof factory).toBe('function');
+    });
+
+    it('returns factory for github provider', () => {
       const factory = getProviderFactory('github');
-      expect(factory).toBeUndefined();
+      expect(factory).toBeDefined();
+      expect(typeof factory).toBe('function');
     });
   });
 
@@ -84,16 +112,16 @@ describe('Provider Registry', () => {
       expect(isProviderSupported('azure')).toBe(true);
     });
 
-    it('returns false for local (not yet implemented)', () => {
-      expect(isProviderSupported('local')).toBe(false);
+    it('returns true for local', () => {
+      expect(isProviderSupported('local')).toBe(true);
     });
 
-    it('returns false for foundry (not yet implemented)', () => {
-      expect(isProviderSupported('foundry')).toBe(false);
+    it('returns true for foundry', () => {
+      expect(isProviderSupported('foundry')).toBe(true);
     });
 
-    it('returns false for github (not yet implemented)', () => {
-      expect(isProviderSupported('github')).toBe(false);
+    it('returns true for github', () => {
+      expect(isProviderSupported('github')).toBe(true);
     });
   });
 
@@ -105,18 +133,14 @@ describe('Provider Registry', () => {
       expect(providers).toContain('anthropic');
       expect(providers).toContain('gemini');
       expect(providers).toContain('azure');
+      expect(providers).toContain('local');
+      expect(providers).toContain('foundry');
+      expect(providers).toContain('github');
     });
 
-    it('does not include unregistered providers', () => {
+    it('returns seven providers', () => {
       const providers = getSupportedProviders();
-      expect(providers).not.toContain('local');
-      expect(providers).not.toContain('github');
-      expect(providers).not.toContain('foundry');
-    });
-
-    it('returns four providers', () => {
-      const providers = getSupportedProviders();
-      expect(providers.length).toBe(4);
+      expect(providers.length).toBe(7);
     });
   });
 });

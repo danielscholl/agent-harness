@@ -25,8 +25,8 @@ export type ProviderName = (typeof PROVIDER_NAMES)[number];
 export const DEFAULT_PROVIDER: ProviderName = 'openai';
 
 // Provider-specific defaults
-export const DEFAULT_LOCAL_BASE_URL = 'http://localhost:11434';
-export const DEFAULT_LOCAL_MODEL = 'llama3.2';
+export const DEFAULT_LOCAL_BASE_URL = 'http://model-runner.docker.internal/';
+export const DEFAULT_LOCAL_MODEL = 'ai/phi4';
 
 export const DEFAULT_OPENAI_MODEL = 'gpt-4o';
 
@@ -36,13 +36,19 @@ export const DEFAULT_AZURE_API_VERSION = '2024-06-01';
 export const DEFAULT_AZURE_MODEL = 'gpt-4o';
 
 export const DEFAULT_FOUNDRY_MODEL = 'gpt-4o';
+export const DEFAULT_FOUNDRY_MODE = 'cloud' as const;
+export const DEFAULT_FOUNDRY_LOCAL_MODEL = 'phi-3-mini-4k';
+
+// Foundry modes
+export const FOUNDRY_MODES = ['local', 'cloud'] as const;
+export type FoundryMode = (typeof FOUNDRY_MODES)[number];
 
 export const DEFAULT_GEMINI_MODEL = 'gemini-2.0-flash-exp';
 export const DEFAULT_GEMINI_LOCATION = 'us-central1';
 export const DEFAULT_GEMINI_USE_VERTEXAI = false;
 
 export const DEFAULT_GITHUB_MODEL = 'gpt-4o';
-export const DEFAULT_GITHUB_ENDPOINT = 'https://models.inference.ai.azure.com';
+export const DEFAULT_GITHUB_ENDPOINT = 'https://models.github.ai/inference';
 
 // Agent defaults
 export const DEFAULT_DATA_DIR = '~/.agent';
@@ -103,8 +109,12 @@ export const DEFAULT_PROVIDERS_CONFIG = {
     apiKey: undefined,
   },
   foundry: {
+    mode: DEFAULT_FOUNDRY_MODE,
     projectEndpoint: undefined,
     modelDeployment: undefined,
+    apiKey: undefined,
+    modelAlias: DEFAULT_FOUNDRY_LOCAL_MODEL,
+    temperature: undefined,
   },
   gemini: {
     apiKey: undefined,
