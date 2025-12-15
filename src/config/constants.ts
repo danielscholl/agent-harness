@@ -25,8 +25,8 @@ export type ProviderName = (typeof PROVIDER_NAMES)[number];
 export const DEFAULT_PROVIDER: ProviderName = 'openai';
 
 // Provider-specific defaults
-export const DEFAULT_LOCAL_BASE_URL = 'http://localhost:11434';
-export const DEFAULT_LOCAL_MODEL = 'llama3.2';
+export const DEFAULT_LOCAL_BASE_URL = 'http://model-runner.docker.internal/';
+export const DEFAULT_LOCAL_MODEL = 'ai/phi4';
 
 export const DEFAULT_OPENAI_MODEL = 'gpt-4o';
 

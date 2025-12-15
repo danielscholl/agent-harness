@@ -28,11 +28,16 @@ describe('Provider Registry', () => {
       expect(PROVIDER_REGISTRY.azure).toBeDefined();
     });
 
+    it('has local provider registered', () => {
+      expect(PROVIDER_REGISTRY.local).toBeDefined();
+    });
+
     it('all registered factories are functions', () => {
       expect(typeof PROVIDER_REGISTRY.openai).toBe('function');
       expect(typeof PROVIDER_REGISTRY.anthropic).toBe('function');
       expect(typeof PROVIDER_REGISTRY.gemini).toBe('function');
       expect(typeof PROVIDER_REGISTRY.azure).toBe('function');
+      expect(typeof PROVIDER_REGISTRY.local).toBe('function');
     });
   });
 
@@ -61,6 +66,12 @@ describe('Provider Registry', () => {
       expect(typeof factory).toBe('function');
     });
 
+    it('returns factory for local provider', () => {
+      const factory = getProviderFactory('local');
+      expect(factory).toBeDefined();
+      expect(typeof factory).toBe('function');
+    });
+
     it('returns undefined for unsupported provider', () => {
       const factory = getProviderFactory('github');
       expect(factory).toBeUndefined();
@@ -84,8 +95,8 @@ describe('Provider Registry', () => {
       expect(isProviderSupported('azure')).toBe(true);
     });
 
-    it('returns false for local (not yet implemented)', () => {
-      expect(isProviderSupported('local')).toBe(false);
+    it('returns true for local', () => {
+      expect(isProviderSupported('local')).toBe(true);
     });
 
     it('returns false for foundry (not yet implemented)', () => {
@@ -105,18 +116,18 @@ describe('Provider Registry', () => {
       expect(providers).toContain('anthropic');
       expect(providers).toContain('gemini');
       expect(providers).toContain('azure');
+      expect(providers).toContain('local');
     });
 
     it('does not include unregistered providers', () => {
       const providers = getSupportedProviders();
-      expect(providers).not.toContain('local');
       expect(providers).not.toContain('github');
       expect(providers).not.toContain('foundry');
     });
 
-    it('returns four providers', () => {
+    it('returns five providers', () => {
       const providers = getSupportedProviders();
-      expect(providers.length).toBe(4);
+      expect(providers.length).toBe(5);
     });
   });
 });
