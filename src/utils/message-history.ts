@@ -80,6 +80,10 @@ export class MessageHistory {
   add(message: Message): StoredMessage {
     // Skip duplicate consecutive messages for user/assistant only
     // Tool messages may have same content but different name/toolCallId
+    // DESIGN NOTE: When a duplicate is detected, we return the original message with its
+    // original turnIndex. This is intentional - the turnIndex represents when the message
+    // was first created, not when it was last referenced. Returning a new turnIndex for
+    // a duplicate would be misleading and break chronological ordering guarantees.
     if (this.messages.length > 0 && (message.role === 'user' || message.role === 'assistant')) {
       const last = this.messages[this.messages.length - 1];
       if (last !== undefined && last.role === message.role && last.content === message.content) {
@@ -297,6 +301,18 @@ export class MessageHistory {
 
   /**
    * Enforce the history limit by removing oldest messages.
+   *
+   * Note: When messages are removed, turnIndex values in remaining messages are NOT
+   * renumbered. The turnIndex is an absolute identifier that persists even when earlier
+   * messages are removed from history. This is intentional behavior:
+   * - Allows correlation with external systems that logged the original turnIndex
+   * - Maintains temporal ordering without requiring renumbering
+   * - Callers should NOT assume turnIndex starts at 1 or is contiguous
+   * - If you need contiguous indices, use array positions instead
+   *
+   * Example: If messages with turnIndex 1-5 exist and messages 1-2 are removed,
+   * the remaining messages still have turnIndex 3-5. This indicates there were
+   * earlier turns that are no longer available in the current history window.
    */
   private enforceLimit(): void {
     if (this.messages.length > this.historyLimit) {

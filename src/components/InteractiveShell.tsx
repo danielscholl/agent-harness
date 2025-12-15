@@ -88,6 +88,13 @@ export function InteractiveShell({
       if (result.success) {
         const config = result.result ?? null;
         // Initialize MessageHistory only if memory is enabled in config
+        // LIMITATION: MessageHistory is initialized once at component mount based on initial config.
+        // Runtime config changes to memory.enabled (e.g., via a future /config command) are NOT
+        // supported. If the user changes the memory.enabled setting during runtime, MessageHistory
+        // will not be created or destroyed accordingly. This could lead to inconsistent behavior
+        // where memory appears enabled in config but MessageHistory remains null, or vice versa.
+        // WORKAROUND: Users must restart the interactive session to apply memory config changes.
+        // TODO: This is a known limitation that may be addressed in a future enhancement.
         if (config !== null && config.memory.enabled && messageHistoryRef.current === null) {
           messageHistoryRef.current = new MessageHistory({
             historyLimit: config.memory.historyLimit,
@@ -228,8 +235,18 @@ export function InteractiveShell({
             const stored = msgHistory.getAllStored();
             const historyOutput = stored
               .map((m, i) => {
-                const role = m.role === 'user' ? '> ' : m.role === 'system' ? '! ' : '';
-                const prefix = `[${String(i + 1)}] ${role}`;
+                let rolePrefix = '';
+                if (m.role === 'user') {
+                  rolePrefix = '> ';
+                } else if (m.role === 'system') {
+                  rolePrefix = '! ';
+                } else if (m.role === 'assistant') {
+                  rolePrefix = '< ';
+                  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+                } else if (m.role === 'tool') {
+                  rolePrefix = '# ';
+                }
+                const prefix = `[${String(i + 1)}] ${rolePrefix}`;
                 return `${prefix}${m.content.slice(0, 200)}${m.content.length > 200 ? '...' : ''}`;
               })
               .join('\n');
@@ -312,7 +329,12 @@ export function InteractiveShell({
               // Error already displayed via ErrorDisplay, don't duplicate
               return { ...s, streamingOutput: '', isProcessing: false };
             }
-            // Add to message history for multi-turn context
+            // State management design:
+            // - state.messages: UI display for current session (always populated)
+            // - messageHistoryRef.current (MessageHistory): LLM context (only when memory.enabled)
+            // When memory is disabled, state.messages still tracks all exchanges for UI display,
+            // but messageHistoryRef.current is null so no context is passed to the LLM.
+            // This separation is intentional: UI needs to show conversation, but LLM context is optional.
             const query = currentQueryRef.current;
             if (query !== '' && messageHistoryRef.current !== null) {
               messageHistoryRef.current.addExchange(query, answer);
@@ -419,6 +441,9 @@ export function InteractiveShell({
         isProcessing: false,
       }));
     }
+    // Note: state.config?.memory?.enabled is intentionally NOT in the dependency array.
+    // Runtime config changes to memory.enabled are not supported and require a session restart.
+    // messageHistoryRef is initialized once on mount (lines 91-95) and doesn't change during runtime.
   }, [state.input, state.config, exit, addSystemMessage, syncFilesystemWritesEnvVar]);
 
   // Handle key input - gated until config loads

@@ -156,11 +156,26 @@ describe('MessageHistory', () => {
     });
 
     it('should skip duplicate exchange', () => {
-      history.addExchange('Q1', 'A1');
-      history.addExchange('Q1', 'A1');
+      const [user1, assistant1] = history.addExchange('Q1', 'A1');
+      const [user2, assistant2] = history.addExchange('Q1', 'A1');
 
       // Should only have one exchange
       expect(history.size).toBe(2);
+
+      // Duplicate should return the same messages, not create new ones
+      expect(user2.id).toBe(user1.id);
+      expect(assistant2.id).toBe(assistant1.id);
+
+      // Verify turnCounter was NOT incremented for the duplicate
+      // Add a third unique exchange - it should get turnIndex 2, not 3
+      const [user3, assistant3] = history.addExchange('Q2', 'A2');
+      expect(user3.turnIndex).toBe(2);
+      expect(assistant3.turnIndex).toBe(2);
+
+      // Verify the duplicate didn't increment the counter
+      // First exchange has turnIndex 1, duplicate didn't increment, third has turnIndex 2
+      expect(user1.turnIndex).toBe(1);
+      expect(assistant1.turnIndex).toBe(1);
     });
   });
 
