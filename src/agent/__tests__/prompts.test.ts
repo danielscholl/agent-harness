@@ -9,11 +9,21 @@ import type { AppConfig } from '../../config/schema.js';
 // Create mock functions that we can reference
 const mockReadFile = jest.fn<(path: string, encoding: BufferEncoding) => Promise<string>>();
 const mockAccess = jest.fn<(path: string, mode?: number) => Promise<void>>();
+const mockReaddir = jest.fn<() => Promise<never[]>>();
+const mockStat = jest.fn<() => Promise<{ isDirectory: () => boolean }>>();
+const mockRealpath = jest.fn<(path: string) => Promise<string>>();
 
 // Mock fs/promises BEFORE any imports that use it
+// Note: mockReaddir, mockStat, and mockRealpath are required because the skills module
+// imports from node:fs/promises, and Jest's module mocking requires all exports to be present.
+// These tests focus on prompt loading which doesn't exercise these functions directly - they
+// return empty/failing results which is the expected behavior for the prompt tests.
 jest.unstable_mockModule('node:fs/promises', () => ({
   readFile: mockReadFile,
   access: mockAccess,
+  readdir: mockReaddir,
+  stat: mockStat,
+  realpath: mockRealpath,
   constants: { R_OK: 4 },
 }));
 

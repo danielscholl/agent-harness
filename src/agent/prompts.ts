@@ -4,10 +4,16 @@
  */
 
 import { readFile, access, constants } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import type { AppConfig } from '../config/schema.js';
+import {
+  createSkillLoader,
+  createSkillContextProvider,
+  type DiscoveredSkill,
+  type SkillLoaderOptions,
+} from '../skills/index.js';
 
 /**
  * Options for loading system prompt.
@@ -55,13 +61,23 @@ async function fileExists(path: string): Promise<boolean> {
  * Get the path to the package default system prompt.
  * Resolves relative to this module's location.
  * Uses fileURLToPath for cross-platform compatibility (Windows safe).
+ *
+ * Handles both:
+ * - Bundled: dist/index.js -> dist/prompts/system.md (same dir)
+ * - Source: src/agent/prompts.ts -> src/prompts/system.md (parent dir)
  */
 function getPackagePromptPath(): string {
-  // In bundled output, prompts are at src/prompts/system.md
-  // Using fileURLToPath for Windows compatibility (handles URL-encoded paths)
   const currentFile = fileURLToPath(import.meta.url);
   const moduleDir = dirname(currentFile);
-  return join(moduleDir, '..', 'prompts', 'system.md');
+
+  // In bundled dist, prompts are at dist/prompts/system.md (same dir as index.js)
+  // In source, prompts are at src/prompts/system.md (sibling to agent/)
+  // Check if the module directory itself is named 'dist' to detect bundled execution
+  // This avoids false positives when 'dist' appears elsewhere in the path
+  const isBundled = basename(moduleDir) === 'dist';
+  const promptsDir = isBundled ? moduleDir : join(moduleDir, '..');
+
+  return join(promptsDir, 'prompts', 'system.md');
 }
 
 /**
@@ -210,4 +226,75 @@ Guidelines:
 - Use tools when they can help answer questions
 - Explain your reasoning when helpful
 - Ask for clarification if a request is ambiguous`;
+}
+
+// -----------------------------------------------------------------------------
+// Skills Integration
+// -----------------------------------------------------------------------------
+
+/**
+ * Extended options for loading system prompt with skills.
+ */
+export interface PromptOptionsWithSkills extends PromptOptions {
+  /** Include discovered skills in system prompt */
+  includeSkills?: boolean;
+  /** Skills loader options */
+  skillLoaderOptions?: SkillLoaderOptions;
+}
+
+/**
+ * Load skills and generate context for system prompt.
+ *
+ * Design note: Skill loading errors are non-fatal - we continue with whatever
+ * skills loaded successfully. Errors are logged via onDebug callback to allow
+ * callers to observe issues without breaking the flow. The errors are also
+ * collected in SkillDiscoveryResult.errors and returned to callers who need
+ * structured error information.
+ *
+ * @param options - Skill loader options
+ * @returns Skills context with XML and discovered skills
+ */
+export async function loadSkillsContext(
+  options?: SkillLoaderOptions
+): Promise<{ xml: string; skills: DiscoveredSkill[] }> {
+  const loader = createSkillLoader(options);
+  const result = await loader.discover();
+
+  if (result.errors.length > 0) {
+    // Log errors but continue with valid skills
+    for (const error of result.errors) {
+      options?.onDebug?.(`Skill load error: ${error.path}: ${error.message}`, { error });
+    }
+  }
+
+  const provider = createSkillContextProvider(result.skills, {
+    onDebug: options?.onDebug,
+  });
+  const xml = provider.getTier1Context();
+
+  return { xml, skills: result.skills };
+}
+
+/**
+ * Load system prompt with skills integration.
+ * Combines base prompt loading with skill discovery.
+ *
+ * @param options - Prompt options including skills configuration
+ * @returns System prompt with skills and list of discovered skills
+ */
+export async function loadSystemPromptWithSkills(
+  options: PromptOptionsWithSkills
+): Promise<{ prompt: string; skills: DiscoveredSkill[] }> {
+  const basePrompt = await loadSystemPrompt(options);
+
+  if (options.includeSkills !== true) {
+    return { prompt: basePrompt, skills: [] };
+  }
+
+  const { xml, skills } = await loadSkillsContext(options.skillLoaderOptions);
+
+  // Append skills XML after base prompt
+  const prompt = xml ? `${basePrompt}\n\n${xml}` : basePrompt;
+
+  return { prompt, skills };
 }
