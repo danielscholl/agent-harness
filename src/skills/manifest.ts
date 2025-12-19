@@ -106,7 +106,13 @@ export const AllowedToolsSchema = z
 /**
  * Complete SKILL.md manifest schema.
  * Validates all frontmatter fields per Agent Skills spec.
- * Uses .strict() to reject unknown fields for spec compliance.
+ *
+ * **Spec Compliance**: The `.strict()` modifier is intentionally used to reject
+ * unknown fields. This ensures SKILL.md files strictly conform to the official
+ * specification. Any manifest with extra fields not defined in the spec will
+ * fail validation, preventing ambiguity and maintaining interoperability.
+ *
+ * @see https://agentskills.io/specification
  */
 export const SkillManifestSchema = z
   .object({

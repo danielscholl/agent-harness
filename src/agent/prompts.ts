@@ -4,7 +4,7 @@
  */
 
 import { readFile, access, constants } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import type { AppConfig } from '../config/schema.js';
@@ -72,7 +72,9 @@ function getPackagePromptPath(): string {
 
   // In bundled dist, prompts are at dist/prompts/system.md (same dir as index.js)
   // In source, prompts are at src/prompts/system.md (sibling to agent/)
-  const isBundled = moduleDir.includes('dist');
+  // Check if the module directory itself is named 'dist' to detect bundled execution
+  // This avoids false positives when 'dist' appears elsewhere in the path
+  const isBundled = basename(moduleDir) === 'dist';
   const promptsDir = isBundled ? moduleDir : join(moduleDir, '..');
 
   return join(promptsDir, 'prompts', 'system.md');
@@ -242,6 +244,12 @@ export interface PromptOptionsWithSkills extends PromptOptions {
 
 /**
  * Load skills and generate context for system prompt.
+ *
+ * Design note: Skill loading errors are non-fatal - we continue with whatever
+ * skills loaded successfully. Errors are logged via onDebug callback to allow
+ * callers to observe issues without breaking the flow. The errors are also
+ * collected in SkillDiscoveryResult.errors and returned to callers who need
+ * structured error information.
  *
  * @param options - Skill loader options
  * @returns Skills context with XML and discovered skills

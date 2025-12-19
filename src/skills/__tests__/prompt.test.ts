@@ -180,10 +180,12 @@ describe('formatSkillsSummary', () => {
     ];
     const summary = formatSkillsSummary(skills);
 
+    // Verify truncation occurred
     expect(summary).toContain('...');
-    expect(summary.length).toBeLessThan(
-      'Available skills (1):\n  - long-desc (bundled): '.length + longDescription.length + 20
-    );
+    // Verify the full original description is not present (was actually shortened)
+    expect(summary).not.toContain(longDescription);
+    // Verify it starts with the beginning of the description
+    expect(summary).toContain('This is a very long description');
   });
 
   it('shows skill source type', () => {

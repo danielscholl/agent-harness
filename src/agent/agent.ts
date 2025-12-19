@@ -107,6 +107,10 @@ export class Agent {
     // Discover and filter skills if enabled
     if (this.includeSkills) {
       // Prepare skill loader options, merging config.skills with explicit options
+      // Design: Only userDir is exposed in config.skills as it's the directory users typically
+      // customize (for personal skills). bundledDir is internal to the package and projectDir
+      // is auto-detected from cwd. Both can still be overridden via skillLoaderOptions for
+      // testing or advanced use cases.
       const skillLoaderOptions: SkillLoaderOptions = {
         userDir: this.config.skills.userDir ?? this.skillLoaderOptions?.userDir,
         bundledDir: this.skillLoaderOptions?.bundledDir,

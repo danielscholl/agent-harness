@@ -198,13 +198,15 @@ describe('SkillManifestSchema', () => {
   });
 
   describe('strict mode', () => {
-    it('rejects unknown fields', () => {
+    it('rejects single unknown field', () => {
       const result = SkillManifestSchema.safeParse({
         ...validManifest,
         unknownField: 'should fail',
       });
       expect(result.success).toBe(false);
       if (!result.success) {
+        expect(result.error.issues).toHaveLength(1);
+        expect(result.error.issues[0]?.code).toBe('unrecognized_keys');
         expect(result.error.issues[0]?.message).toContain('Unrecognized key');
       }
     });
@@ -214,8 +216,34 @@ describe('SkillManifestSchema', () => {
         ...validManifest,
         foo: 'bar',
         baz: 'qux',
+        extra: 'field',
       });
       expect(result.success).toBe(false);
+      if (!result.success) {
+        // Zod groups all unrecognized keys into a single error issue
+        expect(result.error.issues).toHaveLength(1);
+        expect(result.error.issues[0]?.code).toBe('unrecognized_keys');
+        const errorMessage = result.error.issues[0]?.message ?? '';
+        expect(errorMessage).toContain('Unrecognized key');
+        // Verify all unknown fields are mentioned in the error
+        expect(errorMessage).toContain('foo');
+        expect(errorMessage).toContain('baz');
+        expect(errorMessage).toContain('extra');
+      }
+    });
+
+    it('rejects unknown fields mixed with valid optional fields', () => {
+      const result = SkillManifestSchema.safeParse({
+        ...validManifest,
+        license: 'MIT', // valid optional field
+        invalidKey: 'value', // unknown field
+      });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues).toHaveLength(1);
+        expect(result.error.issues[0]?.code).toBe('unrecognized_keys');
+        expect(result.error.issues[0]?.message).toContain('invalidKey');
+      }
     });
   });
 });

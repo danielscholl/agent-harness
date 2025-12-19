@@ -147,7 +147,11 @@ export class SkillContextProvider {
       return null;
     }
 
-    // Security: Ensure resource path doesn't escape skill directory (pre-check)
+    // Security: Defense-in-depth path traversal protection
+    // Layer 1 (pre-check): Catch obvious path traversal attempts early (no I/O)
+    // - Detects patterns like "../../../etc/passwd" or "C:\Windows\System32"
+    // - Fast fail before any filesystem operations
+    // - Prevents wasted I/O on malicious paths
     const fullPath = join(skill.directory, resourcePath);
     const relativePath = relative(skill.directory, fullPath);
     // Check for escape: starts with "..", or is absolute (Windows: D:\...)
@@ -160,7 +164,11 @@ export class SkillContextProvider {
     }
 
     try {
-      // Security: Resolve symlinks and verify path stays within skill directory
+      // Layer 2 (post-check): Catch symlink-based escapes after resolution
+      // - Resolves all symlinks to their real paths via realpath()
+      // - Detects attacks like: "safe-looking-link" -> "../../../etc/passwd"
+      // - Critical for preventing symlink-based directory traversal
+      // - Both layers are necessary: pre-check for performance, post-check for completeness
       const resolvedSkillDir = await realpath(skill.directory);
       const resolvedPath = await realpath(fullPath);
       const resolvedRelative = relative(resolvedSkillDir, resolvedPath);

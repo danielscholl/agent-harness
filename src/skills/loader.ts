@@ -4,7 +4,7 @@
  */
 
 import { readFile, readdir, stat, access, constants, realpath } from 'node:fs/promises';
-import { join, dirname, relative, isAbsolute } from 'node:path';
+import { join, dirname, relative, isAbsolute, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import type {
@@ -29,9 +29,10 @@ function getBundledDir(): string {
   // Try parent directory (for source src/skills/loader.ts)
   const parentDirPath = join(moduleDir, '..', '_bundled_skills');
 
-  // We can't check synchronously which exists, so return both with priority
+  // Check if the module directory itself is named 'dist' to detect bundled execution
+  // This avoids false positives when 'dist' appears elsewhere in the path
   // The loader will handle missing directories gracefully
-  return sameDirPath.includes('dist') ? sameDirPath : parentDirPath;
+  return basename(moduleDir) === 'dist' ? sameDirPath : parentDirPath;
 }
 
 const DEFAULT_BUNDLED_DIR = getBundledDir();
@@ -138,7 +139,11 @@ export class SkillLoader {
           const resolvedSkillDir = await realpath(skillDir);
           const relativePath = relative(resolvedBaseDir, resolvedSkillDir);
 
-          // Check for escape: starts with "..", starts with "/", or is absolute (Windows: D:\...)
+          // Check for escape attempts:
+          // - Unix: relativePath starting with ".." indicates parent traversal
+          // - Windows: cross-drive symlinks (C:\ -> D:\malicious) return absolute paths
+          //   from relative(), which isAbsolute() catches consistently
+          // This provides uniform security protection across all platforms
           if (relativePath.startsWith('..') || isAbsolute(relativePath)) {
             this.debug('Rejected skill directory symlink escape attempt', {
               skillDir,

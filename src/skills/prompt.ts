@@ -99,6 +99,7 @@ export function formatSkillsSummary(skills: DiscoveredSkill[]): string {
 
   const lines = skills.map((s) => {
     const desc = s.manifest.description;
+    // Truncate to 60 total chars: 57 chars + "..." (3 chars)
     const truncated = desc.length > 60 ? `${desc.substring(0, 57)}...` : desc;
     return `  - ${s.manifest.name} (${s.source}): ${truncated}`;
   });
