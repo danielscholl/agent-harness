@@ -1,6 +1,84 @@
 /**
  * System prompt loading utilities.
  * Implements three-tier fallback and placeholder replacement.
+ *
+ * ## Overview
+ *
+ * The system prompt loader provides a flexible way to customize the agent's behavior
+ * through prompt files. It supports a three-tier fallback system:
+ *
+ * 1. **Explicit override**: Set via `config.agent.systemPromptFile`
+ * 2. **User default**: Located at `~/.agent/system.md`
+ * 3. **Package default**: Bundled with the package at `src/prompts/system.md`
+ *
+ * ## Placeholder Substitution
+ *
+ * Prompts can include placeholders using `{{NAME}}` syntax that are replaced at load time:
+ *
+ * | Placeholder | Description | Example Value |
+ * |-------------|-------------|---------------|
+ * | `{{MODEL}}` | Current model name | `gpt-4o` |
+ * | `{{PROVIDER}}` | Current provider | `openai` |
+ * | `{{DATA_DIR}}` | Data directory path | `~/.agent-data` |
+ * | `{{MEMORY_ENABLED}}` | Memory status | `enabled` or `disabled` |
+ *
+ * ## YAML Front Matter
+ *
+ * Prompt files may include YAML front matter (delimited by `---`) which is automatically
+ * stripped before processing. This allows prompts to include metadata:
+ *
+ * ```markdown
+ * ---
+ * title: My Custom Prompt
+ * version: 1.0
+ * ---
+ * You are a helpful assistant using {{MODEL}}.
+ * ```
+ *
+ * ## Skills Integration
+ *
+ * When `includeSkills` is enabled, the loader discovers available skills and appends
+ * their context as XML to the system prompt. This enables progressive skill disclosure.
+ *
+ * @module agent/prompts
+ *
+ * @example Basic Usage
+ * ```typescript
+ * import { loadSystemPrompt } from './prompts.js';
+ * import { getDefaultConfig } from '../config/schema.js';
+ *
+ * const config = getDefaultConfig();
+ * const prompt = await loadSystemPrompt({
+ *   config,
+ *   model: 'gpt-4o',
+ *   provider: 'openai',
+ * });
+ * ```
+ *
+ * @example With Skills
+ * ```typescript
+ * import { loadSystemPromptWithSkills } from './prompts.js';
+ *
+ * const { prompt, skills } = await loadSystemPromptWithSkills({
+ *   config,
+ *   model: 'gpt-4o',
+ *   provider: 'openai',
+ *   includeSkills: true,
+ * });
+ *
+ * console.log(`Loaded ${skills.length} skills`);
+ * ```
+ *
+ * @example Custom Placeholder Replacement
+ * ```typescript
+ * import { replacePlaceholders } from './prompts.js';
+ *
+ * const result = replacePlaceholders(
+ *   'Hello, {{USER}}! Using {{MODEL}}.',
+ *   { USER: 'Alice', MODEL: 'gpt-4o' }
+ * );
+ * // Result: 'Hello, Alice! Using gpt-4o.'
+ * ```
  */
 
 import { readFile, access, constants } from 'node:fs/promises';
