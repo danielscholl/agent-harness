@@ -100,7 +100,8 @@ describe('Agent', () => {
   });
 
   it('processes user query through LLM', async () => {
-    const agent = new Agent({ model: 'gpt-4o' });
+    const config = createTestConfig();
+    const agent = new Agent({ config });
     const result = await agent.run('Hello');
 
     expect(mockInvoke).toHaveBeenCalled();
@@ -340,7 +341,8 @@ describe('Agent callbacks', () => {
       onLLMEnd: jest.fn(),
     };
 
-    const agent = new Agent({ model: 'gpt-4o', callbacks });
+    const config = createTestConfig();
+    const agent = new Agent({ config, callbacks });
     await agent.run('Hello');
 
     expect(callbacks.onLLMStart).toHaveBeenCalledWith(
@@ -366,7 +368,8 @@ describe('Agent callbacks', () => {
       bindTools: jest.fn().mockReturnThis(),
     }) as unknown as ChatOpenAI);
 
-    const agent = new Agent({ model: 'gpt-4o', callbacks });
+    const config = createTestConfig();
+    const agent = new Agent({ config, callbacks });
     await agent.run('Greet me');
 
     expect(callbacks.onToolStart).toHaveBeenCalledWith(
@@ -415,7 +418,7 @@ describe('Agent with different providers', () => {
     ['google', 'gemini-pro'],
   ])('initializes %s provider with model %s', async (provider, model) => {
     const config = createTestConfig({ provider, model });
-    const agent = new Agent(config);
+    const agent = new Agent({ config });
 
     expect(agent.modelName).toBe(model);
   });

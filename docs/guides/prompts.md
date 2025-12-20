@@ -189,8 +189,6 @@ You are a development assistant.
 Load a system prompt with placeholder replacement.
 
 ```typescript
-import { loadSystemPrompt } from '@agent/core';
-
 const prompt = await loadSystemPrompt({
   config: appConfig,
   model: 'gpt-4o',
@@ -198,13 +196,18 @@ const prompt = await loadSystemPrompt({
 });
 ```
 
+**Parameters:**
+- `config` - Application configuration
+- `model` - LLM model name
+- `provider` - Provider name
+
+**Returns:** `Promise<string>` - Processed system prompt with placeholders replaced
+
 ### loadSystemPromptWithSkills(options)
 
 Load a system prompt with skill discovery and integration.
 
 ```typescript
-import { loadSystemPromptWithSkills } from '@agent/core';
-
 const { prompt, skills } = await loadSystemPromptWithSkills({
   config: appConfig,
   model: 'gpt-4o',
@@ -213,27 +216,42 @@ const { prompt, skills } = await loadSystemPromptWithSkills({
 });
 ```
 
+**Parameters:**
+- `config` - Application configuration
+- `model` - LLM model name
+- `provider` - Provider name
+- `includeSkills` - Whether to append skill documentation
+
+**Returns:** `Promise<{ prompt: string; skills: Skill[] }>` - Prompt with skills and skill list
+
 ### replacePlaceholders(content, values)
 
 Manually replace placeholders in text.
 
 ```typescript
-import { replacePlaceholders } from '@agent/core';
-
 const result = replacePlaceholders('Hello, {{NAME}}!', { NAME: 'World' });
 // Result: 'Hello, World!'
 ```
+
+**Parameters:**
+- `content` - Text containing `{{PLACEHOLDER}}` syntax
+- `values` - Object mapping placeholder names to replacement values
+
+**Returns:** `string` - Content with placeholders replaced
 
 ### stripYamlFrontMatter(content)
 
 Remove YAML front matter from markdown content.
 
 ```typescript
-import { stripYamlFrontMatter } from '@agent/core';
-
 const content = stripYamlFrontMatter(`---
 title: Test
 ---
 Content here`);
 // Result: 'Content here'
 ```
+
+**Parameters:**
+- `content` - Markdown content with optional YAML front matter
+
+**Returns:** `string` - Content with front matter removed
