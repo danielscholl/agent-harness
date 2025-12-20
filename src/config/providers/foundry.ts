@@ -58,14 +58,17 @@ export async function setupFoundry(context: CommandContext): Promise<ProviderSet
       'Project Endpoint (https://...services.ai.azure.com/):'
     );
 
-    // Validate Azure AI Foundry endpoint format
-    const isValidEndpoint =
-      projectEndpoint !== '' &&
-      projectEndpoint.startsWith('https://') &&
-      projectEndpoint.includes('.ai.azure.com');
+    // Validate Azure AI Foundry endpoint format using URL parsing for security
+    let isValidEndpoint = false;
+    try {
+      const url = new URL(projectEndpoint);
+      isValidEndpoint = url.protocol === 'https:' && url.hostname.endsWith('.ai.azure.com');
+    } catch {
+      isValidEndpoint = false;
+    }
 
     if (!isValidEndpoint) {
-      context.onOutput('Invalid endpoint format. Expected: https://...ai.azure.com/', 'error');
+      context.onOutput('Invalid endpoint format. Expected: https://xxx.ai.azure.com/', 'error');
       return { success: false, message: 'Invalid project endpoint' };
     }
 

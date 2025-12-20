@@ -23,8 +23,20 @@ export async function setupAzure(context: CommandContext): Promise<ProviderSetup
   // Prompt for endpoint
   const endpoint = await context.onPrompt('Azure OpenAI Endpoint (https://...openai.azure.com/):');
 
-  if (!endpoint || !endpoint.includes('openai.azure.com')) {
-    context.onOutput('Invalid endpoint. Expected URL containing "openai.azure.com"', 'error');
+  // Validate endpoint using URL parsing for security
+  let isValidEndpoint = false;
+  try {
+    const url = new URL(endpoint);
+    isValidEndpoint = url.protocol === 'https:' && url.hostname.endsWith('.openai.azure.com');
+  } catch {
+    isValidEndpoint = false;
+  }
+
+  if (!isValidEndpoint) {
+    context.onOutput(
+      'Invalid endpoint. Expected URL like "https://xxx.openai.azure.com/"',
+      'error'
+    );
     return { success: false, message: 'Invalid endpoint format' };
   }
 
