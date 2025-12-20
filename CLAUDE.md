@@ -116,8 +116,9 @@ Note: Only the Agent Layer invokes the Model Layer. Tools and Utils never call L
 | Callback Interface | Agent→UI communication | `agent/callbacks.ts` |
 | Provider Routing | Multi-model support via config name | `model/llm.ts` |
 | Tool Wrapper | Zod schema + structured response | `tools/base.ts` |
-| Context Manager | Size-aware tool output storage | `utils/context.ts` |
-| Skill Registry | Progressive disclosure index | `skills/registry.ts` |
+| System Prompts | Three-tier fallback + placeholders | `agent/prompts.ts` |
+| Skill Loader | Progressive disclosure discovery | `skills/loader.ts` |
+| Telemetry Spans | GenAI semantic conventions | `telemetry/spans.ts` |
 
 - **Architecture**: [`docs/architecture.md`](docs/architecture.md) - Component relationships, interfaces
 
@@ -149,6 +150,29 @@ src/
 - Coverage minimum: 85% (enforced in CI)
 
 See [`docs/guides/testing.md`](docs/guides/testing.md) for mock patterns, factory functions, and integration test examples.
+
+### Shared Test Fixtures
+
+The `tests/fixtures/` directory provides reusable test utilities:
+
+| File | Purpose |
+|------|---------|
+| `llm-responses.ts` | Mock LLM responses, tool calls, streaming |
+| `factories.ts` | Factory functions for configs, callbacks, models |
+| `mock-providers.ts` | Provider mocking helpers |
+| `index.ts` | Central exports |
+
+---
+
+## System Prompts
+
+System prompts use a three-tier loading system with placeholder substitution:
+
+1. **Config override**: `config.agent.systemPromptFile`
+2. **User default**: `~/.agent/system.md`
+3. **Package default**: Bundled `src/prompts/system.md`
+
+See [`docs/guides/prompts.md`](docs/guides/prompts.md) for customization and placeholders.
 
 ---
 

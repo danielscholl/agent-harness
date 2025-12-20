@@ -40,12 +40,21 @@ src/
 │   ├── llm.ts
 │   └── __tests__/
 │       └── llm.test.ts
+tests/
+├── fixtures/           # Shared test utilities
+│   ├── index.ts        # Central export point
+│   ├── llm-responses.ts # Mock LLM response fixtures
+│   ├── factories.ts    # Factory functions for test objects
+│   └── mock-providers.ts # Mock provider helpers
+└── integration/        # Cross-module tests
+    ├── agent-integration.test.ts
+    └── telemetry-integration.test.ts
 ```
 
 ### Special Directories
 
 - **Integration tests**: `tests/integration/` - Cross-module tests
-- **Shared fixtures**: `tests/fixtures/` - Mock data and helpers
+- **Shared fixtures**: `tests/fixtures/` - Mock data, factories, and provider mocks
 
 ---
 
@@ -53,40 +62,58 @@ src/
 
 **Critical Rule**: Never make real API calls in tests. Mock all providers.
 
-### Basic Provider Mock
+### ESM Module Mocking
+
+This project uses ESM modules, which require `jest.unstable_mockModule` instead of the CJS `jest.mock`. Module mocks must be set up **before** importing the module under test.
 
 ```typescript
-import { ChatOpenAI } from '@langchain/openai';
+import { jest, describe, it, expect, beforeEach } from '@jest/globals';
+import { SIMPLE_GREETING_RESPONSE } from '../fixtures/llm-responses.js';
 
-// Mock the module
-jest.mock('@langchain/openai');
+// 1. Create mock functions BEFORE mocking
+const mockInvoke = jest.fn();
+const mockStream = jest.fn();
 
-const MockChatOpenAI = ChatOpenAI as jest.MockedClass<typeof ChatOpenAI>;
+// 2. Mock the module BEFORE importing modules that use it
+jest.unstable_mockModule('../../src/model/llm.js', () => ({
+  LLMClient: class MockLLMClient {
+    invoke = mockInvoke;
+    stream = mockStream;
+    getModelName = () => 'gpt-4o';
+    getProviderName = () => 'openai';
+  },
+}));
+
+// 3. Dynamic import AFTER mocking
+const { Agent } = await import('../../src/agent/agent.js');
 
 describe('Agent', () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
     // Set up mock implementation
-    MockChatOpenAI.mockImplementation(() => ({
-      invoke: jest.fn().mockResolvedValue({
-        content: 'Mock response from LLM',
-      }),
-      bindTools: jest.fn().mockReturnThis(),
-      withStructuredOutput: jest.fn().mockReturnThis(),
-    }) as unknown as ChatOpenAI);
+    mockInvoke.mockResolvedValue({
+      success: true,
+      result: { content: SIMPLE_GREETING_RESPONSE.content },
+      message: 'Success',
+    });
   });
 
   it('processes user query through LLM', async () => {
-    const agent = new Agent({ model: 'gpt-4o' });
+    const config = createTestConfig();
+    const agent = new Agent({ config });
     const result = await agent.run('Hello');
 
-    expect(MockChatOpenAI).toHaveBeenCalledWith(
-      expect.objectContaining({ model: 'gpt-4o' })
-    );
+    expect(mockInvoke).toHaveBeenCalled();
   });
 });
 ```
+
+**Key ESM Mocking Rules:**
+- Use `jest.unstable_mockModule()` (not `jest.mock()`)
+- Create mock functions before the mock module definition
+- Use dynamic `await import()` for modules that depend on the mock
+- Place mocks at the top of the file, before any imports of modules under test
 
 ### Mocking Streaming Responses
 
@@ -130,6 +157,108 @@ MockChatOpenAI.mockImplementation(() => ({
   invoke: jest.fn().mockResolvedValue(mockToolCallResponse),
   bindTools: jest.fn().mockReturnThis(),
 }) as unknown as ChatOpenAI);
+```
+
+---
+
+## Shared Test Fixtures
+
+The `tests/fixtures/` directory provides reusable utilities for consistent testing across the codebase.
+
+### LLM Response Fixtures
+
+Use pre-built fixtures from `llm-responses.ts`:
+
+```typescript
+import {
+  // Pre-defined responses
+  SIMPLE_GREETING_RESPONSE,
+  ACKNOWLEDGMENT_RESPONSE,
+  COMPLETION_RESPONSE,
+  // Tool call helpers
+  createToolCallResponse,
+  HELLO_TOOL_CALL,
+  // Streaming helpers
+  createMockStream,
+  GREETING_STREAM_CHUNKS,
+  // Error fixtures
+  RATE_LIMIT_ERROR,
+  AUTH_ERROR,
+  NETWORK_ERROR,
+} from '../../tests/fixtures/index.js';
+
+// Use pre-defined response
+const response = SIMPLE_GREETING_RESPONSE;
+
+// Create streaming response
+const stream = createMockStream(['Hello', ' ', 'World']);
+
+// Create tool call response
+const toolCallResponse = createToolCallResponse([
+  { id: 'call_123', name: 'hello', args: { name: 'Alice' } }
+]);
+
+// Use error fixtures for failure scenarios
+const rateLimitError = RATE_LIMIT_ERROR;
+```
+
+### Factory Functions
+
+Create test objects with sensible defaults from `factories.ts`:
+
+```typescript
+import {
+  createTestConfig,
+  createTrackingCallbacks,
+  createMockModel,
+  createSuccessResponse,
+  createErrorResponse,
+} from '../../tests/fixtures/index.js';
+
+// Create config with defaults and overrides
+const config = createTestConfig({
+  providers: { default: 'anthropic' }
+});
+
+// Create callbacks that track invocations
+const { callbacks, log, traceIds } = createTrackingCallbacks();
+await agent.run('Hello');
+expect(log).toContain('onAgentStart: Hello');
+
+// Create mock model for Agent tests
+const mockModel = createMockModel(SIMPLE_GREETING_RESPONSE);
+
+// Create tool responses
+const success = createSuccessResponse({ data: 'test' }, 'Operation completed');
+const error = createErrorResponse('IO_ERROR', 'File not found');
+```
+
+### Mock Provider Helpers
+
+For consistent provider mocking from `mock-providers.ts`:
+
+```typescript
+import {
+  createMockRegistry,
+  setupSupportedProvider,
+  createMockLLMClient,
+  setupOpenAIMocks,
+  createMockModel,
+} from '../../tests/fixtures/index.js';
+import { SIMPLE_GREETING_RESPONSE } from '../../tests/fixtures/llm-responses.js';
+
+// Create mock registry
+const registry = createMockRegistry();
+
+// Setup supported provider with mock model
+const mockModel = createMockModel(SIMPLE_GREETING_RESPONSE);
+setupSupportedProvider(registry, mockModel, ['openai']);
+
+// Or use provider-specific setup (combines the above steps)
+setupOpenAIMocks(registry, SIMPLE_GREETING_RESPONSE);
+
+// Create mock LLMClient for direct injection into tests
+const mockClient = createMockLLMClient(SIMPLE_GREETING_RESPONSE);
 ```
 
 ---
@@ -212,7 +341,8 @@ describe('Agent callbacks', () => {
       onLLMEnd: jest.fn(),
     };
 
-    const agent = new Agent({ model: 'gpt-4o', callbacks });
+    const config = createTestConfig();
+    const agent = new Agent({ config, callbacks });
     await agent.run('Hello');
 
     expect(callbacks.onLLMStart).toHaveBeenCalledWith(
@@ -238,7 +368,8 @@ describe('Agent callbacks', () => {
       bindTools: jest.fn().mockReturnThis(),
     }) as unknown as ChatOpenAI);
 
-    const agent = new Agent({ model: 'gpt-4o', callbacks });
+    const config = createTestConfig();
+    const agent = new Agent({ config, callbacks });
     await agent.run('Greet me');
 
     expect(callbacks.onToolStart).toHaveBeenCalledWith(
@@ -287,7 +418,7 @@ describe('Agent with different providers', () => {
     ['google', 'gemini-pro'],
   ])('initializes %s provider with model %s', async (provider, model) => {
     const config = createTestConfig({ provider, model });
-    const agent = new Agent(config);
+    const agent = new Agent({ config });
 
     expect(agent.modelName).toBe(model);
   });
@@ -296,103 +427,131 @@ describe('Agent with different providers', () => {
 
 ---
 
-## Factory Functions
+## Factory Functions Reference
 
-Create factories for test objects with sensible defaults:
+All factory functions are in `tests/fixtures/factories.ts`:
 
-```typescript
-// tests/fixtures/factories.ts
+**Configuration:**
+- `createTestConfig(overrides?)` - OpenAI config with 'test-key'
+- `createAnthropicConfig(overrides?)` - Anthropic config
+- `createAzureConfig(overrides?)` - Azure OpenAI config
+- `createRetryConfig(retrySettings?, baseOverrides?)` - Config with retry enabled
+- `createMemoryConfig(overrides?)` - Config with memory enabled
 
-import type { AppConfig } from '../../src/config/schema.js';
-import type { Message } from '../../src/types/messages.js';
+**Callbacks:**
+- `createTrackingCallbacks()` - Returns `{ callbacks, log, traceIds, spanIds }`
 
-export function createTestConfig(
-  overrides: Partial<AppConfig> = {}
-): AppConfig {
-  return {
-    providers: {
-      enabled: ['openai'],
-      openai: { apiKey: 'test-key', model: 'gpt-4o' },
-    },
-    memory: { enabled: false },
-    skills: { enabled: [] },
-    ...overrides,
-  };
-}
+**Messages:**
+- `createMessage(role?, content?)` - Single message
+- `createConversationHistory(messages?)` - Conversation array
 
-export function createTestMessage(
-  overrides: Partial<Message> = {}
-): Message {
-  return {
-    role: 'user',
-    content: 'Test message',
-    ...overrides,
-  };
-}
+**Tool Responses:**
+- `createSuccessResponse(result, message?)` - Success ToolResponse
+- `createErrorResponse(error?, message?)` - Error ToolResponse
+- `createToolResponse(success, resultOrError, message?)` - Generic response
 
-export function createTestToolResponse<T>(
-  result: T,
-  overrides: Partial<SuccessResponse<T>> = {}
-): ToolResponse<T> {
-  return {
-    success: true,
-    result,
-    message: 'Test success',
-    ...overrides,
-  };
-}
-```
+**Model Responses:**
+- `createModelSuccess(result, message?)` - Success ModelResponse
+- `createModelError(error?, message?)` - Error ModelResponse
+
+**Mock Models:**
+- `createMockModel(response?, streamChunks?)` - Basic mock model
+- `createToolCallingModel(toolCall, finalResponse)` - Tool-calling model
+- `createFailingModel(error)` - Always-failing model
+- `createRetryableModel(failures, error, successResponse?)` - Fails N times then succeeds
+
+**Other:**
+- `createSpanContext(overrides?)` - Test SpanContext
+- `createTestFileContent(lines?)` - Multi-line test content
 
 ---
 
 ## Integration Tests
 
-Integration tests live in `tests/integration/` and test cross-module flows:
+Integration tests live in `tests/integration/` and test cross-module flows. They use ESM mocking to inject mock LLM responses.
 
 ```typescript
 // tests/integration/agent-tool-flow.test.ts
 
-import { Agent } from '../../src/agent/agent.js';
-import { helloTool } from '../../src/tools/hello.js';
-import { createTestConfig } from '../fixtures/factories.js';
+import { jest, describe, it, expect, beforeEach } from '@jest/globals';
+import {
+  createTestConfig,
+  createTrackingCallbacks,
+} from '../fixtures/factories.js';
+import { SIMPLE_GREETING_RESPONSE, createMockStream } from '../fixtures/llm-responses.js';
+
+// Create mock functions
+const mockInvoke = jest.fn();
+const mockStream = jest.fn();
+
+// Mock the LLM module BEFORE importing Agent
+jest.unstable_mockModule('../../src/model/llm.js', () => ({
+  LLMClient: class MockLLMClient {
+    invoke = mockInvoke;
+    stream = mockStream;
+    getModelName = () => 'gpt-4o';
+    getProviderName = () => 'openai';
+  },
+}));
+
+// Dynamic imports AFTER mocking
+const { Agent } = await import('../../src/agent/agent.js');
+const { helloTool } = await import('../../src/tools/hello.js');
 
 describe('Agent tool execution flow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    setupMockProviders();
+
+    // Configure mock to return greeting response
+    mockInvoke.mockResolvedValue({
+      success: true,
+      result: { content: SIMPLE_GREETING_RESPONSE.content },
+      message: 'Success',
+    });
+
+    mockStream.mockResolvedValue({
+      success: true,
+      result: createMockStream(['Hello', ' world', '!']),
+      message: 'Stream started',
+    });
   });
 
   it('executes full query → LLM → tool → response cycle', async () => {
-    const callbacks = createMockCallbacks();
+    const { callbacks, log } = createTrackingCallbacks();
+    const config = createTestConfig();
+
     const agent = new Agent({
-      ...createTestConfig(),
+      config,
       callbacks,
       tools: [helloTool],
     });
 
     const result = await agent.run('Say hello to Alice');
 
-    // Verify the full flow
-    expect(callbacks.onLLMStart).toHaveBeenCalled();
-    expect(callbacks.onToolStart).toHaveBeenCalledWith(
-      expect.any(Object), // SpanContext
-      'hello',
-      { name: 'Alice' }
-    );
-    expect(callbacks.onToolEnd).toHaveBeenCalled();
-    expect(callbacks.onLLMEnd).toHaveBeenCalled();
-    expect(result).toContain('Hello');
+    // Verify LLM was called
+    expect(mockInvoke).toHaveBeenCalled();
+
+    // Verify callbacks were invoked
+    expect(log.some(l => l.includes('onAgentStart'))).toBe(true);
+    expect(log.some(l => l.includes('onLLMStart'))).toBe(true);
+    expect(log.some(l => l.includes('onLLMEnd'))).toBe(true);
   });
 });
 ```
+
+**Key Integration Test Patterns:**
+- Mock at the module level using `jest.unstable_mockModule`
+- Use dynamic imports for all modules that depend on mocks
+- Configure mock behavior in `beforeEach` for test isolation
+- Use `createTrackingCallbacks()` to capture callback invocations
 
 ---
 
 ## Coverage Requirements
 
-- **Minimum**: 85% coverage enforced in CI
-- **Focus on**: Business logic, error paths, edge cases
-- **Skip**: Generated code, type definitions, simple getters
+- **Target**: 85% coverage for core business logic modules
+- **Focus on**: Agent, model, tools, config, telemetry
+- **Lower threshold for**: React components, CLI presentation layer
 
 ### Running Coverage
 
@@ -402,24 +561,46 @@ bun run test --coverage
 
 ### Coverage Configuration
 
+The project uses per-path thresholds to enforce coverage on core modules while allowing flexibility for UI components:
+
 ```javascript
 // jest.config.js
-module.exports = {
+export default {
   coverageThreshold: {
-    global: {
-      branches: 85,
+    // Core modules enforce 85% coverage
+    'src/model/**/*.ts': {
+      branches: 78,
+      functions: 85,
+      lines: 85,
+      statements: 85,
+    },
+    'src/config/**/*.ts': {
+      branches: 45, // types.ts has V8-specific branch
+      functions: 85,
+      lines: 85,
+      statements: 85,
+    },
+    'src/tools/**/*.ts': {
+      branches: 78,
       functions: 85,
       lines: 85,
       statements: 85,
     },
   },
   collectCoverageFrom: [
-    'src/**/*.ts',
+    'src/**/*.{ts,tsx}',
     '!src/**/*.d.ts',
-    '!src/**/index.ts',
+    '!src/**/__tests__/**',
+    '!src/index.tsx',
   ],
 };
 ```
+
+### Coverage Priorities
+
+1. **Critical (must be 85%+)**: `src/model/`, `src/config/`, `src/tools/`, `src/agent/`
+2. **Important**: `src/telemetry/`, `src/skills/`, `src/errors/`
+3. **Best effort**: `src/cli/`, `src/components/` (React/presentation layer)
 
 ---
 
