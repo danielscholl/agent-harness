@@ -62,7 +62,7 @@ export async function setupGitHub(context: CommandContext): Promise<ProviderSetu
   const promptText =
     envToken !== undefined
       ? 'Token (press Enter to use detected token, or enter new):'
-      : 'GitHub Token (ghp_... or github_pat_...):';
+      : 'GitHub Token (ghp_..., github_pat_..., or gho_...):';
   const tokenInput = await context.onPrompt(promptText);
 
   // Use input if provided, otherwise use detected token

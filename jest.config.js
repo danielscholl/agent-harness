@@ -5,6 +5,7 @@ export default {
   extensionsToTreatAsEsm: ['.ts', '.tsx'],
 
   roots: ['<rootDir>/src', '<rootDir>/tests'],
+  setupFilesAfterEnv: ['<rootDir>/tests/setup.ts'],
   testMatch: [
     '**/__tests__/**/*.test.ts',
     '**/__tests__/**/*.test.tsx',
@@ -74,7 +75,4 @@ export default {
 
   testTimeout: 10000,
   verbose: true,
-
-  // Force exit after tests complete to avoid "worker process failed to exit" warnings
-  forceExit: true,
 };
