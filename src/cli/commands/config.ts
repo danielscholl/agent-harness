@@ -1,8 +1,9 @@
 /**
  * Config command handlers.
- * Provides /config init, /config show, /config edit subcommands.
+ * Provides config (show), config init, config edit subcommands.
  */
 
+import { spawn } from 'node:child_process';
 import type { CommandHandler, CommandResult } from './types.js';
 import { loadConfig, ConfigManager } from '../../config/manager.js';
 import { getDefaultConfig, type AppConfig } from '../../config/schema.js';
@@ -27,8 +28,6 @@ export const configHandler: CommandHandler = async (args, context): Promise<Comm
   switch (subcommand?.toLowerCase()) {
     case 'init':
       return configInitHandler(subArgs, context);
-    case 'show':
-      return configShowHandler(subArgs, context);
     case 'edit':
       return configEditHandler(subArgs, context);
     case undefined:
@@ -36,7 +35,7 @@ export const configHandler: CommandHandler = async (args, context): Promise<Comm
       return configShowHandler('', context); // Default to show
     default:
       context.onOutput(`Unknown subcommand: ${subcommand ?? ''}`, 'warning');
-      context.onOutput('Usage: /config [init|show|edit]', 'info');
+      context.onOutput('Usage: agent config [init|edit]', 'info');
       return { success: false, message: 'Unknown subcommand' };
   }
 };
@@ -322,117 +321,103 @@ export const configInitHandler: CommandHandler = async (_args, context): Promise
 };
 
 /**
- * Handler for /config edit command.
- * Interactive editing of configuration fields.
+ * Open a file in the system's default editor.
+ * Tries $EDITOR, $VISUAL, then falls back to platform-specific defaults.
  */
-export const configEditHandler: CommandHandler = async (args, context): Promise<CommandResult> => {
-  const fieldPath = args.trim();
+async function openInEditor(filePath: string): Promise<{ success: boolean; message?: string }> {
+  return new Promise((resolve) => {
+    // Try environment variables first
+    const editor = process.env.EDITOR ?? process.env.VISUAL;
 
-  if (!context.onPrompt) {
-    context.onOutput('Interactive mode required for /config edit', 'error');
-    return { success: false, message: 'No prompt handler available' };
-  }
+    if (editor !== undefined && editor !== '') {
+      // Use the specified editor
+      const proc = spawn(editor, [filePath], {
+        stdio: 'inherit',
+        shell: true,
+      });
 
-  const configResult = await loadConfig();
-  if (!configResult.success) {
-    context.onOutput(`Failed to load config: ${configResult.message}`, 'error');
-    return { success: false, message: configResult.message };
-  }
+      proc.on('error', (err) => {
+        resolve({ success: false, message: `Failed to open editor: ${err.message}` });
+      });
 
-  const config = configResult.result as AppConfig;
-
-  if (!fieldPath) {
-    // Show editable sections
-    context.onOutput('\nEditable Configuration Sections:', 'success');
-    context.onOutput('─────────────────────────────────', 'info');
-    context.onOutput('  providers.default  - Default LLM provider', 'info');
-    context.onOutput('  agent.logLevel     - Logging level (debug/info/warn/error)', 'info');
-    context.onOutput('  memory.enabled     - Enable/disable memory', 'info');
-    context.onOutput('  telemetry.enabled  - Enable/disable telemetry', 'info');
-    context.onOutput('  session.autoSave   - Auto-save sessions on exit', 'info');
-    context.onOutput('\nUsage: /config edit <field.path>', 'info');
-    context.onOutput('Example: /config edit providers.default', 'info');
-    return { success: true };
-  }
-
-  // Handle specific field edits
-  let newValue: string;
-
-  switch (fieldPath) {
-    case 'providers.default': {
-      context.onOutput(`Current value: ${config.providers.default}`, 'info');
-      context.onOutput(`Valid options: ${PROVIDER_NAMES.join(', ')}`, 'info');
-      newValue = await context.onPrompt('New value:');
-      if (!isValidProviderName(newValue)) {
-        context.onOutput('Invalid provider name', 'error');
-        return { success: false, message: 'Invalid provider' };
-      }
-      config.providers.default = newValue;
-      break;
+      proc.on('close', (code) => {
+        if (code === 0) {
+          resolve({ success: true });
+        } else {
+          resolve({ success: false, message: `Editor exited with code ${String(code)}` });
+        }
+      });
+      return;
     }
 
-    case 'agent.logLevel': {
-      const levels = ['debug', 'info', 'warn', 'error'];
-      context.onOutput(`Current value: ${config.agent.logLevel}`, 'info');
-      context.onOutput(`Valid options: ${levels.join(', ')}`, 'info');
-      newValue = await context.onPrompt('New value:');
-      if (!levels.includes(newValue)) {
-        context.onOutput('Invalid log level', 'error');
-        return { success: false, message: 'Invalid log level' };
-      }
-      config.agent.logLevel = newValue as 'debug' | 'info' | 'warn' | 'error';
-      break;
+    // Fall back to platform-specific defaults
+    const platform = process.platform;
+    let command: string;
+    let args: string[];
+
+    if (platform === 'darwin') {
+      // macOS: use 'open' which opens with default app
+      command = 'open';
+      args = ['-t', filePath]; // -t opens in default text editor
+    } else if (platform === 'win32') {
+      // Windows: use 'notepad' or 'start'
+      command = 'notepad';
+      args = [filePath];
+    } else {
+      // Linux/Unix: try xdg-open, then common editors
+      command = 'xdg-open';
+      args = [filePath];
     }
 
-    case 'memory.enabled': {
-      context.onOutput(`Current value: ${String(config.memory.enabled)}`, 'info');
-      newValue = await context.onPrompt('New value (true/false):');
-      if (newValue !== 'true' && newValue !== 'false') {
-        context.onOutput('Invalid value. Enter true or false', 'error');
-        return { success: false, message: 'Invalid boolean' };
+    const proc = spawn(command, args, {
+      stdio: 'inherit',
+      shell: platform === 'win32',
+    });
+
+    proc.on('error', () => {
+      // If xdg-open fails on Linux, try nano
+      if (platform === 'linux') {
+        const fallback = spawn('nano', [filePath], { stdio: 'inherit' });
+        fallback.on('error', (err) => {
+          resolve({ success: false, message: `No editor found: ${err.message}` });
+        });
+        fallback.on('close', (code) => {
+          resolve(code === 0 ? { success: true } : { success: false, message: 'Editor failed' });
+        });
+      } else {
+        resolve({ success: false, message: 'Failed to open editor' });
       }
-      config.memory.enabled = newValue === 'true';
-      break;
-    }
+    });
 
-    case 'telemetry.enabled': {
-      context.onOutput(`Current value: ${String(config.telemetry.enabled)}`, 'info');
-      newValue = await context.onPrompt('New value (true/false):');
-      if (newValue !== 'true' && newValue !== 'false') {
-        context.onOutput('Invalid value. Enter true or false', 'error');
-        return { success: false, message: 'Invalid boolean' };
+    proc.on('close', (code) => {
+      if (code === 0) {
+        resolve({ success: true });
+      } else {
+        resolve({ success: false, message: `Editor exited with code ${String(code)}` });
       }
-      config.telemetry.enabled = newValue === 'true';
-      break;
-    }
+    });
+  });
+}
 
-    case 'session.autoSave': {
-      context.onOutput(`Current value: ${String(config.session.autoSave)}`, 'info');
-      newValue = await context.onPrompt('New value (true/false):');
-      if (newValue !== 'true' && newValue !== 'false') {
-        context.onOutput('Invalid value. Enter true or false', 'error');
-        return { success: false, message: 'Invalid boolean' };
-      }
-      config.session.autoSave = newValue === 'true';
-      break;
-    }
-
-    default:
-      context.onOutput(`Unknown field: ${fieldPath}`, 'error');
-      context.onOutput('Use /config edit to see available fields', 'info');
-      return { success: false, message: 'Unknown field' };
-  }
-
-  // Save the updated config
+/**
+ * Handler for config edit command.
+ * Opens the configuration file in the system's default text editor.
+ */
+export const configEditHandler: CommandHandler = async (_args, context): Promise<CommandResult> => {
   const manager = new ConfigManager();
-  const saveResult = await manager.save(config);
+  const configPath = manager.getUserConfigPath();
 
-  if (!saveResult.success) {
-    context.onOutput(`Failed to save: ${saveResult.message}`, 'error');
-    return { success: false, message: saveResult.message };
+  context.onOutput(`Opening configuration file: ${configPath}`, 'info');
+
+  const result = await openInEditor(configPath);
+
+  if (!result.success) {
+    context.onOutput(`Failed to open editor: ${result.message ?? 'Unknown error'}`, 'error');
+    context.onOutput('You can manually edit the file at: ' + configPath, 'info');
+    return { success: false, message: result.message };
   }
 
-  context.onOutput(`Updated ${fieldPath} successfully`, 'success');
+  context.onOutput('Configuration file opened in editor.', 'success');
   context.onOutput('Note: Restart the agent for changes to take effect.', 'warning');
-  return { success: true, message: `Updated ${fieldPath}` };
+  return { success: true, message: 'Opened config in editor' };
 };

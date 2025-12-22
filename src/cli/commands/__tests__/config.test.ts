@@ -12,6 +12,7 @@ jest.unstable_mockModule('../../../config/manager.js', () => ({
   loadConfig: jest.fn(),
   ConfigManager: jest.fn().mockImplementation(() => ({
     save: jest.fn().mockResolvedValue({ success: true, message: 'Saved' }),
+    getUserConfigPath: jest.fn().mockReturnValue('/home/user/.agent/settings.json'),
   })),
 }));
 
@@ -51,6 +52,12 @@ jest.unstable_mockModule('../../../config/schema.js', () => ({
     telemetry: { enabled: false },
     retry: {},
   }),
+}));
+
+// Mock child_process for editor tests
+const mockSpawn = jest.fn();
+jest.unstable_mockModule('node:child_process', () => ({
+  spawn: mockSpawn,
 }));
 
 interface OutputEntry {
@@ -148,35 +155,6 @@ describe('config command handlers', () => {
       const { configHandler } = await import('../config.js');
       const context = createMockContext();
       const result = await configHandler('', context);
-
-      expect(result.success).toBe(true);
-      expect(context.outputs.some((o) => o.content.includes('Agent Configuration'))).toBe(true);
-    });
-
-    it('routes to show subcommand', async () => {
-      loadConfig.mockResolvedValue({
-        success: true,
-        result: {
-          version: '1.0',
-          providers: { default: 'openai', openai: { model: 'gpt-4o' } },
-          agent: { dataDir: '~/.agent', logLevel: 'info', filesystemWritesEnabled: true },
-          memory: { enabled: false, type: 'local', historyLimit: 100 },
-          session: { autoSave: true, maxSessions: 50 },
-          skills: { disabledBundled: [], enabledBundled: [], plugins: [], scriptTimeout: 30000 },
-          telemetry: { enabled: false, enableSensitiveData: false },
-          retry: {
-            enabled: true,
-            maxRetries: 3,
-            baseDelayMs: 1000,
-            maxDelayMs: 10000,
-            enableJitter: true,
-          },
-        },
-      });
-
-      const { configHandler } = await import('../config.js');
-      const context = createMockContext();
-      const result = await configHandler('show', context);
 
       expect(result.success).toBe(true);
       expect(context.outputs.some((o) => o.content.includes('Agent Configuration'))).toBe(true);
@@ -297,74 +275,29 @@ describe('config command handlers', () => {
   });
 
   describe('configEditHandler', () => {
-    it('requires interactive mode', async () => {
-      const { configEditHandler } = await import('../config.js');
-      const context = createMockContext({ withPrompt: false });
-      const result = await configEditHandler('providers.default', context);
-
-      expect(result.success).toBe(false);
-      expect(context.outputs.some((o) => o.content.includes('Interactive mode required'))).toBe(
-        true
-      );
-    });
-
-    it('shows editable fields when no path provided', async () => {
-      loadConfig.mockResolvedValue({
-        success: true,
-        result: {
-          version: '1.0',
-          providers: { default: 'openai' },
-          agent: { dataDir: '~/.agent', logLevel: 'info', filesystemWritesEnabled: true },
-          memory: { enabled: false, type: 'local', historyLimit: 100 },
-          session: { autoSave: true, maxSessions: 50 },
-          skills: { disabledBundled: [], enabledBundled: [], plugins: [], scriptTimeout: 30000 },
-          telemetry: { enabled: false, enableSensitiveData: false },
-          retry: {
-            enabled: true,
-            maxRetries: 3,
-            baseDelayMs: 1000,
-            maxDelayMs: 10000,
-            enableJitter: true,
-          },
-        },
-      });
+    it('opens config file in editor', async () => {
+      // Mock spawn to simulate successful editor open
+      const mockProcess = {
+        on: jest.fn((event: string, callback: (code: number | null) => void) => {
+          if (event === 'close') {
+            // Simulate editor closing successfully
+            setTimeout(() => { callback(0); }, 10);
+          }
+          return mockProcess;
+        }),
+      };
+      mockSpawn.mockReturnValue(mockProcess);
 
       const { configEditHandler } = await import('../config.js');
       const context = createMockContext({ withPrompt: true });
+
       const result = await configEditHandler('', context);
 
+      // Should output the config file path
+      expect(
+        context.outputs.some((o) => o.content.includes('/home/user/.agent/settings.json'))
+      ).toBe(true);
       expect(result.success).toBe(true);
-      expect(context.outputs.some((o) => o.content.includes('Editable Configuration'))).toBe(true);
-      expect(context.outputs.some((o) => o.content.includes('providers.default'))).toBe(true);
-    });
-
-    it('shows error for unknown field', async () => {
-      loadConfig.mockResolvedValue({
-        success: true,
-        result: {
-          version: '1.0',
-          providers: { default: 'openai' },
-          agent: { dataDir: '~/.agent', logLevel: 'info', filesystemWritesEnabled: true },
-          memory: { enabled: false, type: 'local', historyLimit: 100 },
-          session: { autoSave: true, maxSessions: 50 },
-          skills: { disabledBundled: [], enabledBundled: [], plugins: [], scriptTimeout: 30000 },
-          telemetry: { enabled: false, enableSensitiveData: false },
-          retry: {
-            enabled: true,
-            maxRetries: 3,
-            baseDelayMs: 1000,
-            maxDelayMs: 10000,
-            enableJitter: true,
-          },
-        },
-      });
-
-      const { configEditHandler } = await import('../config.js');
-      const context = createMockContext({ withPrompt: true });
-      const result = await configEditHandler('unknown.field', context);
-
-      expect(result.success).toBe(false);
-      expect(context.outputs.some((o) => o.content.includes('Unknown field'))).toBe(true);
     });
   });
 });

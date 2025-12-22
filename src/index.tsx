@@ -18,15 +18,14 @@ const cli = meow(
   `
   Usage
     $ agent [options]
-    $ agent config [show|init|edit]
+    $ agent config [init|edit]
     $ agent skill [list|info|validate]
     $ agent -p <prompt> [options]
 
   Commands
-    config                 Manage agent configuration
-      config show          Display current configuration
+    config                 Display current configuration
       config init          Interactive configuration setup
-      config edit          Edit configuration fields
+      config edit          Open configuration in text editor
 
     skill                  Manage agent skills
       skill list           List available skills
@@ -49,14 +48,6 @@ const cli = meow(
     /history               Show conversation history
     /clear                 Clear conversation
     /exit                  Exit the agent
-
-  Examples
-    $ agent                           # Interactive mode
-    $ agent -p "Say hello"            # Single prompt
-    $ agent config show               # Show configuration
-    $ agent skill list                # List skills
-    $ agent --provider anthropic      # Use specific provider
-    $ agent --continue                # Resume last session
 `,
   {
     importMeta: import.meta,
