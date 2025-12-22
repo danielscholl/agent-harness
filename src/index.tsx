@@ -18,15 +18,15 @@ const cli = meow(
   `
   Usage
     $ agent [options]
-    $ agent config [show|init|edit]
+    $ agent config
+    $ agent config [init|edit]
     $ agent skill [list|info|validate]
     $ agent -p <prompt> [options]
 
   Commands
-    config                 Manage agent configuration
-      config show          Display current configuration
+    config                 Display current configuration
       config init          Interactive configuration setup
-      config edit          Edit configuration fields
+      config edit          Open configuration in text editor
 
     skill                  Manage agent skills
       skill list           List available skills

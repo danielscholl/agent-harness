@@ -12,9 +12,11 @@ let stderrWriteSpy: { mockRestore: () => void } | null = null;
 
 // Mock modules before importing
 const mockLoadConfig = jest.fn<() => Promise<unknown>>();
+const mockConfigFileExists = jest.fn<() => Promise<boolean>>();
 
 jest.unstable_mockModule('../../config/manager.js', () => ({
   loadConfig: mockLoadConfig,
+  configFileExists: mockConfigFileExists,
 }));
 
 // Mock Agent that invokes callbacks properly
@@ -71,6 +73,8 @@ describe('SinglePrompt', () => {
     jest.clearAllMocks();
     // SinglePrompt writes errors to stderr for scripting; silence during tests to avoid CI annotations/noise.
     stderrWriteSpy = jest.spyOn(process.stderr, 'write').mockImplementation((() => true) as never);
+    // Default: config file exists
+    mockConfigFileExists.mockResolvedValue(true);
     // Default: config loads successfully
     mockLoadConfig.mockResolvedValue({
       success: true,

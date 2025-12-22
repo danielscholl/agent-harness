@@ -160,15 +160,43 @@ describe('Provider Setup Wizards', () => {
     });
 
     it('allows Azure CLI auth when API key is empty', async () => {
-      const { setupAzure } = await import('../azure.js');
-      const context = createMockContext(['https://myresource.openai.azure.com/', '', '', '']);
-      const result = await setupAzure(context);
+      // Clear Azure env vars to test the non-env-var path
+      const savedEnv = {
+        AZURE_OPENAI_ENDPOINT: process.env.AZURE_OPENAI_ENDPOINT,
+        AZURE_OPENAI_DEPLOYMENT_NAME: process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
+        AZURE_OPENAI_API_KEY: process.env.AZURE_OPENAI_API_KEY,
+        AZURE_OPENAI_API_VERSION: process.env.AZURE_OPENAI_API_VERSION,
+      };
+      delete process.env.AZURE_OPENAI_ENDPOINT;
+      delete process.env.AZURE_OPENAI_DEPLOYMENT_NAME;
+      delete process.env.AZURE_OPENAI_API_KEY;
+      delete process.env.AZURE_OPENAI_API_VERSION;
 
-      expect(result.success).toBe(true);
-      expect(result.config?.apiKey).toBeUndefined();
-      expect(context.outputs.some((o) => o.content.includes('Azure CLI authentication'))).toBe(
-        true
-      );
+      try {
+        const { setupAzure } = await import('../azure.js');
+        const context = createMockContext(['https://myresource.openai.azure.com/', '', '', '']);
+        const result = await setupAzure(context);
+
+        expect(result.success).toBe(true);
+        expect(result.config?.apiKey).toBeUndefined();
+        expect(context.outputs.some((o) => o.content.includes('Azure CLI authentication'))).toBe(
+          true
+        );
+      } finally {
+        // Restore env vars
+        if (savedEnv.AZURE_OPENAI_ENDPOINT !== undefined) {
+          process.env.AZURE_OPENAI_ENDPOINT = savedEnv.AZURE_OPENAI_ENDPOINT;
+        }
+        if (savedEnv.AZURE_OPENAI_DEPLOYMENT_NAME !== undefined) {
+          process.env.AZURE_OPENAI_DEPLOYMENT_NAME = savedEnv.AZURE_OPENAI_DEPLOYMENT_NAME;
+        }
+        if (savedEnv.AZURE_OPENAI_API_KEY !== undefined) {
+          process.env.AZURE_OPENAI_API_KEY = savedEnv.AZURE_OPENAI_API_KEY;
+        }
+        if (savedEnv.AZURE_OPENAI_API_VERSION !== undefined) {
+          process.env.AZURE_OPENAI_API_VERSION = savedEnv.AZURE_OPENAI_API_VERSION;
+        }
+      }
     });
   });
 
@@ -287,6 +315,49 @@ describe('Provider Setup Wizards', () => {
 
       expect(result.success).toBe(true);
       expect(result.config?.token).toBe('github_pat_token123');
+    });
+
+    it('accepts gho_ format (OAuth token)', async () => {
+      const { setupGitHub } = await import('../github.js');
+      const context = createMockContext(['gho_oauthtoken123', '']);
+      const result = await setupGitHub(context);
+
+      expect(result.success).toBe(true);
+      expect(result.config?.token).toBe('gho_oauthtoken123');
+    });
+
+    it('detects GITHUB_TOKEN from environment', async () => {
+      const savedToken = process.env.GITHUB_TOKEN;
+      process.env.GITHUB_TOKEN = 'ghp_envtoken123';
+
+      try {
+        const { setupGitHub } = await import('../github.js');
+        // Empty inputs - should use env token
+        const context = createMockContext(['', '', '']);
+        const result = await setupGitHub(context);
+
+        expect(result.success).toBe(true);
+        // Token should NOT be in config when using env var
+        expect(result.config?.token).toBeUndefined();
+        expect(
+          context.outputs.some((o) => o.content.includes('Detected: Token from GITHUB_TOKEN'))
+        ).toBe(true);
+      } finally {
+        if (savedToken !== undefined) {
+          process.env.GITHUB_TOKEN = savedToken;
+        } else {
+          delete process.env.GITHUB_TOKEN;
+        }
+      }
+    });
+
+    it('accepts organization parameter', async () => {
+      const { setupGitHub } = await import('../github.js');
+      const context = createMockContext(['ghp_validtoken123', '', 'my-org']);
+      const result = await setupGitHub(context);
+
+      expect(result.success).toBe(true);
+      expect(result.config?.org).toBe('my-org');
     });
   });
 

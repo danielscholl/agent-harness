@@ -6,8 +6,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useApp } from 'ink';
-import * as os from 'node:os';
-import { loadConfig } from '../config/manager.js';
+import { loadConfig, loadConfigFromFiles } from '../config/manager.js';
 import { VERSION } from '../cli/version.js';
 import { Spinner } from './Spinner.js';
 import type { AppConfig } from '../config/schema.js';
@@ -46,6 +45,8 @@ interface HealthSection {
 interface DockerStatus {
   running: boolean;
   version?: string;
+  cpus?: number;
+  memoryBytes?: number;
 }
 
 /**
@@ -116,13 +117,19 @@ function getProviderSecret(
 
 /**
  * Check Docker status asynchronously using child_process.
+ * Queries Docker for version, allocated CPUs, and memory.
  */
 async function getDockerStatus(): Promise<DockerStatus> {
   const { spawn } = await import('node:child_process');
 
   return new Promise((resolve) => {
     try {
-      const proc = spawn('docker', ['info', '--format', '{{.ServerVersion}}']);
+      // Query version, NCPU, and MemTotal from Docker
+      const proc = spawn('docker', [
+        'info',
+        '--format',
+        '{{.ServerVersion}}|{{.NCPU}}|{{.MemTotal}}',
+      ]);
       let output = '';
 
       proc.stdout.on('data', (data: Buffer) => {
@@ -135,7 +142,17 @@ async function getDockerStatus(): Promise<DockerStatus> {
 
       proc.on('close', (code: number | null) => {
         if (code === 0 && output.trim()) {
-          resolve({ running: true, version: output.trim() });
+          const parts = output.trim().split('|');
+          const version = parts[0];
+          const cpus = parts[1] !== undefined ? parseInt(parts[1], 10) : undefined;
+          const memoryBytes = parts[2] !== undefined ? parseInt(parts[2], 10) : undefined;
+
+          resolve({
+            running: true,
+            version,
+            cpus: cpus !== undefined && !isNaN(cpus) ? cpus : undefined,
+            memoryBytes: memoryBytes !== undefined && !isNaN(memoryBytes) ? memoryBytes : undefined,
+          });
         } else {
           resolve({ running: false });
         }
@@ -198,18 +215,20 @@ function buildMemorySection(config: AppConfig): HealthSection {
 /**
  * Build the Docker section.
  * Shows 'ok' (green) if running, 'warning' (yellow) if not running.
+ * Displays Docker's allocated resources (CPUs and memory), not system totals.
  */
 function buildDockerSection(dockerStatus: DockerStatus): HealthSection {
-  const cpuCount = String(os.cpus().length);
-  const totalMemory = formatMemory(os.totalmem());
-
   if (dockerStatus.running) {
     const version = dockerStatus.version ?? 'unknown';
+    const cpuCount = dockerStatus.cpus !== undefined ? String(dockerStatus.cpus) : 'unknown';
+    const totalMemory =
+      dockerStatus.memoryBytes !== undefined ? formatMemory(dockerStatus.memoryBytes) : 'unknown';
+
     return {
       name: 'Docker',
       items: [
         {
-          label: `Running (${version}) · ${cpuCount} cores, ${totalMemory}`,
+          label: `Running (${version}) · ${cpuCount} allocated cores, ${totalMemory} allocated`,
           value: '',
           status: 'ok',
         },
@@ -225,43 +244,47 @@ function buildDockerSection(dockerStatus: DockerStatus): HealthSection {
 
 /**
  * Check if a provider is explicitly configured in settings (not just env vars).
- * A provider is considered "configured" if it has any non-default values set.
+ * A provider is considered "configured" if it has any properties set in the config file.
  */
 function isProviderConfigured(
   providerName: ProviderName,
   providerConfig: Record<string, unknown> | undefined
 ): boolean {
+  // Provider config must be defined and not an empty object
   if (providerConfig === undefined) return false;
 
-  // Local provider is always configured if present
+  // Local provider is always configured if present (even if empty)
   if (providerName === 'local') return true;
 
-  // Check for explicit configuration (apiKey, token, endpoint, etc.)
-  const hasApiKey = providerConfig.apiKey !== undefined;
-  const hasToken = providerConfig.token !== undefined;
-  const hasEndpoint =
-    providerConfig.endpoint !== undefined || providerConfig.projectEndpoint !== undefined;
-
-  return hasApiKey || hasToken || hasEndpoint;
+  // Check if any property is set (model, apiKey, endpoint, etc.)
+  // An empty object {} is not considered configured
+  return Object.keys(providerConfig).length > 0;
 }
 
 /**
  * Build the LLM Providers section.
  * Shows 'ok' (green) if API key configured, 'warning' (yellow) if not configured.
+ *
+ * @param config - Full config with env vars merged (for display values like API keys)
+ * @param fileConfig - Config from files only (to determine which providers are explicitly configured)
  */
-function buildProvidersSection(config: AppConfig): HealthSection {
+function buildProvidersSection(config: AppConfig, fileConfig: AppConfig): HealthSection {
   const defaultProvider = config.providers.default;
   const items: SectionItem[] = [];
 
   for (const providerName of PROVIDER_NAMES) {
+    // Check if provider is explicitly configured in file-based config (not env vars)
+    const fileProviderConfig = fileConfig.providers[providerName] as
+      | Record<string, unknown>
+      | undefined;
+    if (!isProviderConfigured(providerName, fileProviderConfig)) continue;
+
+    // Use full config (with env vars) for display values
     const providerConfig = config.providers[providerName] as Record<string, unknown> | undefined;
 
-    // Only show providers that are explicitly configured in settings
-    if (!isProviderConfigured(providerName, providerConfig)) continue;
-
     const displayName = getProviderDisplayName(providerName);
-    const modelName = getModelName(providerName, providerConfig as Record<string, unknown>);
-    const secret = getProviderSecret(providerName, providerConfig as Record<string, unknown>);
+    const modelName = getModelName(providerName, providerConfig ?? {});
+    const secret = getProviderSecret(providerName, providerConfig ?? {});
     const hasSecret = secret !== undefined && secret !== '' && secret !== 'N/A';
     const maskedSecret = providerName === 'local' ? '' : ` · ${maskSecret(secret)}`;
 
@@ -303,7 +326,7 @@ export function HealthCheck(): React.ReactElement {
 
   useEffect(() => {
     async function runChecks(): Promise<void> {
-      // Load config first
+      // Load full config (with env vars) for display values
       const configResult = await loadConfig();
 
       if (!configResult.success) {
@@ -317,6 +340,12 @@ export function HealthCheck(): React.ReactElement {
 
       const config = configResult.result as NonNullable<typeof configResult.result>;
 
+      // Load file-only config to determine which providers are explicitly configured
+      const fileConfigResult = await loadConfigFromFiles();
+      const fileConfig = fileConfigResult.success
+        ? (fileConfigResult.result as NonNullable<typeof fileConfigResult.result>)
+        : config;
+
       // Get Docker status
       const dockerStatus = await getDockerStatus();
 
@@ -326,7 +355,7 @@ export function HealthCheck(): React.ReactElement {
         buildAgentSection(config),
         buildMemorySection(config),
         buildDockerSection(dockerStatus),
-        buildProvidersSection(config),
+        buildProvidersSection(config, fileConfig),
       ];
 
       setSections(allSections);

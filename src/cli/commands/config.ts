@@ -1,10 +1,11 @@
 /**
  * Config command handlers.
- * Provides /config init, /config show, /config edit subcommands.
+ * `config` with no subcommand shows the current configuration; `config init` and `config edit` are subcommands.
  */
 
+import { spawn } from 'node:child_process';
 import type { CommandHandler, CommandResult } from './types.js';
-import { loadConfig, ConfigManager } from '../../config/manager.js';
+import { loadConfig, loadConfigFromFiles, ConfigManager } from '../../config/manager.js';
 import { getDefaultConfig, type AppConfig } from '../../config/schema.js';
 import { getProviderWizards } from '../../config/providers/index.js';
 import { PROVIDER_NAMES, type ProviderName } from '../../config/constants.js';
@@ -26,9 +27,16 @@ export const configHandler: CommandHandler = async (args, context): Promise<Comm
 
   switch (subcommand?.toLowerCase()) {
     case 'init':
+      // Config init is only available from CLI, not as a slash command in interactive mode
+      if (context.isInteractive === true) {
+        context.onOutput('To configure a new provider, exit and run: agent config init', 'info');
+        return {
+          success: false,
+          message:
+            'Configuration changes must be done from the command line. Exit and run: agent config init',
+        };
+      }
       return configInitHandler(subArgs, context);
-    case 'show':
-      return configShowHandler(subArgs, context);
     case 'edit':
       return configEditHandler(subArgs, context);
     case undefined:
@@ -36,13 +44,14 @@ export const configHandler: CommandHandler = async (args, context): Promise<Comm
       return configShowHandler('', context); // Default to show
     default:
       context.onOutput(`Unknown subcommand: ${subcommand ?? ''}`, 'warning');
-      context.onOutput('Usage: /config [init|show|edit]', 'info');
+      context.onOutput('Usage: agent config [edit]', 'info');
       return { success: false, message: 'Unknown subcommand' };
   }
 };
 
 /**
- * Get list of configured providers (have apiKey, token, or endpoint set).
+ * Get list of configured providers (have any properties set in config file).
+ * A provider is considered "configured" if it has any properties set.
  */
 function getConfiguredProviders(config: AppConfig): ProviderName[] {
   const configured: ProviderName[] = [];
@@ -50,19 +59,17 @@ function getConfiguredProviders(config: AppConfig): ProviderName[] {
     const providerConfig = config.providers[name] as Record<string, unknown> | undefined;
     if (providerConfig === undefined) continue;
 
-    // Local is always "configured"
+    // Local provider is always configured if present
     if (name === 'local') {
       configured.push(name);
       continue;
     }
 
-    // Check for explicit configuration
-    const hasApiKey = providerConfig.apiKey !== undefined;
-    const hasToken = providerConfig.token !== undefined;
-    const hasEndpoint =
-      providerConfig.endpoint !== undefined || providerConfig.projectEndpoint !== undefined;
+    // Check if any property is set (model, apiKey, endpoint, etc.)
+    // A provider with just a model set is still explicitly configured
+    const hasAnyProperty = Object.keys(providerConfig).length > 0;
 
-    if (hasApiKey || hasToken || hasEndpoint) {
+    if (hasAnyProperty) {
       configured.push(name);
     }
   }
@@ -88,6 +95,7 @@ function tableRow(
  * Displays current configuration in a formatted table like osdu-agent.
  */
 export const configShowHandler: CommandHandler = async (_args, context): Promise<CommandResult> => {
+  // Load full config (with env vars) for display values
   const configResult = await loadConfig();
 
   if (!configResult.success) {
@@ -97,11 +105,15 @@ export const configShowHandler: CommandHandler = async (_args, context): Promise
 
   const config = configResult.result as AppConfig;
 
+  // Load file-only config to determine which providers are explicitly configured
+  const fileConfigResult = await loadConfigFromFiles();
+  const fileConfig = fileConfigResult.success ? (fileConfigResult.result as AppConfig) : config;
+
   // Build table rows
   const rows: Array<{ setting: string; value: string }> = [];
 
-  // Get configured providers
-  const configuredProviders = getConfiguredProviders(config);
+  // Get configured providers from file config (not env vars)
+  const configuredProviders = getConfiguredProviders(fileConfig);
 
   // Enabled Providers row
   rows.push({
@@ -109,63 +121,80 @@ export const configShowHandler: CommandHandler = async (_args, context): Promise
     value: configuredProviders.length > 0 ? configuredProviders.join(', ') : 'none',
   });
 
-  // Default Provider row
+  // Default Provider row - only meaningful if providers are configured
+  // If only one provider, it's automatically the default
+  // If no providers, show "none"
+  let effectiveDefault: string;
+  if (configuredProviders.length === 0) {
+    effectiveDefault = 'none';
+  } else if (configuredProviders.length === 1) {
+    effectiveDefault = configuredProviders[0] as string;
+  } else {
+    // Multiple providers - use the configured default if it's in the list
+    const configDefault = fileConfig.providers.default;
+    effectiveDefault = configuredProviders.includes(configDefault)
+      ? configDefault
+      : (configuredProviders[0] as string);
+  }
+
   rows.push({
     setting: 'Default Provider',
-    value: config.providers.default,
+    value: effectiveDefault,
   });
 
-  // Provider-specific settings (indented)
-  const defaultProvider = config.providers.default;
-  const defaultConfig = config.providers[defaultProvider] as Record<string, unknown> | undefined;
+  // Provider-specific settings (indented) - only if default is a real provider
+  if (effectiveDefault !== 'none') {
+    const defaultProvider = effectiveDefault as ProviderName;
+    const defaultConfig = config.providers[defaultProvider] as Record<string, unknown> | undefined;
 
-  if (defaultConfig !== undefined) {
-    // Show endpoint for azure/foundry
-    if (defaultProvider === 'azure') {
-      const endpoint = defaultConfig.endpoint as string | undefined;
-      if (endpoint !== undefined) {
+    if (defaultConfig !== undefined) {
+      // Show endpoint for azure/foundry
+      if (defaultProvider === 'azure') {
+        const endpoint = defaultConfig.endpoint as string | undefined;
+        if (endpoint !== undefined) {
+          rows.push({
+            setting: `  ${defaultProvider} Endpoint`,
+            value: endpoint,
+          });
+        }
+      }
+      if (defaultProvider === 'foundry') {
+        const endpoint = defaultConfig.projectEndpoint as string | undefined;
+        if (endpoint !== undefined) {
+          rows.push({
+            setting: `  ${defaultProvider} Endpoint`,
+            value: endpoint,
+          });
+        }
+      }
+
+      // Show model/deployment
+      const deployment = defaultConfig.deployment as string | undefined;
+      const modelDeployment = defaultConfig.modelDeployment as string | undefined;
+      const model = defaultConfig.model as string | undefined;
+      const modelAlias = defaultConfig.modelAlias as string | undefined;
+
+      if (deployment !== undefined) {
         rows.push({
-          setting: `  ${defaultProvider} Endpoint`,
-          value: endpoint,
+          setting: `  ${defaultProvider} Deployment`,
+          value: deployment,
+        });
+      } else if (modelDeployment !== undefined) {
+        rows.push({
+          setting: `  ${defaultProvider} Deployment`,
+          value: modelDeployment,
+        });
+      } else if (model !== undefined) {
+        rows.push({
+          setting: `  ${defaultProvider} Model`,
+          value: model,
+        });
+      } else if (modelAlias !== undefined) {
+        rows.push({
+          setting: `  ${defaultProvider} Model`,
+          value: modelAlias,
         });
       }
-    }
-    if (defaultProvider === 'foundry') {
-      const endpoint = defaultConfig.projectEndpoint as string | undefined;
-      if (endpoint !== undefined) {
-        rows.push({
-          setting: `  ${defaultProvider} Endpoint`,
-          value: endpoint,
-        });
-      }
-    }
-
-    // Show model/deployment
-    const deployment = defaultConfig.deployment as string | undefined;
-    const modelDeployment = defaultConfig.modelDeployment as string | undefined;
-    const model = defaultConfig.model as string | undefined;
-    const modelAlias = defaultConfig.modelAlias as string | undefined;
-
-    if (deployment !== undefined) {
-      rows.push({
-        setting: `  ${defaultProvider} Deployment`,
-        value: deployment,
-      });
-    } else if (modelDeployment !== undefined) {
-      rows.push({
-        setting: `  ${defaultProvider} Deployment`,
-        value: modelDeployment,
-      });
-    } else if (model !== undefined) {
-      rows.push({
-        setting: `  ${defaultProvider} Model`,
-        value: model,
-      });
-    } else if (modelAlias !== undefined) {
-      rows.push({
-        setting: `  ${defaultProvider} Model`,
-        value: modelAlias,
-      });
     }
   }
 
@@ -322,117 +351,123 @@ export const configInitHandler: CommandHandler = async (_args, context): Promise
 };
 
 /**
- * Handler for /config edit command.
- * Interactive editing of configuration fields.
+ * Open a file in the system's default editor.
+ * Tries $EDITOR, $VISUAL, then falls back to platform-specific defaults.
  */
-export const configEditHandler: CommandHandler = async (args, context): Promise<CommandResult> => {
-  const fieldPath = args.trim();
+async function openInEditor(filePath: string): Promise<{ success: boolean; message?: string }> {
+  return new Promise((resolve) => {
+    let resolved = false;
 
-  if (!context.onPrompt) {
-    context.onOutput('Interactive mode required for /config edit', 'error');
-    return { success: false, message: 'No prompt handler available' };
-  }
+    // Try environment variables first
+    const editor = process.env.EDITOR ?? process.env.VISUAL;
 
-  const configResult = await loadConfig();
-  if (!configResult.success) {
-    context.onOutput(`Failed to load config: ${configResult.message}`, 'error');
-    return { success: false, message: configResult.message };
-  }
+    if (editor !== undefined && editor !== '') {
+      // Use the specified editor
+      const proc = spawn(editor, [filePath], {
+        stdio: 'inherit',
+        shell: true,
+      });
 
-  const config = configResult.result as AppConfig;
+      proc.on('error', (err) => {
+        if (!resolved) {
+          resolved = true;
+          resolve({ success: false, message: `Failed to open editor: ${err.message}` });
+        }
+      });
 
-  if (!fieldPath) {
-    // Show editable sections
-    context.onOutput('\nEditable Configuration Sections:', 'success');
-    context.onOutput('─────────────────────────────────', 'info');
-    context.onOutput('  providers.default  - Default LLM provider', 'info');
-    context.onOutput('  agent.logLevel     - Logging level (debug/info/warn/error)', 'info');
-    context.onOutput('  memory.enabled     - Enable/disable memory', 'info');
-    context.onOutput('  telemetry.enabled  - Enable/disable telemetry', 'info');
-    context.onOutput('  session.autoSave   - Auto-save sessions on exit', 'info');
-    context.onOutput('\nUsage: /config edit <field.path>', 'info');
-    context.onOutput('Example: /config edit providers.default', 'info');
-    return { success: true };
-  }
-
-  // Handle specific field edits
-  let newValue: string;
-
-  switch (fieldPath) {
-    case 'providers.default': {
-      context.onOutput(`Current value: ${config.providers.default}`, 'info');
-      context.onOutput(`Valid options: ${PROVIDER_NAMES.join(', ')}`, 'info');
-      newValue = await context.onPrompt('New value:');
-      if (!isValidProviderName(newValue)) {
-        context.onOutput('Invalid provider name', 'error');
-        return { success: false, message: 'Invalid provider' };
-      }
-      config.providers.default = newValue;
-      break;
+      proc.on('close', (code) => {
+        if (!resolved) {
+          resolved = true;
+          if (code === 0) {
+            resolve({ success: true });
+          } else {
+            resolve({ success: false, message: `Editor exited with code ${String(code)}` });
+          }
+        }
+      });
+      return;
     }
 
-    case 'agent.logLevel': {
-      const levels = ['debug', 'info', 'warn', 'error'];
-      context.onOutput(`Current value: ${config.agent.logLevel}`, 'info');
-      context.onOutput(`Valid options: ${levels.join(', ')}`, 'info');
-      newValue = await context.onPrompt('New value:');
-      if (!levels.includes(newValue)) {
-        context.onOutput('Invalid log level', 'error');
-        return { success: false, message: 'Invalid log level' };
-      }
-      config.agent.logLevel = newValue as 'debug' | 'info' | 'warn' | 'error';
-      break;
+    // Fall back to platform-specific defaults
+    const platform = process.platform;
+    let command: string;
+    let args: string[];
+
+    if (platform === 'darwin') {
+      // macOS: use 'open' which opens with default app
+      command = 'open';
+      args = ['-t', filePath]; // -t opens in default text editor
+    } else if (platform === 'win32') {
+      // Windows: use 'notepad' or 'start'
+      command = 'notepad';
+      args = [filePath];
+    } else {
+      // Linux/Unix: try xdg-open, then common editors
+      command = 'xdg-open';
+      args = [filePath];
     }
 
-    case 'memory.enabled': {
-      context.onOutput(`Current value: ${String(config.memory.enabled)}`, 'info');
-      newValue = await context.onPrompt('New value (true/false):');
-      if (newValue !== 'true' && newValue !== 'false') {
-        context.onOutput('Invalid value. Enter true or false', 'error');
-        return { success: false, message: 'Invalid boolean' };
+    const proc = spawn(command, args, {
+      stdio: 'inherit',
+      shell: platform === 'win32',
+    });
+
+    proc.on('error', () => {
+      // If xdg-open fails on Unix-like systems, try nano
+      if (platform !== 'darwin' && platform !== 'win32') {
+        const fallback = spawn('nano', [filePath], { stdio: 'inherit' });
+        fallback.on('error', (err) => {
+          if (!resolved) {
+            resolved = true;
+            resolve({ success: false, message: `No editor found: ${err.message}` });
+          }
+        });
+        fallback.on('close', (code) => {
+          if (!resolved) {
+            resolved = true;
+            resolve(code === 0 ? { success: true } : { success: false, message: 'Editor failed' });
+          }
+        });
+      } else {
+        if (!resolved) {
+          resolved = true;
+          resolve({ success: false, message: 'Failed to open editor' });
+        }
       }
-      config.memory.enabled = newValue === 'true';
-      break;
-    }
+    });
 
-    case 'telemetry.enabled': {
-      context.onOutput(`Current value: ${String(config.telemetry.enabled)}`, 'info');
-      newValue = await context.onPrompt('New value (true/false):');
-      if (newValue !== 'true' && newValue !== 'false') {
-        context.onOutput('Invalid value. Enter true or false', 'error');
-        return { success: false, message: 'Invalid boolean' };
+    proc.on('close', (code) => {
+      if (!resolved) {
+        resolved = true;
+        if (code === 0) {
+          resolve({ success: true });
+        } else {
+          resolve({ success: false, message: `Editor exited with code ${String(code)}` });
+        }
       }
-      config.telemetry.enabled = newValue === 'true';
-      break;
-    }
+    });
+  });
+}
 
-    case 'session.autoSave': {
-      context.onOutput(`Current value: ${String(config.session.autoSave)}`, 'info');
-      newValue = await context.onPrompt('New value (true/false):');
-      if (newValue !== 'true' && newValue !== 'false') {
-        context.onOutput('Invalid value. Enter true or false', 'error');
-        return { success: false, message: 'Invalid boolean' };
-      }
-      config.session.autoSave = newValue === 'true';
-      break;
-    }
-
-    default:
-      context.onOutput(`Unknown field: ${fieldPath}`, 'error');
-      context.onOutput('Use /config edit to see available fields', 'info');
-      return { success: false, message: 'Unknown field' };
-  }
-
-  // Save the updated config
+/**
+ * Handler for config edit command.
+ * Opens the configuration file in the system's default text editor.
+ */
+export const configEditHandler: CommandHandler = async (_args, context): Promise<CommandResult> => {
   const manager = new ConfigManager();
-  const saveResult = await manager.save(config);
+  const configPath = manager.getUserConfigPath();
 
-  if (!saveResult.success) {
-    context.onOutput(`Failed to save: ${saveResult.message}`, 'error');
-    return { success: false, message: saveResult.message };
+  context.onOutput(`Opening configuration file: ${configPath}`, 'info');
+
+  const result = await openInEditor(configPath);
+
+  if (!result.success) {
+    context.onOutput(`Failed to open editor: ${result.message ?? 'Unknown error'}`, 'error');
+    context.onOutput('You can manually edit the file at: ' + configPath, 'info');
+    return { success: false, message: result.message };
   }
 
-  context.onOutput(`Updated ${fieldPath} successfully`, 'success');
+  context.onOutput('Configuration file opened in editor.', 'success');
   context.onOutput('Note: Restart the agent for changes to take effect.', 'warning');
-  return { success: true, message: `Updated ${fieldPath}` };
+  return { success: true, message: 'Opened config in editor' };
 };

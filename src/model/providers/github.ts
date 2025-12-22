@@ -5,14 +5,20 @@
 
 import { ChatOpenAI } from '@langchain/openai';
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
+
 import type { GitHubProviderConfig } from '../../config/schema.js';
 import type { ModelResponse } from '../types.js';
 import { successResponse, errorResponse, mapErrorToCode } from '../base.js';
 import { DEFAULT_GITHUB_MODEL, DEFAULT_GITHUB_ENDPOINT } from '../../config/constants.js';
+import { getGitHubCLIToken } from '../../config/providers/github.js';
 
 /**
  * Create a ChatOpenAI instance for GitHub Models.
  * Uses the OpenAI-compatible API at models.github.ai/inference.
+ * Authentication sources (in order of priority):
+ * 1. providers.github.token in config
+ * 2. GITHUB_TOKEN environment variable
+ * 3. gh auth token (GitHub CLI)
  *
  * @param config - GitHub provider configuration
  * @returns Promise<ModelResponse> with ChatOpenAI or error
@@ -22,7 +28,7 @@ export function createGitHubClient(
 ): Promise<ModelResponse<BaseChatModel>> {
   try {
     // Extract config fields with empty string handling (treat '' as unset)
-    const token = config.token as string | undefined;
+    let token = config.token as string | undefined;
     const configModel = config.model as string | undefined;
     const configEndpoint = config.endpoint as string | undefined;
     const model =
@@ -33,13 +39,20 @@ export function createGitHubClient(
         : DEFAULT_GITHUB_ENDPOINT;
     const org = config.org as string | undefined;
 
+    // Try to get token from gh CLI if not configured
+    if (token === undefined || token === '') {
+      token = getGitHubCLIToken();
+    }
+
     // GitHub Models requires authentication
     if (token === undefined || token === '') {
       return Promise.resolve(
         errorResponse(
           'PROVIDER_NOT_CONFIGURED',
-          'GitHub Models requires token to be configured. ' +
-            'Set providers.github.token in config or GITHUB_TOKEN environment variable.'
+          'GitHub Models requires authentication. Options:\n' +
+            '  - Configure providers.github.token in settings\n' +
+            '  - Set GITHUB_TOKEN environment variable\n' +
+            '  - Run: gh auth login'
         )
       );
     }

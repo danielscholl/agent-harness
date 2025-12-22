@@ -7,7 +7,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Box, Text, useApp } from 'ink';
 import { Agent } from '../agent/agent.js';
-import { loadConfig } from '../config/manager.js';
+import { loadConfig, configFileExists } from '../config/manager.js';
+import { validateProviderCredentials } from '../config/schema.js';
 import { createCallbacks } from '../cli/callbacks.js';
 import {
   getPathInfoTool,
@@ -61,6 +62,22 @@ export function SinglePrompt({
     mountedRef.current = true;
 
     async function execute(): Promise<void> {
+      // Check if any config file exists (user or project)
+      const hasConfigFile = await configFileExists();
+      if (!hasConfigFile) {
+        setState({
+          phase: 'error',
+          spinnerMessage: '',
+          output: '',
+          error: {
+            success: false,
+            error: 'CONFIG_ERROR',
+            message: 'No configuration found. Run "agent config init" to set up your provider.',
+          },
+        });
+        return;
+      }
+
       // Load configuration
       const configResult = await loadConfig();
 
@@ -81,6 +98,22 @@ export function SinglePrompt({
       }
 
       const config = configResult.result as AppConfig;
+
+      // Validate provider credentials
+      const validation = validateProviderCredentials(config);
+      if (!validation.isValid) {
+        setState({
+          phase: 'error',
+          spinnerMessage: '',
+          output: '',
+          error: {
+            success: false,
+            error: 'CONFIG_ERROR',
+            message: validation.errors.join('\n'),
+          },
+        });
+        return;
+      }
 
       setState((s) => ({
         ...s,

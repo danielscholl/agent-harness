@@ -20,6 +20,7 @@ import {
   AppConfigSchema,
   getDefaultConfig,
   parseConfig,
+  validateProviderCredentials,
 } from '../schema.js';
 
 import {
@@ -369,6 +370,174 @@ describe('Utility Functions', () => {
       };
       const result = parseConfig(config);
       expect(result.success).toBe(false);
+    });
+  });
+
+  describe('validateProviderCredentials', () => {
+    it('should return valid for OpenAI with API key', () => {
+      const config = AppConfigSchema.parse({
+        providers: {
+          default: 'openai',
+          openai: { apiKey: 'sk-test-key' },
+        },
+      });
+      const result = validateProviderCredentials(config);
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+      expect(result.provider).toBe('openai');
+    });
+
+    it('should return invalid for OpenAI without API key', () => {
+      const config = AppConfigSchema.parse({
+        providers: {
+          default: 'openai',
+          openai: {},
+        },
+      });
+      const result = validateProviderCredentials(config);
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toHaveLength(1);
+      expect(result.errors[0]).toContain('OpenAI provider requires an API key');
+    });
+
+    it('should return valid for Anthropic with API key', () => {
+      const config = AppConfigSchema.parse({
+        providers: {
+          default: 'anthropic',
+          anthropic: { apiKey: 'sk-ant-test' },
+        },
+      });
+      const result = validateProviderCredentials(config);
+      expect(result.isValid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('should return invalid for Anthropic without API key', () => {
+      const config = AppConfigSchema.parse({
+        providers: {
+          default: 'anthropic',
+          anthropic: {},
+        },
+      });
+      const result = validateProviderCredentials(config);
+      expect(result.isValid).toBe(false);
+      expect(result.errors[0]).toContain('Anthropic provider requires an API key');
+    });
+
+    it('should return invalid for Azure without endpoint', () => {
+      const config = AppConfigSchema.parse({
+        providers: {
+          default: 'azure',
+          azure: { deployment: 'my-deployment' },
+        },
+      });
+      const result = validateProviderCredentials(config);
+      expect(result.isValid).toBe(false);
+      expect(result.errors.some((e) => e.includes('requires an endpoint'))).toBe(true);
+    });
+
+    it('should return invalid for Azure without deployment', () => {
+      const config = AppConfigSchema.parse({
+        providers: {
+          default: 'azure',
+          azure: { endpoint: 'https://test.openai.azure.com' },
+        },
+      });
+      const result = validateProviderCredentials(config);
+      expect(result.isValid).toBe(false);
+      expect(result.errors.some((e) => e.includes('requires a deployment name'))).toBe(true);
+    });
+
+    it('should return valid for Azure with endpoint and deployment', () => {
+      const config = AppConfigSchema.parse({
+        providers: {
+          default: 'azure',
+          azure: {
+            endpoint: 'https://test.openai.azure.com',
+            deployment: 'my-deployment',
+          },
+        },
+      });
+      const result = validateProviderCredentials(config);
+      expect(result.isValid).toBe(true);
+    });
+
+    it('should return valid for Gemini with API key', () => {
+      const config = AppConfigSchema.parse({
+        providers: {
+          default: 'gemini',
+          gemini: { apiKey: 'gemini-key' },
+        },
+      });
+      const result = validateProviderCredentials(config);
+      expect(result.isValid).toBe(true);
+    });
+
+    it('should return invalid for Gemini without API key', () => {
+      const config = AppConfigSchema.parse({
+        providers: {
+          default: 'gemini',
+          gemini: {},
+        },
+      });
+      const result = validateProviderCredentials(config);
+      expect(result.isValid).toBe(false);
+      expect(result.errors[0]).toContain('Gemini provider requires an API key');
+    });
+
+    it('should return invalid for Gemini Vertex AI without project ID', () => {
+      const config = AppConfigSchema.parse({
+        providers: {
+          default: 'gemini',
+          gemini: { useVertexai: true, location: 'us-central1' },
+        },
+      });
+      const result = validateProviderCredentials(config);
+      expect(result.isValid).toBe(false);
+      expect(result.errors[0]).toContain('requires a project ID');
+    });
+
+    it('should return valid for local provider (no credentials needed)', () => {
+      const config = AppConfigSchema.parse({
+        providers: {
+          default: 'local',
+        },
+      });
+      const result = validateProviderCredentials(config);
+      expect(result.isValid).toBe(true);
+    });
+
+    it('should return valid for github provider (runtime auth check)', () => {
+      const config = AppConfigSchema.parse({
+        providers: {
+          default: 'github',
+        },
+      });
+      const result = validateProviderCredentials(config);
+      expect(result.isValid).toBe(true);
+    });
+
+    it('should return valid for foundry local mode (no cloud credentials needed)', () => {
+      const config = AppConfigSchema.parse({
+        providers: {
+          default: 'foundry',
+          foundry: { mode: 'local' },
+        },
+      });
+      const result = validateProviderCredentials(config);
+      expect(result.isValid).toBe(true);
+    });
+
+    it('should return invalid for foundry cloud mode without endpoint', () => {
+      const config = AppConfigSchema.parse({
+        providers: {
+          default: 'foundry',
+          foundry: { mode: 'cloud', modelDeployment: 'my-deployment' },
+        },
+      });
+      const result = validateProviderCredentials(config);
+      expect(result.isValid).toBe(false);
+      expect(result.errors.some((e) => e.includes('requires a project endpoint'))).toBe(true);
     });
   });
 });
