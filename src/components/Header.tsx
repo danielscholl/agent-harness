@@ -4,7 +4,7 @@
  * Styled to match osdu-agent.
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Box, Text, useStdout } from 'ink';
 
 /**
@@ -19,8 +19,6 @@ export interface HeaderProps {
   provider?: string;
   /** Current working directory */
   cwd?: string;
-  /** Current git branch */
-  gitBranch?: string;
 }
 
 /**
@@ -51,18 +49,54 @@ function formatPath(path: string): string {
 }
 
 /**
- * Header banner component.
- * Shows title, version, model, current directory, and git branch.
+ * Truncate text with ellipsis if it exceeds maxLength.
  */
-export function Header({
-  version,
-  model,
-  provider,
-  cwd,
-  gitBranch,
-}: HeaderProps): React.ReactElement {
+function truncate(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text;
+  if (maxLength <= 3) return '...'.slice(0, maxLength);
+  return text.slice(0, maxLength - 3) + '...';
+}
+
+/**
+ * Padding constant - must match InteractiveShell's padding={1}
+ * which adds 1 space on each side = 2 total.
+ */
+const SHELL_PADDING = 2;
+
+/**
+ * Hook to get terminal width with resize support.
+ * Clears the screen on resize to prevent visual artifacts.
+ * Returns usable width accounting for shell padding.
+ */
+function useTerminalWidth(): number {
   const { stdout } = useStdout();
-  const termWidth = stdout.columns;
+  // Account for shell padding (1 on each side = 2 total)
+  const getUsableWidth = (): number => Math.max(stdout.columns - SHELL_PADDING, 40);
+  const [width, setWidth] = useState(getUsableWidth);
+
+  useEffect(() => {
+    const handleResize = (): void => {
+      // Clear terminal and move cursor to home position
+      // This prevents visual artifacts when Ink re-renders
+      stdout.write('\x1b[2J\x1b[H');
+      setWidth(Math.max(stdout.columns - SHELL_PADDING, 40));
+    };
+
+    stdout.on('resize', handleResize);
+    return () => {
+      stdout.off('resize', handleResize);
+    };
+  }, [stdout]);
+
+  return width;
+}
+
+/**
+ * Header banner component.
+ * Shows title, version, model, and current directory.
+ */
+export function Header({ version, model, provider, cwd }: HeaderProps): React.ReactElement {
+  const termWidth = useTerminalWidth();
 
   // Build version/model info
   const providerDisplay = provider !== undefined ? getProviderDisplayName(provider) : '';
@@ -72,10 +106,12 @@ export function Header({
       ? `Version ${version} • ${providerDisplay}/${modelDisplay}`
       : `Version ${version}`;
 
-  // Build context info (cwd + git branch)
-  const pathDisplay = cwd !== undefined ? formatPath(cwd) : '';
-  const branchDisplay = gitBranch !== undefined && gitBranch !== '' ? ` [⎇ ${gitBranch}]` : '';
-  const contextInfo = pathDisplay + branchDisplay;
+  // Build context info (cwd), truncating path if needed
+  // Calculate available space: termWidth - versionModel - 2 spaces minimum gap
+  const minGap = 2;
+  const availableForPath = termWidth - versionModel.length - minGap;
+  const rawPath = cwd !== undefined ? formatPath(cwd) : '';
+  const contextInfo = availableForPath > 10 ? truncate(rawPath, availableForPath) : '';
 
   // Create divider line
   const divider = '─'.repeat(termWidth);

@@ -1,66 +1,175 @@
 /**
  * ToolsInfo component.
- * Displays available tools with descriptions.
- * Placeholder for full tool registry integration (Feature 10).
+ * Displays available tools grouped by toolset with descriptions and token counts.
+ * Follows osdu-agent CLI style.
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Box, Text, useApp } from 'ink';
+import type { StructuredToolInterface } from '@langchain/core/tools';
+import { Tiktoken } from 'js-tiktoken/lite';
+import cl100k_base from 'js-tiktoken/ranks/cl100k_base';
+import { loadConfig } from '../config/manager.js';
+import { Spinner } from './Spinner.js';
+
+// Import tools
+import {
+  getPathInfoTool,
+  listDirectoryTool,
+  readFileTool,
+  searchTextTool,
+  writeFileTool,
+  applyTextEditTool,
+  createDirectoryTool,
+  applyFilePatchTool,
+  getWorkspaceRoot,
+  isFilesystemWritesEnabled,
+  DEFAULT_MAX_READ_BYTES,
+  DEFAULT_MAX_WRITE_BYTES,
+} from '../tools/index.js';
+import { helloWorldTool, greetUserTool } from '../tools/hello.js';
 
 /**
- * Tool information for display.
+ * Toolset metadata for display.
  */
-interface ToolInfo {
+interface ToolsetMeta {
   name: string;
-  description: string;
+  tools: StructuredToolInterface[];
+  metadata?: string[];
 }
 
 /**
- * Built-in tools (placeholder - actual tools loaded from registry in Feature 10).
+ * Shared tiktoken encoder instance.
  */
-const BUILTIN_TOOLS: ToolInfo[] = [
-  {
-    name: 'hello',
-    description: 'Greet someone by name',
-  },
-];
+const tokenEncoder = new Tiktoken(cl100k_base);
+
+/**
+ * Count tokens in a string using tiktoken.
+ */
+function countTokens(text: string): number {
+  const tokens = tokenEncoder.encode(text);
+  return tokens.length;
+}
+
+/**
+ * Format bytes as human-readable string.
+ */
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(0)}MB`;
+  }
+  if (bytes >= 1024) {
+    return `${(bytes / 1024).toFixed(0)}KB`;
+  }
+  return `${String(bytes)}B`;
+}
+
+/**
+ * Build toolsets with metadata.
+ */
+function buildToolsets(): ToolsetMeta[] {
+  const workspaceRoot = getWorkspaceRoot();
+  const writesEnabled = isFilesystemWritesEnabled();
+
+  const toolsets: ToolsetMeta[] = [
+    {
+      name: 'FileSystemTools',
+      tools: [
+        getPathInfoTool,
+        listDirectoryTool,
+        readFileTool,
+        searchTextTool,
+        writeFileTool,
+        applyTextEditTool,
+        createDirectoryTool,
+        applyFilePatchTool,
+      ],
+      metadata: [
+        `Workspace: ${workspaceRoot} (cwd)`,
+        `Writes: ${writesEnabled ? 'Enabled' : 'Disabled'} · Read: ${formatBytes(DEFAULT_MAX_READ_BYTES)} · Write: ${formatBytes(DEFAULT_MAX_WRITE_BYTES)}`,
+      ],
+    },
+    {
+      name: 'HelloTools',
+      tools: [helloWorldTool, greetUserTool],
+      metadata: ['Reference implementation for tool development'],
+    },
+  ];
+
+  return toolsets;
+}
 
 /**
  * ToolsInfo component.
- * Lists registered tools with their descriptions.
+ * Lists registered tools grouped by toolset with descriptions and token counts.
  */
 export function ToolsInfo(): React.ReactElement {
   const { exit } = useApp();
+  const [loading, setLoading] = useState(true);
+  const [toolsets, setToolsets] = useState<ToolsetMeta[]>([]);
 
   useEffect(() => {
-    // Exit after displaying tools
-    const timer = setTimeout(() => {
-      exit();
-    }, 100);
-    return () => {
-      clearTimeout(timer);
-    };
+    async function loadTools(): Promise<void> {
+      // Load config to ensure environment is initialized
+      await loadConfig();
+
+      // Build toolsets
+      const allToolsets = buildToolsets();
+      setToolsets(allToolsets);
+      setLoading(false);
+
+      // Exit after displaying tools
+      setTimeout(() => {
+        exit();
+      }, 100);
+    }
+
+    void loadTools();
   }, [exit]);
 
+  if (loading) {
+    return <Spinner message="Loading tools..." />;
+  }
+
   return (
-    <Box flexDirection="column" padding={1}>
-      <Text color="green" bold>
-        Available Tools
-      </Text>
-      <Text dimColor>─────────────────────────</Text>
-      {BUILTIN_TOOLS.length === 0 ? (
-        <Text dimColor>No tools registered</Text>
-      ) : (
-        BUILTIN_TOOLS.map((tool) => (
-          <Box key={tool.name} gap={1}>
-            <Text color="cyan">{tool.name}</Text>
-            <Text dimColor>- {tool.description}</Text>
-          </Box>
-        ))
-      )}
-      <Box marginTop={1}>
-        <Text dimColor>Use skills to add more tools to the agent.</Text>
-      </Box>
+    <Box flexDirection="column" paddingTop={1}>
+      {toolsets.map((toolset, tsIndex) => (
+        <Box
+          key={toolset.name}
+          flexDirection="column"
+          marginBottom={tsIndex < toolsets.length - 1 ? 1 : 0}
+        >
+          {/* Toolset header */}
+          <Text>
+            <Text color="green">●</Text>
+            <Text bold> {toolset.name}</Text>
+            <Text dimColor> · {toolset.tools.length} tools</Text>
+          </Text>
+
+          {/* Toolset metadata */}
+          {toolset.metadata !== undefined &&
+            toolset.metadata.map((meta, metaIndex) => (
+              <Text key={metaIndex}>
+                <Text dimColor>└─ </Text>
+                <Text color="green">◉</Text>
+                <Text> {meta}</Text>
+              </Text>
+            ))}
+
+          {/* Individual tools */}
+          {toolset.tools.map((tool) => {
+            const tokenCount = countTokens(tool.description);
+            return (
+              <Text key={tool.name}>
+                <Text> </Text>
+                <Text dimColor>• </Text>
+                <Text color="cyan">{tool.name}</Text>
+                <Text dimColor> · {tokenCount} tokens</Text>
+              </Text>
+            );
+          })}
+        </Box>
+      ))}
     </Box>
   );
 }

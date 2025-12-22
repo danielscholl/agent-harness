@@ -10,6 +10,7 @@ import type { ProviderInfo } from '../../../config/providers/index.js';
 // Mock the config manager
 jest.unstable_mockModule('../../../config/manager.js', () => ({
   loadConfig: jest.fn(),
+  loadConfigFromFiles: jest.fn(),
   ConfigManager: jest.fn().mockImplementation(() => ({
     save: jest.fn().mockResolvedValue({ success: true, message: 'Saved' }),
     getUserConfigPath: jest.fn().mockReturnValue('/home/user/.agent/settings.json'),
@@ -119,11 +120,15 @@ describe('config command handlers', () => {
   let loadConfig: jest.MockedFunction<
     () => Promise<{ success: boolean; result?: AppConfig; message?: string }>
   >;
+  let loadConfigFromFiles: jest.MockedFunction<
+    () => Promise<{ success: boolean; result?: AppConfig; message?: string }>
+  >;
 
   beforeEach(async () => {
     jest.clearAllMocks();
     const manager = await import('../../../config/manager.js');
     loadConfig = manager.loadConfig as typeof loadConfig;
+    loadConfigFromFiles = manager.loadConfigFromFiles as typeof loadConfigFromFiles;
   });
 
   afterEach(() => {
@@ -132,25 +137,24 @@ describe('config command handlers', () => {
 
   describe('configHandler', () => {
     it('routes to configShowHandler by default', async () => {
-      loadConfig.mockResolvedValue({
-        success: true,
-        result: {
-          version: '1.0',
-          providers: { default: 'openai', openai: { model: 'gpt-4o' } },
-          agent: { dataDir: '~/.agent', logLevel: 'info', filesystemWritesEnabled: true },
-          memory: { enabled: false, type: 'local', historyLimit: 100 },
-          session: { autoSave: true, maxSessions: 50 },
-          skills: { disabledBundled: [], enabledBundled: [], plugins: [], scriptTimeout: 30000 },
-          telemetry: { enabled: false, enableSensitiveData: false },
-          retry: {
-            enabled: true,
-            maxRetries: 3,
-            baseDelayMs: 1000,
-            maxDelayMs: 10000,
-            enableJitter: true,
-          },
+      const mockConfig = {
+        version: '1.0',
+        providers: { default: 'openai', openai: { model: 'gpt-4o' } },
+        agent: { dataDir: '~/.agent', logLevel: 'info', filesystemWritesEnabled: true },
+        memory: { enabled: false, type: 'local', historyLimit: 100 },
+        session: { autoSave: true, maxSessions: 50 },
+        skills: { disabledBundled: [], enabledBundled: [], plugins: [], scriptTimeout: 30000 },
+        telemetry: { enabled: false, enableSensitiveData: false },
+        retry: {
+          enabled: true,
+          maxRetries: 3,
+          baseDelayMs: 1000,
+          maxDelayMs: 10000,
+          enableJitter: true,
         },
-      });
+      };
+      loadConfig.mockResolvedValue({ success: true, result: mockConfig });
+      loadConfigFromFiles.mockResolvedValue({ success: true, result: mockConfig });
 
       const { configHandler } = await import('../config.js');
       const context = createMockContext();
@@ -172,25 +176,24 @@ describe('config command handlers', () => {
 
   describe('configShowHandler', () => {
     it('displays formatted configuration', async () => {
-      loadConfig.mockResolvedValue({
-        success: true,
-        result: {
-          version: '1.0',
-          providers: { default: 'openai', openai: { apiKey: 'sk-test', model: 'gpt-4o' } },
-          agent: { dataDir: '~/.agent', logLevel: 'info', filesystemWritesEnabled: true },
-          memory: { enabled: true, type: 'local', historyLimit: 100 },
-          session: { autoSave: true, maxSessions: 50 },
-          skills: { disabledBundled: [], enabledBundled: [], plugins: [], scriptTimeout: 30000 },
-          telemetry: { enabled: false, enableSensitiveData: false },
-          retry: {
-            enabled: true,
-            maxRetries: 3,
-            baseDelayMs: 1000,
-            maxDelayMs: 10000,
-            enableJitter: true,
-          },
+      const mockConfig = {
+        version: '1.0',
+        providers: { default: 'openai', openai: { apiKey: 'sk-test', model: 'gpt-4o' } },
+        agent: { dataDir: '~/.agent', logLevel: 'info', filesystemWritesEnabled: true },
+        memory: { enabled: true, type: 'local', historyLimit: 100 },
+        session: { autoSave: true, maxSessions: 50 },
+        skills: { disabledBundled: [], enabledBundled: [], plugins: [], scriptTimeout: 30000 },
+        telemetry: { enabled: false, enableSensitiveData: false },
+        retry: {
+          enabled: true,
+          maxRetries: 3,
+          baseDelayMs: 1000,
+          maxDelayMs: 10000,
+          enableJitter: true,
         },
-      });
+      };
+      loadConfig.mockResolvedValue({ success: true, result: mockConfig });
+      loadConfigFromFiles.mockResolvedValue({ success: true, result: mockConfig });
 
       const { configShowHandler } = await import('../config.js');
       const context = createMockContext();
@@ -208,6 +211,10 @@ describe('config command handlers', () => {
 
     it('shows error when config fails to load', async () => {
       loadConfig.mockResolvedValue({
+        success: false,
+        message: 'Config file not found',
+      });
+      loadConfigFromFiles.mockResolvedValue({
         success: false,
         message: 'Config file not found',
       });
@@ -281,7 +288,9 @@ describe('config command handlers', () => {
         on: jest.fn((event: string, callback: (code: number | null) => void) => {
           if (event === 'close') {
             // Simulate editor closing successfully
-            setTimeout(() => { callback(0); }, 10);
+            setTimeout(() => {
+              callback(0);
+            }, 10);
           }
           return mockProcess;
         }),

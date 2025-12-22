@@ -45,6 +45,8 @@ export interface CommandContext {
   onPrompt?: (question: string) => Promise<string>;
   /** Exit the shell */
   exit: () => void;
+  /** Whether running in interactive mode (vs CLI) */
+  isInteractive?: boolean;
 }
 
 /** Command handler function signature */

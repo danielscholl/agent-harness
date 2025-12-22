@@ -22,6 +22,17 @@ jest.unstable_mockModule('@langchain/openai', () => ({
   ChatOpenAI: mockChatOpenAI,
 }));
 
+// Mock child_process to prevent gh CLI fallback in tests
+const mockSpawnSync = jest.fn().mockReturnValue({
+  status: 1, // Non-zero exit code means no token
+  stdout: '',
+  stderr: 'not logged in',
+});
+
+jest.unstable_mockModule('node:child_process', () => ({
+  spawnSync: mockSpawnSync,
+}));
+
 // Import after mocking
 const { createGitHubClient } = await import('../providers/github.js');
 
@@ -133,8 +144,31 @@ describe('createGitHubClient', () => {
     });
   });
 
+  describe('gh CLI fallback', () => {
+    it('uses token from gh CLI when no token provided', async () => {
+      // Mock gh auth token returning a valid token
+      mockSpawnSync.mockReturnValueOnce({
+        status: 0,
+        stdout: 'gho_cli_token_12345\n',
+        stderr: '',
+      });
+
+      const result = await createGitHubClient({
+        model: 'gpt-4o',
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockSpawnSync).toHaveBeenCalledWith('gh', ['auth', 'token'], expect.any(Object));
+      expect(mockChatOpenAI).toHaveBeenCalledWith({
+        model: 'gpt-4o',
+        openAIApiKey: 'gho_cli_token_12345',
+        configuration: { baseURL: 'https://models.github.ai/inference' },
+      });
+    });
+  });
+
   describe('validation errors', () => {
-    it('returns error when token is missing', async () => {
+    it('returns error when token is missing and gh CLI not logged in', async () => {
       const result = await createGitHubClient({
         model: 'gpt-4o',
       });
@@ -142,11 +176,11 @@ describe('createGitHubClient', () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBe('PROVIDER_NOT_CONFIGURED');
-        expect(result.message).toContain('GitHub Models requires token');
+        expect(result.message).toContain('GitHub Models requires authentication');
       }
     });
 
-    it('returns error when token is empty string', async () => {
+    it('returns error when token is empty string and gh CLI not logged in', async () => {
       const result = await createGitHubClient({
         token: '',
         model: 'gpt-4o',
@@ -155,7 +189,7 @@ describe('createGitHubClient', () => {
       expect(result.success).toBe(false);
       if (!result.success) {
         expect(result.error).toBe('PROVIDER_NOT_CONFIGURED');
-        expect(result.message).toContain('GitHub Models requires token');
+        expect(result.message).toContain('GitHub Models requires authentication');
       }
     });
 

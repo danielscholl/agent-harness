@@ -5,7 +5,7 @@
 
 import { spawn } from 'node:child_process';
 import type { CommandHandler, CommandResult } from './types.js';
-import { loadConfig, ConfigManager } from '../../config/manager.js';
+import { loadConfig, loadConfigFromFiles, ConfigManager } from '../../config/manager.js';
 import { getDefaultConfig, type AppConfig } from '../../config/schema.js';
 import { getProviderWizards } from '../../config/providers/index.js';
 import { PROVIDER_NAMES, type ProviderName } from '../../config/constants.js';
@@ -27,6 +27,11 @@ export const configHandler: CommandHandler = async (args, context): Promise<Comm
 
   switch (subcommand?.toLowerCase()) {
     case 'init':
+      // Config init is only available from CLI, not as a slash command in interactive mode
+      if (context.isInteractive === true) {
+        context.onOutput('To configure a new provider, exit and run: agent config init', 'info');
+        return { success: false, message: 'Use CLI for config init' };
+      }
       return configInitHandler(subArgs, context);
     case 'edit':
       return configEditHandler(subArgs, context);
@@ -35,13 +40,14 @@ export const configHandler: CommandHandler = async (args, context): Promise<Comm
       return configShowHandler('', context); // Default to show
     default:
       context.onOutput(`Unknown subcommand: ${subcommand ?? ''}`, 'warning');
-      context.onOutput('Usage: agent config [init|edit]', 'info');
+      context.onOutput('Usage: agent config [edit]', 'info');
       return { success: false, message: 'Unknown subcommand' };
   }
 };
 
 /**
- * Get list of configured providers (have apiKey, token, or endpoint set).
+ * Get list of configured providers (have any properties set in config file).
+ * A provider is considered "configured" if it has any properties set.
  */
 function getConfiguredProviders(config: AppConfig): ProviderName[] {
   const configured: ProviderName[] = [];
@@ -49,19 +55,17 @@ function getConfiguredProviders(config: AppConfig): ProviderName[] {
     const providerConfig = config.providers[name] as Record<string, unknown> | undefined;
     if (providerConfig === undefined) continue;
 
-    // Local is always "configured"
+    // Local provider is always configured if present
     if (name === 'local') {
       configured.push(name);
       continue;
     }
 
-    // Check for explicit configuration
-    const hasApiKey = providerConfig.apiKey !== undefined;
-    const hasToken = providerConfig.token !== undefined;
-    const hasEndpoint =
-      providerConfig.endpoint !== undefined || providerConfig.projectEndpoint !== undefined;
+    // Check if any property is set (model, apiKey, endpoint, etc.)
+    // A provider with just a model set is still explicitly configured
+    const hasAnyProperty = Object.keys(providerConfig).length > 0;
 
-    if (hasApiKey || hasToken || hasEndpoint) {
+    if (hasAnyProperty) {
       configured.push(name);
     }
   }
@@ -87,6 +91,7 @@ function tableRow(
  * Displays current configuration in a formatted table like osdu-agent.
  */
 export const configShowHandler: CommandHandler = async (_args, context): Promise<CommandResult> => {
+  // Load full config (with env vars) for display values
   const configResult = await loadConfig();
 
   if (!configResult.success) {
@@ -96,11 +101,15 @@ export const configShowHandler: CommandHandler = async (_args, context): Promise
 
   const config = configResult.result as AppConfig;
 
+  // Load file-only config to determine which providers are explicitly configured
+  const fileConfigResult = await loadConfigFromFiles();
+  const fileConfig = fileConfigResult.success ? (fileConfigResult.result as AppConfig) : config;
+
   // Build table rows
   const rows: Array<{ setting: string; value: string }> = [];
 
-  // Get configured providers
-  const configuredProviders = getConfiguredProviders(config);
+  // Get configured providers from file config (not env vars)
+  const configuredProviders = getConfiguredProviders(fileConfig);
 
   // Enabled Providers row
   rows.push({
@@ -108,63 +117,80 @@ export const configShowHandler: CommandHandler = async (_args, context): Promise
     value: configuredProviders.length > 0 ? configuredProviders.join(', ') : 'none',
   });
 
-  // Default Provider row
+  // Default Provider row - only meaningful if providers are configured
+  // If only one provider, it's automatically the default
+  // If no providers, show "none"
+  let effectiveDefault: string;
+  if (configuredProviders.length === 0) {
+    effectiveDefault = 'none';
+  } else if (configuredProviders.length === 1) {
+    effectiveDefault = configuredProviders[0] as string;
+  } else {
+    // Multiple providers - use the configured default if it's in the list
+    const configDefault = fileConfig.providers.default;
+    effectiveDefault = configuredProviders.includes(configDefault)
+      ? configDefault
+      : (configuredProviders[0] as string);
+  }
+
   rows.push({
     setting: 'Default Provider',
-    value: config.providers.default,
+    value: effectiveDefault,
   });
 
-  // Provider-specific settings (indented)
-  const defaultProvider = config.providers.default;
-  const defaultConfig = config.providers[defaultProvider] as Record<string, unknown> | undefined;
+  // Provider-specific settings (indented) - only if default is a real provider
+  if (effectiveDefault !== 'none') {
+    const defaultProvider = effectiveDefault as ProviderName;
+    const defaultConfig = config.providers[defaultProvider] as Record<string, unknown> | undefined;
 
-  if (defaultConfig !== undefined) {
-    // Show endpoint for azure/foundry
-    if (defaultProvider === 'azure') {
-      const endpoint = defaultConfig.endpoint as string | undefined;
-      if (endpoint !== undefined) {
+    if (defaultConfig !== undefined) {
+      // Show endpoint for azure/foundry
+      if (defaultProvider === 'azure') {
+        const endpoint = defaultConfig.endpoint as string | undefined;
+        if (endpoint !== undefined) {
+          rows.push({
+            setting: `  ${defaultProvider} Endpoint`,
+            value: endpoint,
+          });
+        }
+      }
+      if (defaultProvider === 'foundry') {
+        const endpoint = defaultConfig.projectEndpoint as string | undefined;
+        if (endpoint !== undefined) {
+          rows.push({
+            setting: `  ${defaultProvider} Endpoint`,
+            value: endpoint,
+          });
+        }
+      }
+
+      // Show model/deployment
+      const deployment = defaultConfig.deployment as string | undefined;
+      const modelDeployment = defaultConfig.modelDeployment as string | undefined;
+      const model = defaultConfig.model as string | undefined;
+      const modelAlias = defaultConfig.modelAlias as string | undefined;
+
+      if (deployment !== undefined) {
         rows.push({
-          setting: `  ${defaultProvider} Endpoint`,
-          value: endpoint,
+          setting: `  ${defaultProvider} Deployment`,
+          value: deployment,
+        });
+      } else if (modelDeployment !== undefined) {
+        rows.push({
+          setting: `  ${defaultProvider} Deployment`,
+          value: modelDeployment,
+        });
+      } else if (model !== undefined) {
+        rows.push({
+          setting: `  ${defaultProvider} Model`,
+          value: model,
+        });
+      } else if (modelAlias !== undefined) {
+        rows.push({
+          setting: `  ${defaultProvider} Model`,
+          value: modelAlias,
         });
       }
-    }
-    if (defaultProvider === 'foundry') {
-      const endpoint = defaultConfig.projectEndpoint as string | undefined;
-      if (endpoint !== undefined) {
-        rows.push({
-          setting: `  ${defaultProvider} Endpoint`,
-          value: endpoint,
-        });
-      }
-    }
-
-    // Show model/deployment
-    const deployment = defaultConfig.deployment as string | undefined;
-    const modelDeployment = defaultConfig.modelDeployment as string | undefined;
-    const model = defaultConfig.model as string | undefined;
-    const modelAlias = defaultConfig.modelAlias as string | undefined;
-
-    if (deployment !== undefined) {
-      rows.push({
-        setting: `  ${defaultProvider} Deployment`,
-        value: deployment,
-      });
-    } else if (modelDeployment !== undefined) {
-      rows.push({
-        setting: `  ${defaultProvider} Deployment`,
-        value: modelDeployment,
-      });
-    } else if (model !== undefined) {
-      rows.push({
-        setting: `  ${defaultProvider} Model`,
-        value: model,
-      });
-    } else if (modelAlias !== undefined) {
-      rows.push({
-        setting: `  ${defaultProvider} Model`,
-        value: modelAlias,
-      });
     }
   }
 

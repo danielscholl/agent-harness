@@ -528,3 +528,79 @@ export async function loadConfig(projectPath?: string): Promise<ConfigResponse<A
   const manager = new ConfigManager();
   return manager.load(projectPath);
 }
+
+/**
+ * Check if user configuration file exists.
+ * Returns true if ~/.agent/settings.json exists.
+ */
+export async function userConfigExists(): Promise<boolean> {
+  const manager = new ConfigManager();
+  const userConfigPath = manager.getUserConfigPath();
+  const fs = new NodeFileSystem();
+  return fs.exists(userConfigPath);
+}
+
+/**
+ * Check if any configuration file exists (user or project).
+ * Returns true if either ~/.agent/settings.json or ./.agent/settings.json exists.
+ */
+export async function configFileExists(projectPath?: string): Promise<boolean> {
+  const manager = new ConfigManager();
+  const fs = new NodeFileSystem();
+
+  const userConfigPath = manager.getUserConfigPath();
+  if (await fs.exists(userConfigPath)) {
+    return true;
+  }
+
+  const projectConfigPath = manager.getProjectConfigPath(projectPath);
+  if (await fs.exists(projectConfigPath)) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Load configuration from files only (no environment variable merging).
+ * Use this for health checks and validation where you need to know
+ * which providers are explicitly configured in settings files.
+ */
+export async function loadConfigFromFiles(
+  projectPath?: string
+): Promise<ConfigResponse<AppConfig>> {
+  const manager = new ConfigManager();
+  const fs = new NodeFileSystem();
+
+  try {
+    // Start with schema defaults
+    let config = manager.getDefaults();
+
+    // Load user config (~/.agent/settings.json)
+    const userConfigPath = manager.getUserConfigPath();
+    if (await fs.exists(userConfigPath)) {
+      const content = await fs.readFile(userConfigPath);
+      const userConfig = JSON.parse(content) as Partial<AppConfig>;
+      config = deepMerge(config, userConfig);
+    }
+
+    // Load project config (./.agent/settings.json)
+    const projectConfigPath = manager.getProjectConfigPath(projectPath);
+    if (await fs.exists(projectConfigPath)) {
+      const content = await fs.readFile(projectConfigPath);
+      const projectConfig = JSON.parse(content) as Partial<AppConfig>;
+      config = deepMerge(config, projectConfig);
+    }
+
+    // Validate the merged config
+    const validation = AppConfigSchema.safeParse(config);
+    if (!validation.success) {
+      return errorResponse('VALIDATION_FAILED', 'Config validation failed');
+    }
+
+    return successResponse(validation.data, 'Configuration loaded from files');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error loading config';
+    return errorResponse('FILE_READ_ERROR', message);
+  }
+}

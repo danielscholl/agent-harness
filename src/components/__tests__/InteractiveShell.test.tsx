@@ -9,11 +9,21 @@ import type { AgentCallbacks } from '../../agent/callbacks.js';
 
 // Mock modules before importing
 const mockLoadConfig = jest.fn<() => Promise<unknown>>();
+const mockConfigFileExists = jest.fn<() => Promise<boolean>>();
+const mockLoadConfigFromFiles = jest.fn<() => Promise<unknown>>();
 
 jest.unstable_mockModule('../../config/manager.js', () => ({
   loadConfig: mockLoadConfig,
-  // eslint-disable-next-line @typescript-eslint/no-extraneous-class
-  ConfigManager: class MockConfigManager {},
+  loadConfigFromFiles: mockLoadConfigFromFiles,
+  configFileExists: mockConfigFileExists,
+  ConfigManager: class MockConfigManager {
+    save(): Promise<{ success: boolean; message: string }> {
+      return Promise.resolve({ success: true, message: 'Saved' });
+    }
+    getUserConfigPath(): string {
+      return '/home/user/.agent/settings.json';
+    }
+  },
   // eslint-disable-next-line @typescript-eslint/no-extraneous-class
   NodeFileSystem: class MockNodeFileSystem {},
   deepMerge: jest.fn(),
@@ -23,6 +33,18 @@ jest.unstable_mockModule('../../config/manager.js', () => ({
 jest.unstable_mockModule('../../cli/commands/index.js', () => ({
   executeCommand: jest.fn(),
   isCommand: jest.fn(() => false),
+}));
+
+// Mock config command handler for setup flow
+const mockConfigInitHandler =
+  jest.fn<
+    (
+      args: string,
+      context: { onOutput: (msg: string) => void }
+    ) => Promise<{ success: boolean; message: string }>
+  >();
+jest.unstable_mockModule('../../cli/commands/config.js', () => ({
+  configInitHandler: mockConfigInitHandler,
 }));
 
 // Mock CLI input module
@@ -125,11 +147,26 @@ const mockConfig = {
 describe('InteractiveShell', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Default: config file exists
+    mockConfigFileExists.mockResolvedValue(true);
     // Default: config loads successfully
     mockLoadConfig.mockResolvedValue({
       success: true,
       result: mockConfig,
       message: 'Config loaded',
+    });
+    // Default: loadConfigFromFiles returns same as loadConfig
+    mockLoadConfigFromFiles.mockResolvedValue({
+      success: true,
+      result: mockConfig,
+      message: 'Config loaded from files',
+    });
+    // Default: configInitHandler produces setup wizard output
+    mockConfigInitHandler.mockImplementation((_args, context) => {
+      context.onOutput('Agent Configuration Setup');
+      context.onOutput('Select provider (1-7):');
+      // Return success: false to stay in the shell (simulating user needs to configure)
+      return Promise.resolve({ success: false, message: 'Setup cancelled' });
     });
   });
 
@@ -249,5 +286,85 @@ describe('InteractiveShell', () => {
     expect(() => {
       render(<InteractiveShell />);
     }).not.toThrow();
+  });
+
+  it('displays error when provider credentials are missing', async () => {
+    // Mock config with no API key (default OpenAI provider, no credentials)
+    const mockConfigNoCredentials = {
+      version: '0.1.0',
+      providers: {
+        default: 'openai',
+        openai: { model: 'gpt-4o' },
+      },
+      agent: { dataDir: '~/.agent', logLevel: 'info', filesystemWritesEnabled: true },
+      telemetry: { enabled: false },
+      memory: { enabled: false },
+      skills: { plugins: [], disabledBundled: [], enabledBundled: [] },
+      retry: { maxRetries: 3, baseDelay: 1000, maxDelay: 30000, multiplier: 2.0 },
+      session: { autoSave: false, maxSessions: 50 },
+    };
+
+    mockLoadConfig.mockResolvedValue({
+      success: true,
+      result: mockConfigNoCredentials,
+      message: 'Config loaded',
+    });
+
+    const { lastFrame } = render(<InteractiveShell />);
+
+    // Wait for config load with polling
+    const maxWait = 1000;
+    const interval = 20;
+    let elapsed = 0;
+    while (elapsed < maxWait) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, interval);
+      });
+      elapsed += interval;
+      const frame = lastFrame();
+      if (frame !== undefined && frame.includes('config init')) break;
+    }
+
+    // Should show error about missing credentials
+    const frame = lastFrame();
+    expect(frame).toContain('Configuration Error');
+    expect(frame).toContain('OpenAI provider requires an API key');
+    expect(frame).toContain('agent config init');
+  });
+
+  it('runs config init flow when no config file exists', async () => {
+    // Mock no config file
+    mockConfigFileExists.mockResolvedValue(false);
+
+    // Track when config init is called via object to allow mutation in closure
+    const tracker = { configInitCalled: false };
+    mockConfigInitHandler.mockImplementation((_args, context) => {
+      tracker.configInitCalled = true;
+      context.onOutput('Agent Configuration Setup');
+      // Return success=false to show error state (but we verify it was called)
+      return Promise.resolve({ success: false, message: 'Setup cancelled by test' });
+    });
+
+    const { lastFrame } = render(<InteractiveShell />);
+
+    // Wait for config init to be invoked with polling
+    const maxWait = 1000;
+    const interval = 20;
+    let elapsed = 0;
+    while (elapsed < maxWait && !tracker.configInitCalled) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, interval);
+      });
+      elapsed += interval;
+    }
+
+    // Verify configInitHandler was called (the key behavior we're testing)
+    expect(mockConfigInitHandler).toHaveBeenCalled();
+
+    // After handler completes with failure, should show error state
+    // (the setup messages are visible briefly, then error view takes over)
+    const frame = lastFrame();
+    expect(frame).toContain('Configuration Error');
+    expect(frame).toContain('Setup cancelled by test');
   });
 });

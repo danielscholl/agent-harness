@@ -7,7 +7,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import { Agent } from '../agent/agent.js';
-import { loadConfig } from '../config/manager.js';
+import { loadConfig, configFileExists } from '../config/manager.js';
+import { validateProviderCredentials } from '../config/schema.js';
 import { createCallbacks } from '../cli/callbacks.js';
 import {
   getPathInfoTool,
@@ -21,6 +22,7 @@ import {
 } from '../tools/index.js';
 import { VERSION } from '../cli/version.js';
 import { executeCommand, isCommand } from '../cli/commands/index.js';
+import { configInitHandler } from '../cli/commands/config.js';
 import { unescapeSlash } from '../cli/constants.js';
 import { InputHistory } from '../cli/input/index.js';
 import { MessageHistory, SessionManager } from '../utils/index.js';
@@ -72,6 +74,8 @@ interface ShellState {
   config: AppConfig | null;
   configLoaded: boolean;
   configError: string | null;
+  /** Whether initial setup wizard is needed */
+  needsSetup: boolean;
   activeTasks: ActiveTask[];
   completedTasks: CompletedTask[];
   /** Session ID if resuming a session */
@@ -80,8 +84,8 @@ interface ShellState {
   tokenUsage: SessionTokenUsage;
   /** Active prompt state for interactive commands */
   promptState: PromptState | null;
-  /** Current git branch for header display */
-  gitBranch: string | null;
+  /** Whether config init is currently running */
+  runningConfigInit: boolean;
 }
 
 /**
@@ -108,43 +112,30 @@ export function InteractiveShell({ resumeSession }: InteractiveShellProps): Reac
     config: null,
     configLoaded: false,
     configError: null,
+    needsSetup: false,
     activeTasks: [],
     completedTasks: [],
     resumedSessionId: null,
     tokenUsage: INITIAL_TOKEN_USAGE,
     promptState: null,
-    gitBranch: null,
+    runningConfigInit: false,
   });
-
-  // Get git branch on mount
-  useEffect(() => {
-    async function getGitBranch(): Promise<void> {
-      try {
-        const { spawn } = await import('node:child_process');
-        const proc = spawn('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-          cwd: process.cwd(),
-        });
-
-        let output = '';
-        proc.stdout.on('data', (data: Buffer) => {
-          output += data.toString();
-        });
-
-        proc.on('close', (code: number | null) => {
-          if (code === 0 && output.trim() !== '') {
-            setState((prev) => ({ ...prev, gitBranch: output.trim() }));
-          }
-        });
-      } catch {
-        // Not in a git repo or git not available - ignore
-      }
-    }
-    void getGitBranch();
-  }, []);
 
   // Load config on mount and handle session resume
   useEffect(() => {
     async function loadConfiguration(): Promise<void> {
+      // Check if any config file exists (user or project)
+      const hasConfigFile = await configFileExists();
+      if (!hasConfigFile) {
+        // Show setup wizard instead of error
+        setState((s) => ({
+          ...s,
+          configLoaded: true,
+          needsSetup: true,
+        }));
+        return;
+      }
+
       const result = await loadConfig();
       if (result.success) {
         const config = result.result ?? null;
@@ -214,6 +205,22 @@ export function InteractiveShell({ resumeSession }: InteractiveShellProps): Reac
           }
         }
 
+        // Validate provider credentials before proceeding
+        if (config !== null) {
+          const validation = validateProviderCredentials(config);
+          if (!validation.isValid) {
+            const errorMsg =
+              `Provider configuration error:\n${validation.errors.join('\n')}\n\n` +
+              `Run 'agent config init' to configure your provider.`;
+            setState((s) => ({
+              ...s,
+              configLoaded: true,
+              configError: errorMsg,
+            }));
+            return;
+          }
+        }
+
         setState((s) => ({
           ...s,
           config,
@@ -228,8 +235,86 @@ export function InteractiveShell({ resumeSession }: InteractiveShellProps): Reac
       }
     }
 
-    void loadConfiguration();
-  }, [resumeSession]);
+    // Only load if not already loaded (configLoaded is false)
+    if (!state.configLoaded) {
+      void loadConfiguration();
+    }
+  }, [resumeSession, state.configLoaded]);
+
+  // Run config init when setup is needed (no settings.json)
+  useEffect(() => {
+    if (!state.needsSetup || state.runningConfigInit) return;
+
+    // Mark as running to prevent re-entry
+    setState((s) => ({ ...s, runningConfigInit: true }));
+
+    async function runConfigInit(): Promise<void> {
+      // Create a command context for configInitHandler
+      const context: CommandContext = {
+        config: {
+          version: '1.0',
+          providers: { default: 'local' },
+          agent: { dataDir: '~/.agent', logLevel: 'info', filesystemWritesEnabled: true },
+          memory: { enabled: false, type: 'local', historyLimit: 100 },
+          session: { autoSave: true, maxSessions: 50 },
+          skills: { disabledBundled: [], enabledBundled: [], plugins: [], scriptTimeout: 30000 },
+          telemetry: { enabled: false, enableSensitiveData: false },
+          retry: {
+            enabled: true,
+            maxRetries: 3,
+            baseDelayMs: 1000,
+            maxDelayMs: 10000,
+            enableJitter: true,
+          },
+        },
+        onOutput: (content: string, _type?: string) => {
+          // Display output as system messages
+          if (content.trim() !== '') {
+            setState((s) => ({
+              ...s,
+              messages: [
+                ...s.messages,
+                {
+                  role: 'system' as const,
+                  content,
+                  timestamp: new Date(),
+                },
+              ],
+            }));
+          }
+        },
+        onPrompt: (question: string): Promise<string> => {
+          return new Promise((resolve) => {
+            setState((s) => ({
+              ...s,
+              promptState: { question, resolve },
+              input: '',
+            }));
+          });
+        },
+        exit: () => {
+          exit();
+        },
+      };
+
+      const result = await configInitHandler('', context);
+
+      if (result.success) {
+        // Config saved successfully, exit so user can restart
+        exit();
+      } else {
+        // Config init failed or was cancelled
+        setState((s) => ({
+          ...s,
+          configError: result.message ?? 'Configuration setup failed',
+          needsSetup: false,
+          runningConfigInit: false,
+        }));
+      }
+    }
+
+    void runConfigInit();
+  }, [state.needsSetup, state.runningConfigInit, exit]);
 
   // Auto-save session on exit if enabled in config
   // We use a ref to access latest state in cleanup without causing re-renders
@@ -401,6 +486,7 @@ export function InteractiveShell({ resumeSession }: InteractiveShellProps): Reac
           });
         },
         exit,
+        isInteractive: true,
       };
 
       const result = await executeCommand(query, context);
@@ -737,11 +823,25 @@ export function InteractiveShell({ resumeSession }: InteractiveShellProps): Reac
         applyFilePatchTool,
       ];
 
-      agentRef.current = new Agent({
-        config: currentState.config,
-        callbacks,
-        tools: filesystemTools,
-      });
+      try {
+        agentRef.current = new Agent({
+          config: currentState.config,
+          callbacks,
+          tools: filesystemTools,
+        });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        setState((s) => ({
+          ...s,
+          error: {
+            success: false,
+            error: 'INITIALIZATION_ERROR',
+            message: `Failed to initialize agent: ${errorMessage}`,
+          },
+          isProcessing: false,
+        }));
+        return;
+      }
     }
 
     if (agentRef.current === null) {
@@ -750,7 +850,7 @@ export function InteractiveShell({ resumeSession }: InteractiveShellProps): Reac
         error: {
           success: false,
           error: 'INITIALIZATION_ERROR',
-          message: 'Failed to initialize agent',
+          message: 'Failed to initialize agent: configuration not loaded',
         },
         isProcessing: false,
       }));
@@ -805,7 +905,9 @@ export function InteractiveShell({ resumeSession }: InteractiveShellProps): Reac
     }
 
     // Don't process input until config is loaded
-    if (!state.configLoaded) return;
+    // Use stateRef to avoid stale closure issues with config loading
+    const currentState = stateRef.current;
+    if (!currentState.configLoaded) return;
 
     // Handle prompt mode input
     if (state.promptState !== null) {
@@ -879,16 +981,40 @@ export function InteractiveShell({ resumeSession }: InteractiveShellProps): Reac
     return <Spinner message="Loading configuration..." />;
   }
 
-  // Render config error
+  // Render config init flow if no settings.json exists
+  if (state.needsSetup) {
+    return (
+      <Box flexDirection="column" padding={1}>
+        {/* Config init output messages */}
+        {state.messages.map((msg, index) => (
+          <Box key={index}>
+            <Text>{msg.content}</Text>
+          </Box>
+        ))}
+
+        {/* Interactive prompt for config init */}
+        {state.promptState !== null && (
+          <Box>
+            <Text>{state.promptState.question} </Text>
+            <Text color="cyan">{state.input}</Text>
+            <Text color="cyan">{'█'}</Text>
+          </Box>
+        )}
+      </Box>
+    );
+  }
+
+  // Render config error - display full message for provider validation errors
   if (state.configError !== null) {
     return (
-      <ErrorDisplay
-        error={{
-          success: false,
-          error: 'CONFIG_ERROR',
-          message: state.configError,
-        }}
-      />
+      <Box flexDirection="column" padding={1}>
+        <Text color="red" bold>
+          Configuration Error
+        </Text>
+        <Box marginTop={1}>
+          <Text>{state.configError}</Text>
+        </Box>
+      </Box>
     );
   }
 
@@ -901,13 +1027,7 @@ export function InteractiveShell({ resumeSession }: InteractiveShellProps): Reac
 
   return (
     <Box flexDirection="column" padding={1}>
-      <Header
-        version={VERSION}
-        model={model}
-        provider={provider}
-        cwd={process.cwd()}
-        gitBranch={state.gitBranch ?? undefined}
-      />
+      <Header version={VERSION} model={model} provider={provider} cwd={process.cwd()} />
 
       {/* Message history */}
       {state.messages.map((msg, index) => (

@@ -400,3 +400,136 @@ export function getDefaultConfig(): AppConfig {
 export function parseConfig(input: unknown): z.ZodSafeParseResult<AppConfig> {
   return AppConfigSchema.safeParse(input);
 }
+
+/**
+ * Provider credential validation result.
+ */
+export interface ProviderValidationResult {
+  /** Whether the provider has valid credentials */
+  isValid: boolean;
+  /** Error messages if validation failed */
+  errors: string[];
+  /** Provider name that was validated */
+  provider: string;
+}
+
+/**
+ * Validate that the default provider has required credentials configured.
+ * This matches the Python agent-base validate_enabled_providers() behavior.
+ *
+ * @param config - The application configuration to validate
+ * @returns Validation result with errors if credentials are missing
+ */
+export function validateProviderCredentials(config: AppConfig): ProviderValidationResult {
+  const provider = config.providers.default;
+  const errors: string[] = [];
+
+  switch (provider) {
+    case 'openai': {
+      const providerConfig = config.providers.openai;
+      if (providerConfig?.apiKey === undefined || providerConfig.apiKey === '') {
+        errors.push(
+          'OpenAI provider requires an API key. ' +
+            'Set OPENAI_API_KEY environment variable or run: agent config init'
+        );
+      }
+      break;
+    }
+
+    case 'anthropic': {
+      const providerConfig = config.providers.anthropic;
+      if (providerConfig?.apiKey === undefined || providerConfig.apiKey === '') {
+        errors.push(
+          'Anthropic provider requires an API key. ' +
+            'Set ANTHROPIC_API_KEY environment variable or run: agent config init'
+        );
+      }
+      break;
+    }
+
+    case 'azure': {
+      const providerConfig = config.providers.azure;
+      if (providerConfig?.endpoint === undefined || providerConfig.endpoint === '') {
+        errors.push(
+          'Azure OpenAI provider requires an endpoint. ' +
+            'Set AZURE_OPENAI_ENDPOINT environment variable or run: agent config init'
+        );
+      }
+      if (providerConfig?.deployment === undefined || providerConfig.deployment === '') {
+        errors.push(
+          'Azure OpenAI provider requires a deployment name. ' +
+            'Set AZURE_OPENAI_DEPLOYMENT_NAME environment variable or run: agent config init'
+        );
+      }
+      break;
+    }
+
+    case 'foundry': {
+      const providerConfig = config.providers.foundry;
+      // Check mode - local mode doesn't need cloud credentials
+      if (providerConfig?.mode === 'cloud') {
+        if (providerConfig.projectEndpoint === undefined || providerConfig.projectEndpoint === '') {
+          errors.push(
+            'Azure AI Foundry (cloud mode) requires a project endpoint. ' +
+              'Set AZURE_PROJECT_ENDPOINT environment variable or run: agent config init'
+          );
+        }
+        if (providerConfig.modelDeployment === undefined || providerConfig.modelDeployment === '') {
+          errors.push(
+            'Azure AI Foundry (cloud mode) requires a model deployment. ' +
+              'Set AZURE_MODEL_DEPLOYMENT environment variable or run: agent config init'
+          );
+        }
+      }
+      // Local mode just needs Docker - validated at runtime
+      break;
+    }
+
+    case 'gemini': {
+      const providerConfig = config.providers.gemini;
+      if (providerConfig?.useVertexai === true) {
+        // Vertex AI mode requires project ID and location
+        if (providerConfig.projectId === undefined || providerConfig.projectId === '') {
+          errors.push(
+            'Gemini Vertex AI mode requires a project ID. ' +
+              'Set GEMINI_PROJECT_ID environment variable or run: agent config init'
+          );
+        }
+        // location has a default value, but check if explicitly set to empty
+        if (providerConfig.location === '') {
+          errors.push(
+            'Gemini Vertex AI mode requires a location. ' +
+              'Set GEMINI_LOCATION environment variable or run: agent config init'
+          );
+        }
+      } else {
+        // Standard Gemini API requires API key
+        if (providerConfig?.apiKey === undefined || providerConfig.apiKey === '') {
+          errors.push(
+            'Gemini provider requires an API key. ' +
+              'Set GEMINI_API_KEY environment variable or run: agent config init'
+          );
+        }
+      }
+      break;
+    }
+
+    case 'github': {
+      // GitHub Models - token is optional, gh CLI auth is checked at runtime
+      // No validation needed here
+      break;
+    }
+
+    case 'local': {
+      // Local provider just needs base URL (has default)
+      // No validation needed - defaults are sufficient
+      break;
+    }
+  }
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    provider,
+  };
+}
