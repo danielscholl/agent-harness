@@ -58,6 +58,17 @@ let initResult: TelemetryInitResult | null = null;
  * verifies the collector is running, not that the trace endpoint is
  * correctly configured. Some collectors may return 404/405 which is
  * acceptable - we only care that the service is reachable.
+ *
+ * LIMITATION: This uses HTTP/1.1 fetch to check gRPC endpoints (HTTP/2).
+ * gRPC endpoints may not respond correctly to HTTP/1.1 GET requests,
+ * potentially causing false negatives. However, in practice:
+ * - Most OTLP collectors (Jaeger, OTEL Collector) accept both HTTP and gRPC
+ * - The fallback behavior (HTTP first, then gRPC) handles most cases
+ * - Any response (including errors) indicates the endpoint is reachable
+ * - Adding true gRPC health checks would significantly increase complexity
+ *
+ * If gRPC detection is unreliable in your environment, use skipEndpointCheck
+ * or explicitly specify the endpoint in configuration.
  */
 async function isEndpointReachable(
   endpoint: string,
@@ -164,7 +175,7 @@ export async function initializeTelemetry(
       if (reachable) {
         endpoint = userEndpoint;
         // Detect gRPC vs HTTP based on port
-        useGrpc = userEndpoint.includes(':4317');
+        useGrpc = new URL(userEndpoint).port === '4317';
         debug(`User endpoint reachable: ${endpoint} (${useGrpc ? 'gRPC' : 'HTTP'})`);
       } else {
         debug(`User endpoint unreachable: ${userEndpoint}, falling back to auto-detect`);
@@ -195,7 +206,7 @@ export async function initializeTelemetry(
   } else if (exporterType === 'otlp') {
     // Skip endpoint check but still need to determine endpoint
     endpoint = options.endpoint ?? config.otlpEndpoint ?? DEFAULT_OTLP_HTTP_ENDPOINT;
-    useGrpc = endpoint.includes(':4317');
+    useGrpc = new URL(endpoint).port === '4317';
   }
 
   // Handle no-op case first to avoid any allocations (unless custom exporter provided)
