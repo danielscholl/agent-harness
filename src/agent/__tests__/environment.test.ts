@@ -149,6 +149,63 @@ describe('environment', () => {
       expect(env.platform).toBe('Windows');
       expect(env.osVersion).toBe('Windows 10.0.19044');
     });
+
+    it('calls debug callback on git command failures', async () => {
+      // Setup: .git folder exists, making it a git repo
+      mockAccess.mockResolvedValueOnce(undefined);
+
+      // Mock git commands to fail with specific errors
+      mockExec.mockImplementation((cmd, _opts, callback) => {
+        if (cmd.includes('branch --show-current')) {
+          if (callback) {
+            (callback as (error: Error | null) => void)(new Error('Permission denied'));
+          }
+        } else if (cmd.includes('status --porcelain')) {
+          if (callback) {
+            (callback as (error: Error | null) => void)(new Error('Corrupted repo'));
+          }
+        }
+        return {} as ChildProcess;
+      });
+
+      const mockDebug = jest.fn<(message: string, data?: unknown) => void>();
+      const env = await detectEnvironment('/git/repo', mockDebug);
+
+      // Verify it's detected as a git repo
+      expect(env.gitRepo).toBe(true);
+      // Verify git details are undefined due to failures
+      expect(env.gitBranch).toBeUndefined();
+      expect(env.gitClean).toBeUndefined();
+
+      // Verify debug callback was called for both failures
+      expect(mockDebug).toHaveBeenCalledTimes(2);
+      expect(mockDebug).toHaveBeenCalledWith('Failed to get git branch', {
+        dir: '/git/repo',
+        error: 'Permission denied',
+      });
+      expect(mockDebug).toHaveBeenCalledWith('Failed to check git status', {
+        dir: '/git/repo',
+        error: 'Corrupted repo',
+      });
+    });
+
+    it('works without debug callback', async () => {
+      // Setup: git repo with failing commands
+      mockAccess.mockResolvedValueOnce(undefined);
+      mockExec.mockImplementation((_cmd, _opts, callback) => {
+        if (callback) {
+          (callback as (error: Error | null) => void)(new Error('Git error'));
+        }
+        return {} as ChildProcess;
+      });
+
+      // Should not throw when debug callback is undefined
+      const env = await detectEnvironment('/git/repo');
+
+      expect(env.gitRepo).toBe(true);
+      expect(env.gitBranch).toBeUndefined();
+      expect(env.gitClean).toBeUndefined();
+    });
   });
 
   describe('formatEnvironmentSection', () => {

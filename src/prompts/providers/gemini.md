@@ -9,7 +9,7 @@ models: [gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite]
 
 - Use markdown formatting for structure
 - Organize responses clearly with headers
-- Leverage the large context window efficiently (1M tokens)
+- Leverage the large context window efficiently (1M-2M tokens depending on model)
 
 ## Tool Usage
 
@@ -20,7 +20,7 @@ models: [gemini-2.5-pro, gemini-2.5-flash, gemini-2.5-flash-lite]
 
 ## Strengths
 
-- Large context window (1M tokens across all current models)
+- Large context windows (1M tokens for flash variants, 2M tokens for pro variants)
 - Multi-modal understanding (text, images, video, audio)
 - Strong reasoning capabilities (especially 2.5-pro)
 - Long document analysis

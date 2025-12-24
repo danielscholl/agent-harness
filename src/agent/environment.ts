@@ -16,6 +16,11 @@ import { join } from 'node:path';
 const execAsync = promisify(exec);
 
 /**
+ * Optional debug callback for diagnostic logging.
+ */
+export type DebugCallback = (message: string, data?: unknown) => void;
+
+/**
  * Environment context for system prompt injection.
  */
 export interface EnvironmentContext {
@@ -56,7 +61,7 @@ async function isGitRepo(dir: string): Promise<boolean> {
 /**
  * Get the current git branch name.
  */
-async function getGitBranch(dir: string): Promise<string | undefined> {
+async function getGitBranch(dir: string, onDebug?: DebugCallback): Promise<string | undefined> {
   try {
     const { stdout } = await execAsync('git branch --show-current', { cwd: dir });
     const branch = stdout.trim();
@@ -66,7 +71,11 @@ async function getGitBranch(dir: string): Promise<string | undefined> {
       return `HEAD detached at ${refStdout.trim()}`;
     }
     return branch;
-  } catch {
+  } catch (error) {
+    onDebug?.('Failed to get git branch', {
+      dir,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return undefined;
   }
 }
@@ -74,11 +83,15 @@ async function getGitBranch(dir: string): Promise<string | undefined> {
 /**
  * Check if the git working tree is clean (no uncommitted changes).
  */
-async function isGitClean(dir: string): Promise<boolean | undefined> {
+async function isGitClean(dir: string, onDebug?: DebugCallback): Promise<boolean | undefined> {
   try {
     const { stdout } = await execAsync('git status --porcelain', { cwd: dir });
     return stdout.trim() === '';
-  } catch {
+  } catch (error) {
+    onDebug?.('Failed to check git status', {
+      dir,
+      error: error instanceof Error ? error.message : String(error),
+    });
     return undefined;
   }
 }
@@ -126,6 +139,7 @@ function getOsVersion(): string {
  * Detect current environment context.
  *
  * @param workingDir - Working directory (defaults to process.cwd())
+ * @param onDebug - Optional debug callback for diagnostic logging
  * @returns Environment context for prompt injection
  *
  * @example
@@ -136,21 +150,31 @@ function getOsVersion(): string {
  * console.log(env.gitClean);    // true
  * ```
  */
-export async function detectEnvironment(workingDir?: string): Promise<EnvironmentContext> {
+export async function detectEnvironment(
+  workingDir?: string,
+  onDebug?: DebugCallback
+): Promise<EnvironmentContext> {
   const dir = workingDir ?? process.cwd();
   const isRepo = await isGitRepo(dir);
+
+  // ISO date format: YYYY-MM-DD (split always returns at least one element)
+  const datePart = new Date().toISOString().split('T')[0];
+  const isoDate = datePart !== undefined ? datePart : '';
 
   const context: EnvironmentContext = {
     workingDir: dir,
     gitRepo: isRepo,
     platform: getPlatformName(platform()),
     osVersion: getOsVersion(),
-    date: new Date().toISOString().split('T')[0] ?? new Date().toISOString().substring(0, 10),
+    date: isoDate,
   };
 
   // Add git details if this is a repo
   if (isRepo) {
-    const [branch, clean] = await Promise.all([getGitBranch(dir), isGitClean(dir)]);
+    const [branch, clean] = await Promise.all([
+      getGitBranch(dir, onDebug),
+      isGitClean(dir, onDebug),
+    ]);
     context.gitBranch = branch;
     context.gitClean = clean;
   }
@@ -205,9 +229,13 @@ export function formatEnvironmentSection(context: EnvironmentContext): string {
  * Combines detection and formatting in one call.
  *
  * @param workingDir - Working directory (defaults to process.cwd())
+ * @param onDebug - Optional debug callback for diagnostic logging
  * @returns Markdown-formatted environment section
  */
-export async function generateEnvironmentSection(workingDir?: string): Promise<string> {
-  const context = await detectEnvironment(workingDir);
+export async function generateEnvironmentSection(
+  workingDir?: string,
+  onDebug?: DebugCallback
+): Promise<string> {
+  const context = await detectEnvironment(workingDir, onDebug);
   return formatEnvironmentSection(context);
 }

@@ -335,18 +335,24 @@ export async function loadProviderLayer(provider: string): Promise<string> {
  * Generate environment section with runtime context.
  *
  * @param workingDir - Working directory (default: process.cwd())
+ * @param onDebug - Optional debug callback for diagnostic logging
  * @returns Markdown-formatted environment section
  */
 export async function generateEnvironmentSectionForPrompt(
-  workingDir?: string
+  workingDir?: string,
+  onDebug?: (message: string, data?: unknown) => void
 ): Promise<{ section: string; context: EnvironmentContext }> {
-  const context = await detectEnvironment(workingDir);
+  const context = await detectEnvironment(workingDir, onDebug);
   const section = formatEnvironmentSection(context);
   return { section, context };
 }
 
 /**
  * Build placeholder values including environment context.
+ *
+ * Internal helper exported primarily for testing and tooling.
+ *
+ * @internal
  */
 function buildPlaceholderValues(
   config: AppConfig,
@@ -438,8 +444,10 @@ export async function assembleSystemPrompt(options: PromptAssemblyOptions): Prom
 
   // 3. Generate environment section (if enabled)
   if (includeEnvironment) {
-    const { section: envSection, context: envContext } =
-      await generateEnvironmentSectionForPrompt(workingDir);
+    const { section: envSection, context: envContext } = await generateEnvironmentSectionForPrompt(
+      workingDir,
+      onDebug as ((message: string, data?: unknown) => void) | undefined
+    );
     sections.push(envSection);
     onDebug?.('Generated environment section', {
       workingDir: envContext.workingDir,

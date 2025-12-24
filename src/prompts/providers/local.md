@@ -1,6 +1,6 @@
 ---
 provider: local
-models: [llama3, llama3.1, codellama, mistral, phi-3, qwen2]
+models: [llama3, llama3.1, codellama, mistral, phi-3, qwen2-7b]
 note: Local models via Ollama or Docker Model Runner
 ---
 
