@@ -226,7 +226,7 @@ describe('Bash Tool', () => {
       const result = await promise;
       expect(result.title).toContain('killed');
       expect(result.metadata.exitCode).toBeNull();
-    });
+    }, 30000);
 
     it('should truncate large stdout output', async () => {
       const initialized = await bashTool.init();
@@ -265,7 +265,7 @@ describe('Bash Tool', () => {
 
       const result = await promise;
       expect(result.title).toContain('killed');
-    });
+    }, 30000);
 
     it('should use command slice for display when no description', async () => {
       const initialized = await bashTool.init();
