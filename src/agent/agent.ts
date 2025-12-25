@@ -356,11 +356,41 @@ export class Agent {
   }
 
   /**
+   * Check if the current provider supports tool/function calling.
+   * Some local models (like Foundry local) don't support function calling.
+   */
+  private supportsToolCalling(): boolean {
+    const providerName = this.config.providers.default;
+
+    // Foundry local mode doesn't support function calling
+    if (providerName === 'foundry') {
+      const foundryConfig = this.config.providers.foundry;
+      if (foundryConfig?.mode === 'local') {
+        return false;
+      }
+    }
+
+    // Local provider (Ollama, Docker, etc.) may not support function calling
+    // depending on the model - for now we assume they do
+    // Users can use models that support function calling
+
+    return true;
+  }
+
+  /**
    * Get model bound with tools for function calling.
    * Returns the LangChain model with tools bound if tools are available.
    */
   private async getModelWithTools(): Promise<Runnable<BaseMessage[], AIMessage> | null> {
     if (this.resolvedTools.length === 0) {
+      return null;
+    }
+
+    // Skip tool binding for providers that don't support function calling
+    if (!this.supportsToolCalling()) {
+      this.callbacks?.onDebug?.(
+        'Provider does not support function calling, skipping tool binding'
+      );
       return null;
     }
 

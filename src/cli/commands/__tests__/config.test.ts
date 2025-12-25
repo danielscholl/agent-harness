@@ -229,7 +229,30 @@ describe('config command handlers', () => {
   });
 
   describe('configInitHandler', () => {
-    it('requires interactive mode', async () => {
+    // configInitHandler now delegates to configProviderHandler, so these tests
+    // verify the init-as-provider-alias behavior
+
+    it('requires interactive mode when no providers configured', async () => {
+      // Mock no providers configured (triggers setup flow)
+      const emptyConfig = {
+        version: '1.0',
+        providers: { default: 'openai' },
+        agent: { dataDir: '~/.agent', logLevel: 'info', filesystemWritesEnabled: true },
+        memory: { enabled: false, type: 'local', historyLimit: 100 },
+        session: { autoSave: true, maxSessions: 50 },
+        skills: { disabledBundled: [], enabledBundled: [], plugins: [], scriptTimeout: 30000 },
+        telemetry: { enabled: false, enableSensitiveData: false },
+        retry: {
+          enabled: true,
+          maxRetries: 3,
+          baseDelayMs: 1000,
+          maxDelayMs: 10000,
+          enableJitter: true,
+        },
+      };
+      loadConfig.mockResolvedValue({ success: true, result: emptyConfig });
+      loadConfigFromFiles.mockResolvedValue({ success: true, result: emptyConfig });
+
       const { configInitHandler } = await import('../config.js');
       const context = createMockContext({ withPrompt: false });
       const result = await configInitHandler('', context);
@@ -242,6 +265,26 @@ describe('config command handlers', () => {
     });
 
     it('shows error for invalid provider selection', async () => {
+      // Mock no providers configured (triggers setup flow)
+      const emptyConfig = {
+        version: '1.0',
+        providers: { default: 'openai' },
+        agent: { dataDir: '~/.agent', logLevel: 'info', filesystemWritesEnabled: true },
+        memory: { enabled: false, type: 'local', historyLimit: 100 },
+        session: { autoSave: true, maxSessions: 50 },
+        skills: { disabledBundled: [], enabledBundled: [], plugins: [], scriptTimeout: 30000 },
+        telemetry: { enabled: false, enableSensitiveData: false },
+        retry: {
+          enabled: true,
+          maxRetries: 3,
+          baseDelayMs: 1000,
+          maxDelayMs: 10000,
+          enableJitter: true,
+        },
+      };
+      loadConfig.mockResolvedValue({ success: true, result: emptyConfig });
+      loadConfigFromFiles.mockResolvedValue({ success: true, result: emptyConfig });
+
       const { configInitHandler } = await import('../config.js');
       const context = createMockContext({ withPrompt: true, promptResponses: ['99'] });
       const result = await configInitHandler('', context);
@@ -251,33 +294,37 @@ describe('config command handlers', () => {
     });
 
     it('runs provider wizard and saves config on valid selection', async () => {
-      loadConfig.mockResolvedValue({
-        success: true,
-        result: {
-          version: '1.0',
-          providers: { default: 'openai' },
-          agent: { dataDir: '~/.agent', logLevel: 'info', filesystemWritesEnabled: true },
-          memory: { enabled: false, type: 'local', historyLimit: 100 },
-          session: { autoSave: true, maxSessions: 50 },
-          skills: { disabledBundled: [], enabledBundled: [], plugins: [], scriptTimeout: 30000 },
-          telemetry: { enabled: false, enableSensitiveData: false },
-          retry: {
-            enabled: true,
-            maxRetries: 3,
-            baseDelayMs: 1000,
-            maxDelayMs: 10000,
-            enableJitter: true,
-          },
+      // Mock no providers configured (triggers setup flow)
+      const emptyConfig = {
+        version: '1.0',
+        providers: { default: 'openai' },
+        agent: { dataDir: '~/.agent', logLevel: 'info', filesystemWritesEnabled: true },
+        memory: { enabled: false, type: 'local', historyLimit: 100 },
+        session: { autoSave: true, maxSessions: 50 },
+        skills: { disabledBundled: [], enabledBundled: [], plugins: [], scriptTimeout: 30000 },
+        telemetry: { enabled: false, enableSensitiveData: false },
+        retry: {
+          enabled: true,
+          maxRetries: 3,
+          baseDelayMs: 1000,
+          maxDelayMs: 10000,
+          enableJitter: true,
         },
-      });
+      };
+      loadConfig.mockResolvedValue({ success: true, result: emptyConfig });
+      loadConfigFromFiles.mockResolvedValue({ success: true, result: emptyConfig });
 
       const { configInitHandler } = await import('../config.js');
-      const context = createMockContext({ withPrompt: true, promptResponses: ['1'] });
+      // Select OpenAI (1), provide API key, use default model
+      const context = createMockContext({
+        withPrompt: true,
+        promptResponses: ['1', 'sk-test-key-123', ''],
+      });
       const result = await configInitHandler('', context);
 
       expect(result.success).toBe(true);
-      expect(result.message).toBe('Configuration initialized');
-      expect(context.outputs.some((o) => o.content.includes('Configuration saved'))).toBe(true);
+      expect(result.message).toBe('openai configured');
+      expect(context.outputs.some((o) => o.content.includes('configured as default'))).toBe(true);
     });
   });
 

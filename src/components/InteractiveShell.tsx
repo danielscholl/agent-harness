@@ -50,6 +50,31 @@ const INITIAL_TOKEN_USAGE: SessionTokenUsage = {
 };
 
 /**
+ * Resolve model name from provider configuration.
+ * Handles different providers with different config fields.
+ */
+function resolveModelName(
+  providerName: string,
+  providerConfig: Record<string, unknown> | undefined
+): string {
+  if (providerConfig === undefined) return 'unknown';
+
+  if (providerName === 'azure') {
+    return (providerConfig.deployment as string | undefined) ?? 'unknown';
+  }
+
+  if (providerName === 'foundry') {
+    const mode = providerConfig.mode as string | undefined;
+    if (mode === 'local') {
+      return (providerConfig.modelAlias as string | undefined) ?? 'unknown';
+    }
+    return (providerConfig.modelDeployment as string | undefined) ?? 'unknown';
+  }
+
+  return (providerConfig.model as string | undefined) ?? 'unknown';
+}
+
+/**
  * Format tool arguments for display.
  * Shows first arg value, truncated.
  */
@@ -495,9 +520,7 @@ export function InteractiveShell({
       const autoSaveProviderConfig = config.providers[
         autoSaveProvider as keyof typeof config.providers
       ] as Record<string, unknown> | undefined;
-      const autoSaveModel = (autoSaveProviderConfig?.model ??
-        autoSaveProviderConfig?.deployment ??
-        'unknown') as string;
+      const autoSaveModel = resolveModelName(autoSaveProvider, autoSaveProviderConfig);
 
       void sessionManager
         .saveSession(storedMessages, {
@@ -686,9 +709,7 @@ export function InteractiveShell({
               const saveProviderConfig = currentState.config?.providers[
                 saveProvider as keyof typeof currentState.config.providers
               ] as Record<string, unknown> | undefined;
-              const saveModel = (saveProviderConfig?.model ??
-                saveProviderConfig?.deployment ??
-                'unknown') as string;
+              const saveModel = resolveModelName(saveProvider, saveProviderConfig);
 
               const sessionMeta = await sessionManager.saveSession(storedMessages, {
                 name: result.sessionName,
@@ -958,14 +979,7 @@ export function InteractiveShell({
       const providerConfig = currentState.config.providers[providerName] as
         | Record<string, unknown>
         | undefined;
-      const modelName =
-        providerConfig !== undefined
-          ? providerName === 'azure'
-            ? ((providerConfig.deployment as string | undefined) ?? 'unknown')
-            : providerName === 'foundry'
-              ? ((providerConfig.modelDeployment as string | undefined) ?? 'unknown')
-              : ((providerConfig.model as string | undefined) ?? 'unknown')
-          : 'unknown';
+      const modelName = resolveModelName(providerName, providerConfig);
 
       const tracedCallbacks = wrapWithTelemetry(callbacks, {
         providerName,
@@ -1329,7 +1343,7 @@ export function InteractiveShell({
   const providerConfig = state.config?.providers[
     provider as keyof typeof state.config.providers
   ] as Record<string, unknown> | undefined;
-  const model = (providerConfig?.model ?? providerConfig?.deployment ?? 'unknown') as string;
+  const model = resolveModelName(provider, providerConfig);
 
   return (
     <Box flexDirection="column" padding={1}>

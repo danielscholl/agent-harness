@@ -127,8 +127,8 @@ export function getProviderWizards(): ProviderInfo[] {
     },
     {
       name: 'local',
-      displayName: 'Local (Docker)',
-      description: 'Local models via Docker Model Runner',
+      displayName: 'Local',
+      description: 'Local models via Ollama, Docker, or LM Studio',
       authMethod: 'None (local)',
       wizard: setupLocal,
     },

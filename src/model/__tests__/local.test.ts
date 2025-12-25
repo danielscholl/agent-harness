@@ -36,24 +36,24 @@ describe('createLocalClient', () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.result).toBeDefined();
-      expect(result.message).toContain('ai/phi4');
+      expect(result.message).toContain('qwen3:latest');
     }
     expect(mockChatOpenAI).toHaveBeenCalledWith({
-      model: 'ai/phi4',
+      model: 'qwen3:latest',
       openAIApiKey: 'not-needed',
-      configuration: { baseURL: 'http://model-runner.docker.internal/' },
+      configuration: { baseURL: 'http://localhost:11434/v1' },
     });
   });
 
   it('creates ChatOpenAI with custom baseUrl', async () => {
     const result = await createLocalClient({
       baseUrl: 'http://localhost:11434/v1',
-      model: 'llama3.2',
+      model: 'qwen3:latest',
     });
 
     expect(result.success).toBe(true);
     expect(mockChatOpenAI).toHaveBeenCalledWith({
-      model: 'llama3.2',
+      model: 'qwen3:latest',
       openAIApiKey: 'not-needed',
       configuration: { baseURL: 'http://localhost:11434/v1' },
     });
@@ -91,12 +91,12 @@ describe('createLocalClient', () => {
 
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.message).toContain('ai/phi4');
+      expect(result.message).toContain('qwen3:latest');
     }
     expect(mockChatOpenAI).toHaveBeenCalledWith({
-      model: 'ai/phi4',
+      model: 'qwen3:latest',
       openAIApiKey: 'not-needed',
-      configuration: { baseURL: 'http://model-runner.docker.internal/' },
+      configuration: { baseURL: 'http://localhost:11434/v1' },
     });
   });
 
@@ -148,12 +148,12 @@ describe('createLocalClient', () => {
   it('works with Ollama-style baseUrl', async () => {
     const result = await createLocalClient({
       baseUrl: 'http://localhost:11434/v1',
-      model: 'llama3.2',
+      model: 'qwen3:latest',
     });
 
     expect(result.success).toBe(true);
     expect(mockChatOpenAI).toHaveBeenCalledWith({
-      model: 'llama3.2',
+      model: 'qwen3:latest',
       openAIApiKey: 'not-needed',
       configuration: { baseURL: 'http://localhost:11434/v1' },
     });
@@ -176,14 +176,14 @@ describe('createLocalClient', () => {
   it('uses default baseUrl when empty string provided', async () => {
     const result = await createLocalClient({
       baseUrl: '',
-      model: 'ai/phi4',
+      model: 'custom-model',
     });
 
     expect(result.success).toBe(true);
     expect(mockChatOpenAI).toHaveBeenCalledWith({
-      model: 'ai/phi4',
+      model: 'custom-model',
       openAIApiKey: 'not-needed',
-      configuration: { baseURL: 'http://model-runner.docker.internal/' },
+      configuration: { baseURL: 'http://localhost:11434/v1' },
     });
   });
 
@@ -195,10 +195,10 @@ describe('createLocalClient', () => {
 
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.message).toContain('ai/phi4');
+      expect(result.message).toContain('qwen3:latest');
     }
     expect(mockChatOpenAI).toHaveBeenCalledWith({
-      model: 'ai/phi4',
+      model: 'qwen3:latest',
       openAIApiKey: 'not-needed',
       configuration: { baseURL: 'http://localhost:11434/v1' },
     });
@@ -212,12 +212,12 @@ describe('createLocalClient', () => {
 
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.message).toContain('ai/phi4');
+      expect(result.message).toContain('qwen3:latest');
     }
     expect(mockChatOpenAI).toHaveBeenCalledWith({
-      model: 'ai/phi4',
+      model: 'qwen3:latest',
       openAIApiKey: 'not-needed',
-      configuration: { baseURL: 'http://model-runner.docker.internal/' },
+      configuration: { baseURL: 'http://localhost:11434/v1' },
     });
   });
 });

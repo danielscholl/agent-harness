@@ -29,6 +29,7 @@ interface SectionItem {
   value: string;
   status: ItemStatus;
   isDefault?: boolean;
+  isSubItem?: boolean;
 }
 
 /**
@@ -40,6 +41,13 @@ interface HealthSection {
 }
 
 /**
+ * Docker model information.
+ */
+interface DockerModel {
+  name: string;
+}
+
+/**
  * Docker status information.
  */
 interface DockerStatus {
@@ -47,13 +55,16 @@ interface DockerStatus {
   version?: string;
   cpus?: number;
   memoryBytes?: number;
+  models?: DockerModel[];
 }
 
 /**
  * Mask a secret value, showing only the last 6 characters.
+ * Returns special display for providers using Azure CLI auth.
  */
 function maskSecret(secret: string | undefined): string {
   if (secret === undefined || secret === '') return 'Not configured';
+  if (secret === 'N/A') return 'Azure CLI';
   if (secret.length <= 8) return '****';
   return '****' + secret.slice(-6);
 }
@@ -101,6 +112,7 @@ function getModelName(providerName: ProviderName, providerConfig: Record<string,
 
 /**
  * Get secret/key for a provider config.
+ * Returns 'N/A' for providers that don't need API keys (local, Azure CLI auth).
  */
 function getProviderSecret(
   providerName: ProviderName,
@@ -112,55 +124,162 @@ function getProviderSecret(
   if (providerName === 'github') {
     return providerConfig.token as string | undefined;
   }
+  // Azure and Foundry can use Azure CLI authentication (no API key needed)
+  if (providerName === 'azure') {
+    const apiKey = providerConfig.apiKey as string | undefined;
+    if (apiKey === undefined || apiKey === '') {
+      // Azure CLI auth - no API key needed if endpoint is configured
+      const endpoint = providerConfig.endpoint as string | undefined;
+      if (endpoint !== undefined && endpoint !== '') {
+        return 'N/A'; // Azure CLI auth
+      }
+    }
+    return apiKey;
+  }
+  if (providerName === 'foundry') {
+    const apiKey = providerConfig.apiKey as string | undefined;
+    if (apiKey === undefined || apiKey === '') {
+      // Foundry cloud uses Azure CLI auth, local mode needs no auth
+      const mode = providerConfig.mode as string | undefined;
+      if (mode === 'local') {
+        return 'N/A';
+      }
+      const projectEndpoint = providerConfig.projectEndpoint as string | undefined;
+      if (projectEndpoint !== undefined && projectEndpoint !== '') {
+        return 'N/A'; // Azure CLI auth
+      }
+    }
+    return apiKey;
+  }
   return providerConfig.apiKey as string | undefined;
 }
 
 /**
- * Check Docker status asynchronously using child_process.
- * Queries Docker for version, allocated CPUs, and memory.
+ * Get Docker Model Runner models via HTTP API.
+ * Queries http://localhost:12434/engines/llama.cpp/v1/models
+ * Returns empty array if Model Runner isn't running or no models available.
  */
-async function getDockerStatus(): Promise<DockerStatus> {
-  const { spawn } = await import('node:child_process');
+async function getDockerModels(): Promise<DockerModel[]> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      controller.abort();
+    }, 2000);
 
+    const response = await fetch('http://localhost:12434/engines/llama.cpp/v1/models', {
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (response.ok) {
+      const data = (await response.json()) as { data?: Array<{ id?: string }> };
+      const models: DockerModel[] = [];
+      for (const model of data.data ?? []) {
+        if (model.id !== undefined && model.id !== '') {
+          models.push({ name: model.id });
+        }
+      }
+      return models;
+    }
+    return [];
+  } catch {
+    // Model Runner not running or not responding
+    return [];
+  }
+}
+
+/**
+ * Get Docker info (version, CPUs, memory).
+ * Times out after 3 seconds if Docker is unresponsive.
+ */
+async function getDockerInfo(spawn: typeof import('node:child_process').spawn): Promise<{
+  running: boolean;
+  version?: string;
+  cpus?: number;
+  memoryBytes?: number;
+}> {
   return new Promise((resolve) => {
     try {
-      // Query version, NCPU, and MemTotal from Docker
       const proc = spawn('docker', [
         'info',
         '--format',
         '{{.ServerVersion}}|{{.NCPU}}|{{.MemTotal}}',
       ]);
       let output = '';
+      let resolved = false;
+
+      // Timeout after 3 seconds
+      const timeout = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          proc.kill();
+          resolve({ running: false });
+        }
+      }, 3000);
 
       proc.stdout.on('data', (data: Buffer) => {
         output += data.toString();
       });
 
       proc.on('error', () => {
-        resolve({ running: false });
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          resolve({ running: false });
+        }
       });
 
       proc.on('close', (code: number | null) => {
-        if (code === 0 && output.trim()) {
-          const parts = output.trim().split('|');
-          const version = parts[0];
-          const cpus = parts[1] !== undefined ? parseInt(parts[1], 10) : undefined;
-          const memoryBytes = parts[2] !== undefined ? parseInt(parts[2], 10) : undefined;
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timeout);
+          if (code === 0 && output.trim()) {
+            const parts = output.trim().split('|');
+            const version = parts[0];
+            const cpus = parts[1] !== undefined ? parseInt(parts[1], 10) : undefined;
+            const memoryBytes = parts[2] !== undefined ? parseInt(parts[2], 10) : undefined;
 
-          resolve({
-            running: true,
-            version,
-            cpus: cpus !== undefined && !isNaN(cpus) ? cpus : undefined,
-            memoryBytes: memoryBytes !== undefined && !isNaN(memoryBytes) ? memoryBytes : undefined,
-          });
-        } else {
-          resolve({ running: false });
+            resolve({
+              running: true,
+              version,
+              cpus: cpus !== undefined && !isNaN(cpus) ? cpus : undefined,
+              memoryBytes:
+                memoryBytes !== undefined && !isNaN(memoryBytes) ? memoryBytes : undefined,
+            });
+          } else {
+            resolve({ running: false });
+          }
         }
       });
     } catch {
       resolve({ running: false });
     }
   });
+}
+
+/**
+ * Check Docker status asynchronously using child_process.
+ * Queries Docker for version, allocated CPUs, memory, and available models.
+ */
+async function getDockerStatus(): Promise<DockerStatus> {
+  const { spawn } = await import('node:child_process');
+
+  const info = await getDockerInfo(spawn);
+
+  if (!info.running) {
+    return { running: false };
+  }
+
+  // Fetch Docker Model Runner models via HTTP API
+  const models = await getDockerModels();
+
+  return {
+    running: true,
+    version: info.version,
+    cpus: info.cpus,
+    memoryBytes: info.memoryBytes,
+    models,
+  };
 }
 
 /**
@@ -216,6 +335,7 @@ function buildMemorySection(config: AppConfig): HealthSection {
  * Build the Docker section.
  * Shows 'ok' (green) if running, 'warning' (yellow) if not running.
  * Displays Docker's allocated resources (CPUs and memory), not system totals.
+ * Also shows available Docker models if any.
  */
 function buildDockerSection(dockerStatus: DockerStatus): HealthSection {
   if (dockerStatus.running) {
@@ -224,15 +344,29 @@ function buildDockerSection(dockerStatus: DockerStatus): HealthSection {
     const totalMemory =
       dockerStatus.memoryBytes !== undefined ? formatMemory(dockerStatus.memoryBytes) : 'unknown';
 
-    return {
-      name: 'Docker',
-      items: [
-        {
-          label: `Running (${version}) · ${cpuCount} allocated cores, ${totalMemory} allocated`,
+    const items: SectionItem[] = [
+      {
+        label: `Running (${version}) · ${cpuCount} allocated cores, ${totalMemory} allocated`,
+        value: '',
+        status: 'ok',
+      },
+    ];
+
+    // Add Docker Model Runner models if available
+    if (dockerStatus.models !== undefined && dockerStatus.models.length > 0) {
+      for (const model of dockerStatus.models) {
+        items.push({
+          label: model.name,
           value: '',
           status: 'ok',
-        },
-      ],
+          isSubItem: true,
+        });
+      }
+    }
+
+    return {
+      name: 'Docker',
+      items,
     };
   }
 
@@ -243,22 +377,60 @@ function buildDockerSection(dockerStatus: DockerStatus): HealthSection {
 }
 
 /**
- * Check if a provider is explicitly configured in settings (not just env vars).
- * A provider is considered "configured" if it has any properties set in the config file.
+ * Check if a provider has meaningful configuration beyond schema defaults.
+ * A provider is "configured" if it has credentials or explicitly set values.
  */
 function isProviderConfigured(
   providerName: ProviderName,
   providerConfig: Record<string, unknown> | undefined
 ): boolean {
-  // Provider config must be defined and not an empty object
   if (providerConfig === undefined) return false;
 
-  // Local provider is always configured if present (even if empty)
-  if (providerName === 'local') return true;
+  switch (providerName) {
+    case 'openai':
+      // OpenAI needs an API key or custom baseUrl
+      return (
+        (typeof providerConfig.apiKey === 'string' && providerConfig.apiKey !== '') ||
+        (typeof providerConfig.baseUrl === 'string' && providerConfig.baseUrl !== '')
+      );
 
-  // Check if any property is set (model, apiKey, endpoint, etc.)
-  // An empty object {} is not considered configured
-  return Object.keys(providerConfig).length > 0;
+    case 'anthropic':
+      // Anthropic needs an API key
+      return typeof providerConfig.apiKey === 'string' && providerConfig.apiKey !== '';
+
+    case 'azure':
+      // Azure needs endpoint and deployment
+      return (
+        typeof providerConfig.endpoint === 'string' &&
+        providerConfig.endpoint !== '' &&
+        typeof providerConfig.deployment === 'string' &&
+        providerConfig.deployment !== ''
+      );
+
+    case 'foundry':
+      // Foundry cloud needs projectEndpoint, local mode is always available
+      if (providerConfig.mode === 'local') {
+        return true; // Local mode doesn't need credentials
+      }
+      return (
+        typeof providerConfig.projectEndpoint === 'string' && providerConfig.projectEndpoint !== ''
+      );
+
+    case 'gemini':
+      // Gemini needs an API key
+      return typeof providerConfig.apiKey === 'string' && providerConfig.apiKey !== '';
+
+    case 'github':
+      // GitHub needs a token
+      return typeof providerConfig.token === 'string' && providerConfig.token !== '';
+
+    case 'local':
+      // Local provider is configured if baseUrl is set
+      return typeof providerConfig.baseUrl === 'string' && providerConfig.baseUrl !== '';
+
+    default:
+      return false;
+  }
 }
 
 /**
@@ -286,10 +458,21 @@ function buildProvidersSection(config: AppConfig, fileConfig: AppConfig): Health
     const modelName = getModelName(providerName, providerConfig ?? {});
     const secret = getProviderSecret(providerName, providerConfig ?? {});
     const hasSecret = secret !== undefined && secret !== '' && secret !== 'N/A';
-    const maskedSecret = providerName === 'local' ? '' : ` · ${maskSecret(secret)}`;
+    const isFoundryLocal = providerName === 'foundry' && providerConfig?.mode === 'local';
 
-    // Determine status: ok if has credentials, warning if not configured
-    const status: ItemStatus = hasSecret || providerName === 'local' ? 'ok' : 'warning';
+    // Build masked secret display - special handling for local providers
+    let maskedSecret = '';
+    if (providerName === 'local') {
+      maskedSecret = ''; // Local provider shows no secret info
+    } else if (isFoundryLocal) {
+      maskedSecret = ' · Local SDK'; // Foundry local mode uses foundry-local-sdk
+    } else {
+      maskedSecret = ` · ${maskSecret(secret)}`;
+    }
+
+    // Determine status: ok if has credentials or doesn't need them (local, foundry local mode)
+    const status: ItemStatus =
+      hasSecret || providerName === 'local' || isFoundryLocal ? 'ok' : 'warning';
 
     items.push({
       label: `${displayName} (${modelName})`,
@@ -409,6 +592,9 @@ export function HealthCheck(): React.ReactElement {
                     ? 'red'
                     : 'cyan'; // info
 
+            // Use smaller dot for sub-items
+            const bullet = item.isSubItem === true ? '•' : '◉';
+
             return (
               <Box key={itemIndex} paddingLeft={2}>
                 {/* Show checkmark for default provider */}
@@ -417,7 +603,7 @@ export function HealthCheck(): React.ReactElement {
                 ) : (
                   <Text> </Text>
                 )}
-                <Text color={bulletColor}>◉</Text>
+                <Text color={bulletColor}>{bullet}</Text>
                 <Text> {item.label}</Text>
                 {item.value !== '' && <Text dimColor>{item.value}</Text>}
               </Box>

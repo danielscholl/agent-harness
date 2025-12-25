@@ -18,6 +18,31 @@ import type { AgentErrorResponse } from '../errors/index.js';
 import type { AppConfig } from '../config/schema.js';
 
 /**
+ * Resolve model name from provider configuration.
+ * Handles different providers with different config fields.
+ */
+function resolveModelName(
+  providerName: string,
+  providerConfig: Record<string, unknown> | undefined
+): string {
+  if (providerConfig === undefined) return 'unknown';
+
+  if (providerName === 'azure') {
+    return (providerConfig.deployment as string | undefined) ?? 'unknown';
+  }
+
+  if (providerName === 'foundry') {
+    const mode = providerConfig.mode as string | undefined;
+    if (mode === 'local') {
+      return (providerConfig.modelAlias as string | undefined) ?? 'unknown';
+    }
+    return (providerConfig.modelDeployment as string | undefined) ?? 'unknown';
+  }
+
+  return (providerConfig.model as string | undefined) ?? 'unknown';
+}
+
+/**
  * SinglePrompt mode component.
  * Loads config, creates agent, executes query, displays result, and exits.
  *
@@ -184,14 +209,7 @@ export function SinglePrompt({
       // Wrap callbacks with telemetry spans if enabled
       const providerName = config.providers.default;
       const providerConfig = config.providers[providerName] as Record<string, unknown> | undefined;
-      const modelName =
-        providerConfig !== undefined
-          ? providerName === 'azure'
-            ? ((providerConfig['deployment'] as string | undefined) ?? 'unknown')
-            : providerName === 'foundry'
-              ? ((providerConfig['modelDeployment'] as string | undefined) ?? 'unknown')
-              : ((providerConfig['model'] as string | undefined) ?? 'unknown')
-          : 'unknown';
+      const modelName = resolveModelName(providerName, providerConfig);
 
       const callbacks = wrapWithTelemetry(baseCallbacks, {
         providerName,

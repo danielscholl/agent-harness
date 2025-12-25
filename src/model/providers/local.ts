@@ -1,6 +1,12 @@
 /**
- * Local provider factory for Docker Model Runner.
+ * Local provider factory for Ollama and OpenAI-compatible local servers.
  * Creates ChatOpenAI instances configured for local inference.
+ *
+ * Supported backends:
+ * - Ollama: http://localhost:11434/v1 (default)
+ * - Docker Model Runner: http://model-runner.docker.internal/engines/llama.cpp/v1
+ *   (only accessible from inside Docker containers)
+ * - Any OpenAI-compatible local server
  */
 
 import { ChatOpenAI } from '@langchain/openai';
@@ -12,7 +18,7 @@ import { DEFAULT_LOCAL_BASE_URL, DEFAULT_LOCAL_MODEL } from '../../config/consta
 
 /**
  * Create a ChatOpenAI instance for local inference.
- * Uses Docker Model Runner or compatible OpenAI-compatible servers.
+ * Uses Ollama, Docker Model Runner, or compatible OpenAI-compatible servers.
  *
  * @param config - Local provider configuration
  * @returns Promise<ModelResponse> with ChatOpenAI or error

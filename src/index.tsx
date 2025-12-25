@@ -19,13 +19,17 @@ const cli = meow(
   Usage
     $ agent [options]
     $ agent config
-    $ agent config [init|edit]
+    $ agent config [provider|edit]
     $ agent skill [list|info|validate]
     $ agent -p <prompt> [options]
 
   Commands
     config                 Display current configuration
-      config init          Interactive configuration setup
+      config provider      List providers (or setup if none)
+      config provider <n>  Interactive wizard for provider
+      config provider set <n> k=v ...  Non-interactive config
+      config provider default <n>  Set default provider
+      config provider remove <n>   Remove provider config
       config edit          Open configuration in text editor
 
     skill                  Manage agent skills
@@ -70,7 +74,17 @@ const [command, ...restArgs] = cli.input;
 
 if (command === 'config') {
   const context = await createCliContext();
-  const subArgs = restArgs.join(' ');
+  // Check if --help or -h was passed (meow may have consumed it, check original args)
+  // Only inject --help if there's no subcommand (e.g., "config --help" not "config provider --help")
+  const wantsHelp = process.argv.includes('--help') || process.argv.includes('-h');
+  const hasSubcommand = restArgs.length > 0;
+  let subArgs = restArgs.join(' ');
+  if (wantsHelp && !hasSubcommand) {
+    subArgs = '--help';
+  } else if (wantsHelp && hasSubcommand) {
+    // Pass --help to the subcommand
+    subArgs = restArgs.join(' ') + ' --help';
+  }
   const result = await configHandler(subArgs, context);
   process.exit(result.success ? 0 : 1);
 }

@@ -118,7 +118,7 @@ export const FoundryProviderConfigSchema = z.object({
   modelAlias: z
     .string()
     .default(DEFAULT_FOUNDRY_LOCAL_MODEL)
-    .describe('[Local] Model alias for foundry-local-sdk (e.g., phi-3-mini-4k)'),
+    .describe('[Local] Model alias for foundry-local-sdk (e.g., qwen2.5-coder-14b)'),
   // Shared configuration
   temperature: z.number().min(0).max(2).optional().describe('Temperature for generation'),
 });

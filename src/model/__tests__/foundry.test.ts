@@ -23,12 +23,16 @@ jest.unstable_mockModule('@langchain/openai', () => ({
   ChatOpenAI: mockChatOpenAI,
 }));
 
-// Mock foundry-local-sdk with stable mock function
+// Mock foundry-local-sdk with stable mock functions
 const mockInit = jest.fn<(alias: string) => Promise<{ id: string } | null>>();
+const mockIsServiceRunning = jest.fn<() => Promise<boolean>>();
+const mockStartService = jest.fn<() => Promise<void>>();
 
 // Create a stable mock class
 class MockFoundryLocalManager {
   init = mockInit;
+  isServiceRunning = mockIsServiceRunning;
+  startService = mockStartService;
   endpoint = 'http://localhost:5272/v1';
   apiKey = 'local-key';
 }
@@ -49,6 +53,8 @@ describe('createFoundryClient (async)', () => {
       _type: 'chat_model',
     }));
     mockInit.mockResolvedValue({ id: 'phi-3-mini-4k-instruct' });
+    mockIsServiceRunning.mockResolvedValue(true);
+    mockStartService.mockResolvedValue(undefined);
   });
 
   describe('Cloud Mode', () => {
@@ -234,7 +240,7 @@ describe('createFoundryClient (async)', () => {
       });
 
       expect(result.success).toBe(true);
-      expect(mockInit).toHaveBeenCalledWith('phi-3-mini-4k');
+      expect(mockInit).toHaveBeenCalledWith('qwen2.5-coder-14b');
     });
 
     it('handles temperature parameter in local mode', async () => {
@@ -250,6 +256,33 @@ describe('createFoundryClient (async)', () => {
           temperature: 0.5,
         })
       );
+    });
+
+    it('starts service if not running', async () => {
+      mockIsServiceRunning.mockResolvedValueOnce(false);
+
+      const result = await createFoundryClient({
+        mode: 'local',
+        modelAlias: 'phi-3-mini-4k',
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockIsServiceRunning).toHaveBeenCalled();
+      expect(mockStartService).toHaveBeenCalled();
+      expect(mockInit).toHaveBeenCalledWith('phi-3-mini-4k');
+    });
+
+    it('skips startService if already running', async () => {
+      mockIsServiceRunning.mockResolvedValueOnce(true);
+
+      const result = await createFoundryClient({
+        mode: 'local',
+        modelAlias: 'phi-3-mini-4k',
+      });
+
+      expect(result.success).toBe(true);
+      expect(mockIsServiceRunning).toHaveBeenCalled();
+      expect(mockStartService).not.toHaveBeenCalled();
     });
 
     it('returns error when foundry-local-sdk init fails', async () => {
