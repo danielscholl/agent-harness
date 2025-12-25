@@ -182,8 +182,20 @@ config.providers.gemini = {
 ```typescript
 config.providers.default = 'local';
 config.providers.local = {
-  baseUrl: 'http://localhost:11434',
-  model: 'llama3',
+  baseUrl: 'http://localhost:11434/v1',
+  model: 'llama3.2',
+};
+```
+
+### Local (Docker Model Runner)
+
+Docker Model Runner is only accessible from inside Docker containers:
+
+```typescript
+config.providers.default = 'local';
+config.providers.local = {
+  baseUrl: 'http://model-runner.docker.internal/engines/llama.cpp/v1',
+  model: 'ai/qwen3:8B-Q4_K_M',
 };
 ```
 

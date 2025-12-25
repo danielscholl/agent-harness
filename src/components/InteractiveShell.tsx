@@ -17,7 +17,7 @@ import type { AutocompleteCommand } from './CommandAutocomplete.js';
 import { configInitHandler } from '../cli/commands/config.js';
 import { unescapeSlash } from '../cli/constants.js';
 import { InputHistory } from '../cli/input/index.js';
-import { MessageHistory, SessionManager } from '../utils/index.js';
+import { MessageHistory, SessionManager, resolveModelName } from '../utils/index.js';
 import type { StoredMessage, SessionTokenUsage, SessionMetadata } from '../utils/index.js';
 import { SessionSelector } from './SessionSelector.js';
 import { resumeHandler } from '../cli/commands/session.js';
@@ -495,9 +495,7 @@ export function InteractiveShell({
       const autoSaveProviderConfig = config.providers[
         autoSaveProvider as keyof typeof config.providers
       ] as Record<string, unknown> | undefined;
-      const autoSaveModel = (autoSaveProviderConfig?.model ??
-        autoSaveProviderConfig?.deployment ??
-        'unknown') as string;
+      const autoSaveModel = resolveModelName(autoSaveProvider, autoSaveProviderConfig);
 
       void sessionManager
         .saveSession(storedMessages, {
@@ -686,9 +684,7 @@ export function InteractiveShell({
               const saveProviderConfig = currentState.config?.providers[
                 saveProvider as keyof typeof currentState.config.providers
               ] as Record<string, unknown> | undefined;
-              const saveModel = (saveProviderConfig?.model ??
-                saveProviderConfig?.deployment ??
-                'unknown') as string;
+              const saveModel = resolveModelName(saveProvider, saveProviderConfig);
 
               const sessionMeta = await sessionManager.saveSession(storedMessages, {
                 name: result.sessionName,
@@ -958,14 +954,7 @@ export function InteractiveShell({
       const providerConfig = currentState.config.providers[providerName] as
         | Record<string, unknown>
         | undefined;
-      const modelName =
-        providerConfig !== undefined
-          ? providerName === 'azure'
-            ? ((providerConfig.deployment as string | undefined) ?? 'unknown')
-            : providerName === 'foundry'
-              ? ((providerConfig.modelDeployment as string | undefined) ?? 'unknown')
-              : ((providerConfig.model as string | undefined) ?? 'unknown')
-          : 'unknown';
+      const modelName = resolveModelName(providerName, providerConfig);
 
       const tracedCallbacks = wrapWithTelemetry(callbacks, {
         providerName,
@@ -1329,7 +1318,7 @@ export function InteractiveShell({
   const providerConfig = state.config?.providers[
     provider as keyof typeof state.config.providers
   ] as Record<string, unknown> | undefined;
-  const model = (providerConfig?.model ?? providerConfig?.deployment ?? 'unknown') as string;
+  const model = resolveModelName(provider, providerConfig);
 
   return (
     <Box flexDirection="column" padding={1}>

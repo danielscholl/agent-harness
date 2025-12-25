@@ -32,3 +32,5 @@ export {
   type TokenUsageTrackerOptions,
   type TokenEstimatorOptions,
 } from './tokens.js';
+
+export { resolveModelName, isProviderConfigured } from './model.js';

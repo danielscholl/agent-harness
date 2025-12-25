@@ -25,8 +25,10 @@ export type ProviderName = (typeof PROVIDER_NAMES)[number];
 export const DEFAULT_PROVIDER: ProviderName = 'openai';
 
 // Provider-specific defaults
-export const DEFAULT_LOCAL_BASE_URL = 'http://model-runner.docker.internal/';
-export const DEFAULT_LOCAL_MODEL = 'ai/phi4';
+// Local provider defaults to Ollama (accessible from host)
+// For Docker Model Runner, use: http://model-runner.docker.internal/engines/llama.cpp/v1
+export const DEFAULT_LOCAL_BASE_URL = 'http://localhost:11434/v1';
+export const DEFAULT_LOCAL_MODEL = 'qwen3:latest';
 
 export const DEFAULT_OPENAI_MODEL = 'gpt-4o';
 
@@ -37,7 +39,7 @@ export const DEFAULT_AZURE_MODEL = 'gpt-4o';
 
 export const DEFAULT_FOUNDRY_MODEL = 'gpt-4o';
 export const DEFAULT_FOUNDRY_MODE = 'cloud' as const;
-export const DEFAULT_FOUNDRY_LOCAL_MODEL = 'phi-3-mini-4k';
+export const DEFAULT_FOUNDRY_LOCAL_MODEL = 'qwen2.5-coder-14b';
 
 // Foundry modes
 export const FOUNDRY_MODES = ['local', 'cloud'] as const;

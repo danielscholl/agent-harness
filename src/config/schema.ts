@@ -50,6 +50,10 @@ import {
 export const LocalProviderConfigSchema = z.object({
   baseUrl: z.url().default(DEFAULT_LOCAL_BASE_URL).describe('Base URL for local LLM server'),
   model: z.string().default(DEFAULT_LOCAL_MODEL).describe('Model name to use'),
+  supportsFunctionCalling: z
+    .boolean()
+    .optional()
+    .describe('Whether the model supports function calling (defaults to true if not specified)'),
 });
 
 export type LocalProviderConfig = z.infer<typeof LocalProviderConfigSchema>;
@@ -61,6 +65,10 @@ export const OpenAIProviderConfigSchema = z.object({
   apiKey: z.string().optional().describe('OpenAI API key'),
   model: z.string().default(DEFAULT_OPENAI_MODEL).describe('Model name to use'),
   baseUrl: z.url().optional().describe('Custom base URL for OpenAI-compatible APIs'),
+  supportsFunctionCalling: z
+    .boolean()
+    .optional()
+    .describe('Whether the model supports function calling (defaults to true if not specified)'),
 });
 
 export type OpenAIProviderConfig = z.infer<typeof OpenAIProviderConfigSchema>;
@@ -71,6 +79,10 @@ export type OpenAIProviderConfig = z.infer<typeof OpenAIProviderConfigSchema>;
 export const AnthropicProviderConfigSchema = z.object({
   apiKey: z.string().optional().describe('Anthropic API key'),
   model: z.string().default(DEFAULT_ANTHROPIC_MODEL).describe('Model name to use'),
+  supportsFunctionCalling: z
+    .boolean()
+    .optional()
+    .describe('Whether the model supports function calling (defaults to true if not specified)'),
 });
 
 export type AnthropicProviderConfig = z.infer<typeof AnthropicProviderConfigSchema>;
@@ -83,6 +95,10 @@ export const AzureOpenAIProviderConfigSchema = z.object({
   deployment: z.string().optional().describe('Deployment name'),
   apiVersion: z.string().default(DEFAULT_AZURE_API_VERSION).describe('API version'),
   apiKey: z.string().optional().describe('Azure OpenAI API key'),
+  supportsFunctionCalling: z
+    .boolean()
+    .optional()
+    .describe('Whether the model supports function calling (defaults to true if not specified)'),
 });
 
 export type AzureOpenAIProviderConfig = z.infer<typeof AzureOpenAIProviderConfigSchema>;
@@ -118,9 +134,13 @@ export const FoundryProviderConfigSchema = z.object({
   modelAlias: z
     .string()
     .default(DEFAULT_FOUNDRY_LOCAL_MODEL)
-    .describe('[Local] Model alias for foundry-local-sdk (e.g., phi-3-mini-4k)'),
+    .describe('[Local] Model alias for foundry-local-sdk (e.g., qwen2.5-coder-14b)'),
   // Shared configuration
   temperature: z.number().min(0).max(2).optional().describe('Temperature for generation'),
+  supportsFunctionCalling: z
+    .boolean()
+    .optional()
+    .describe('Whether the model supports function calling (defaults to true if not specified)'),
 });
 
 export type FoundryProviderConfig = z.infer<typeof FoundryProviderConfigSchema>;
@@ -151,6 +171,10 @@ export const GeminiProviderConfigSchema = z.object({
     .string()
     .default(DEFAULT_GEMINI_LOCATION)
     .describe('[RESERVED] Google Cloud location for future Vertex AI support'),
+  supportsFunctionCalling: z
+    .boolean()
+    .optional()
+    .describe('Whether the model supports function calling (defaults to true if not specified)'),
 });
 
 export type GeminiProviderConfig = z.infer<typeof GeminiProviderConfigSchema>;
@@ -163,6 +187,10 @@ export const GitHubProviderConfigSchema = z.object({
   model: z.string().default(DEFAULT_GITHUB_MODEL).describe('Model name to use'),
   endpoint: z.url().default(DEFAULT_GITHUB_ENDPOINT).describe('GitHub Models endpoint'),
   org: z.string().optional().describe('GitHub organization'),
+  supportsFunctionCalling: z
+    .boolean()
+    .optional()
+    .describe('Whether the model supports function calling (defaults to true if not specified)'),
 });
 
 export type GitHubProviderConfig = z.infer<typeof GitHubProviderConfigSchema>;

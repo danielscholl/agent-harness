@@ -33,6 +33,13 @@ async function createLocalFoundryClient(
 
     // Initialize the Foundry Local Manager
     const foundryLocalManager = new FoundryLocalManager();
+
+    // Ensure service is running before initializing model
+    const isRunning = await foundryLocalManager.isServiceRunning();
+    if (!isRunning) {
+      await foundryLocalManager.startService();
+    }
+
     const modelInfo = await foundryLocalManager.init(modelAlias);
 
     // Validate modelInfo was returned with required id field

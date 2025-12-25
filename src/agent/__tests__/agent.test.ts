@@ -670,4 +670,221 @@ describe('Agent', () => {
       expect(llmContext?.parentSpanId).toBe(agentContext?.spanId);
     });
   });
+
+  describe('tool calling support', () => {
+    let mockTool: StructuredToolInterface;
+
+    beforeEach(() => {
+      // Create a mock tool for testing
+      mockTool = {
+        name: 'test-tool',
+        description: 'A test tool',
+        invoke: jest.fn<(args: Record<string, unknown>) => Promise<ToolResponse>>(),
+      } as unknown as StructuredToolInterface;
+
+      // Default: return a model without tools
+      mockGetModel.mockReturnValue({
+        success: true,
+        result: {
+          invoke: jest.fn(),
+          bindTools: jest.fn().mockReturnThis(),
+        } as unknown as BaseChatModel,
+        message: 'Model retrieved',
+      });
+    });
+
+    it('disables tool binding for foundry local mode', async () => {
+      const foundryConfig = getDefaultConfig();
+      foundryConfig.providers.foundry = {
+        apiKey: 'test-key',
+        endpoint: 'http://localhost:8080',
+        model: 'local-model',
+        mode: 'local',
+      };
+      foundryConfig.providers.default = 'foundry';
+      mockGetProviderName.mockReturnValue('foundry');
+
+      const agent = new Agent({
+        config: foundryConfig,
+        callbacks,
+        tools: [mockTool],
+      });
+
+      await agent.run('Test query');
+
+      // Verify debug message about skipping tool binding
+      expect(callbacks.onDebug).toHaveBeenCalledWith(
+        'Provider does not support function calling, skipping tool binding'
+      );
+
+      // Verify getModel was NOT called (tool binding was skipped)
+      expect(mockGetModel).not.toHaveBeenCalled();
+    });
+
+    it('enables tool binding for foundry cloud mode', async () => {
+      const foundryConfig = getDefaultConfig();
+      foundryConfig.providers.foundry = {
+        apiKey: 'test-key',
+        endpoint: 'https://api.foundry.com',
+        model: 'cloud-model',
+        mode: 'cloud',
+      };
+      foundryConfig.providers.default = 'foundry';
+      mockGetProviderName.mockReturnValue('foundry');
+
+      const mockModelWithTools = {
+        invoke: jest
+          .fn<(messages: unknown) => Promise<AIMessage>>()
+          .mockResolvedValue(new AIMessage({ content: 'Response with tools' })),
+        bindTools: jest.fn<(tools: StructuredToolInterface[]) => unknown>().mockReturnThis(),
+      };
+
+      mockGetModel.mockReturnValue({
+        success: true,
+        result: mockModelWithTools as unknown as BaseChatModel,
+        message: 'Model retrieved',
+      });
+
+      const agent = new Agent({
+        config: foundryConfig,
+        callbacks,
+        tools: [mockTool],
+      });
+
+      await agent.run('Test query');
+
+      // Verify getModel was called (tool binding happened)
+      expect(mockGetModel).toHaveBeenCalled();
+
+      // Verify bindTools was called
+      expect(mockModelWithTools.bindTools).toHaveBeenCalledWith([mockTool]);
+
+      // Verify NO debug message about skipping tool binding
+      expect(callbacks.onDebug).not.toHaveBeenCalledWith(
+        'Provider does not support function calling, skipping tool binding'
+      );
+    });
+
+    it('enables tool binding for other providers by default', async () => {
+      const openaiConfig = getDefaultConfig();
+      openaiConfig.providers.openai = {
+        apiKey: 'test-key',
+        model: 'gpt-4o',
+      };
+      openaiConfig.providers.default = 'openai';
+      mockGetProviderName.mockReturnValue('openai');
+
+      const mockModelWithTools = {
+        invoke: jest
+          .fn<(messages: unknown) => Promise<AIMessage>>()
+          .mockResolvedValue(new AIMessage({ content: 'Response with tools' })),
+        bindTools: jest.fn<(tools: StructuredToolInterface[]) => unknown>().mockReturnThis(),
+      };
+
+      mockGetModel.mockReturnValue({
+        success: true,
+        result: mockModelWithTools as unknown as BaseChatModel,
+        message: 'Model retrieved',
+      });
+
+      const agent = new Agent({
+        config: openaiConfig,
+        callbacks,
+        tools: [mockTool],
+      });
+
+      await agent.run('Test query');
+
+      // Verify getModel was called (tool binding happened)
+      expect(mockGetModel).toHaveBeenCalled();
+
+      // Verify bindTools was called
+      expect(mockModelWithTools.bindTools).toHaveBeenCalledWith([mockTool]);
+    });
+
+    it('respects supportsFunctionCalling: false in config', async () => {
+      const configWithDisabled = getDefaultConfig();
+      configWithDisabled.providers.openai = {
+        apiKey: 'test-key',
+        model: 'gpt-4o',
+        supportsFunctionCalling: false,
+      };
+      configWithDisabled.providers.default = 'openai';
+      mockGetProviderName.mockReturnValue('openai');
+
+      const agent = new Agent({
+        config: configWithDisabled,
+        callbacks,
+        tools: [mockTool],
+      });
+
+      await agent.run('Test query');
+
+      // Verify debug message about skipping tool binding
+      expect(callbacks.onDebug).toHaveBeenCalledWith(
+        'Provider does not support function calling, skipping tool binding'
+      );
+
+      // Verify getModel was NOT called (tool binding was skipped)
+      expect(mockGetModel).not.toHaveBeenCalled();
+    });
+
+    it('respects supportsFunctionCalling: true in config', async () => {
+      const configWithEnabled = getDefaultConfig();
+      configWithEnabled.providers.foundry = {
+        apiKey: 'test-key',
+        endpoint: 'http://localhost:8080',
+        model: 'local-model',
+        mode: 'local',
+        supportsFunctionCalling: true, // Override default local behavior
+      };
+      configWithEnabled.providers.default = 'foundry';
+      mockGetProviderName.mockReturnValue('foundry');
+
+      const mockModelWithTools = {
+        invoke: jest
+          .fn<(messages: unknown) => Promise<AIMessage>>()
+          .mockResolvedValue(new AIMessage({ content: 'Response with tools' })),
+        bindTools: jest.fn<(tools: StructuredToolInterface[]) => unknown>().mockReturnThis(),
+      };
+
+      mockGetModel.mockReturnValue({
+        success: true,
+        result: mockModelWithTools as unknown as BaseChatModel,
+        message: 'Model retrieved',
+      });
+
+      const agent = new Agent({
+        config: configWithEnabled,
+        callbacks,
+        tools: [mockTool],
+      });
+
+      await agent.run('Test query');
+
+      // Verify getModel was called (tool binding happened)
+      expect(mockGetModel).toHaveBeenCalled();
+
+      // Verify bindTools was called
+      expect(mockModelWithTools.bindTools).toHaveBeenCalledWith([mockTool]);
+
+      // Verify NO debug message about skipping tool binding
+      expect(callbacks.onDebug).not.toHaveBeenCalledWith(
+        'Provider does not support function calling, skipping tool binding'
+      );
+    });
+
+    it('skips tool binding when no tools provided', async () => {
+      const agent = new Agent({
+        config,
+        callbacks,
+        tools: [], // No tools
+      });
+
+      await agent.run('Test query');
+
+      // Verify getModel was NOT called since there are no tools
+      expect(mockGetModel).not.toHaveBeenCalled();
+    });
+  });
 });

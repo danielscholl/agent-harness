@@ -13,6 +13,7 @@ import { createCallbacks, wrapWithTelemetry } from '../cli/callbacks.js';
 import { initializeTelemetry, shutdown as shutdownTelemetry } from '../telemetry/index.js';
 import { Spinner } from './Spinner.js';
 import { getUserFriendlyMessage } from '../errors/index.js';
+import { resolveModelName } from '../utils/index.js';
 import type { SinglePromptProps } from '../cli/types.js';
 import type { AgentErrorResponse } from '../errors/index.js';
 import type { AppConfig } from '../config/schema.js';
@@ -184,14 +185,7 @@ export function SinglePrompt({
       // Wrap callbacks with telemetry spans if enabled
       const providerName = config.providers.default;
       const providerConfig = config.providers[providerName] as Record<string, unknown> | undefined;
-      const modelName =
-        providerConfig !== undefined
-          ? providerName === 'azure'
-            ? ((providerConfig['deployment'] as string | undefined) ?? 'unknown')
-            : providerName === 'foundry'
-              ? ((providerConfig['modelDeployment'] as string | undefined) ?? 'unknown')
-              : ((providerConfig['model'] as string | undefined) ?? 'unknown')
-          : 'unknown';
+      const modelName = resolveModelName(providerName, providerConfig);
 
       const callbacks = wrapWithTelemetry(baseCallbacks, {
         providerName,
