@@ -78,10 +78,8 @@ export async function setupLocal(context: CommandContext): Promise<ProviderSetup
     return { success: false, message: 'Invalid backend selection' };
   }
 
-  const selectedBackend = LOCAL_BACKENDS[backendIndex];
-  if (!selectedBackend) {
-    return { success: false, message: 'Invalid backend selection' };
-  }
+  // Bounds check above guarantees valid index
+  const selectedBackend = LOCAL_BACKENDS[backendIndex] as (typeof LOCAL_BACKENDS)[number];
 
   context.onOutput(`\nConfiguring ${selectedBackend.displayName}...`, 'success');
 

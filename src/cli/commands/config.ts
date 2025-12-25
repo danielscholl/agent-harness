@@ -9,6 +9,7 @@ import { loadConfig, loadConfigFromFiles, ConfigManager } from '../../config/man
 import { getDefaultConfig, type AppConfig } from '../../config/schema.js';
 import { getProviderWizards } from '../../config/providers/index.js';
 import { PROVIDER_NAMES, type ProviderName } from '../../config/constants.js';
+import { isProviderConfigured } from '../../utils/index.js';
 
 /**
  * Type guard to check if a string is a valid provider name.
@@ -89,57 +90,6 @@ export const configHandler: CommandHandler = async (args, context): Promise<Comm
       return { success: false, message: 'Unknown subcommand' };
   }
 };
-
-/**
- * Check if a provider has meaningful configuration beyond schema defaults.
- * A provider is "configured" if it has credentials or explicitly set values.
- */
-function isProviderConfigured(name: ProviderName, config: Record<string, unknown>): boolean {
-  switch (name) {
-    case 'openai':
-      // OpenAI needs an API key or custom baseUrl
-      return (
-        (typeof config.apiKey === 'string' && config.apiKey !== '') ||
-        (typeof config.baseUrl === 'string' && config.baseUrl !== '')
-      );
-
-    case 'anthropic':
-      // Anthropic needs an API key
-      return typeof config.apiKey === 'string' && config.apiKey !== '';
-
-    case 'azure':
-      // Azure needs endpoint and deployment
-      return (
-        typeof config.endpoint === 'string' &&
-        config.endpoint !== '' &&
-        typeof config.deployment === 'string' &&
-        config.deployment !== ''
-      );
-
-    case 'foundry':
-      // Foundry cloud needs projectEndpoint, local mode is always available
-      if (config.mode === 'local') {
-        return true; // Local mode doesn't need credentials
-      }
-      return typeof config.projectEndpoint === 'string' && config.projectEndpoint !== '';
-
-    case 'gemini':
-      // Gemini needs an API key (or Vertex AI project for future)
-      return typeof config.apiKey === 'string' && config.apiKey !== '';
-
-    case 'github':
-      // GitHub needs a token
-      return typeof config.token === 'string' && config.token !== '';
-
-    case 'local':
-      // Local provider is configured if baseUrl is set (has defaults, so check if explicitly set)
-      // For now, consider local always "configurable" but check if baseUrl is non-default
-      return typeof config.baseUrl === 'string' && config.baseUrl !== '';
-
-    default:
-      return false;
-  }
-}
 
 function getConfiguredProviders(config: AppConfig): ProviderName[] {
   const configured: ProviderName[] = [];
@@ -720,6 +670,23 @@ export const configProviderHandler: CommandHandler = async (
       return { success: false, message: 'No values provided' };
     }
 
+    // Whitelist of known numeric fields across all providers
+    // Only these fields will be auto-converted to numbers
+    const numericFields = new Set([
+      'temperature',
+      'maxRetries',
+      'timeout',
+      'maxTokens',
+      'topP',
+      'topK',
+      'frequencyPenalty',
+      'presencePenalty',
+      'maxConcurrency',
+      'retryDelay',
+      'maxResponseTokens',
+      'n', // number of completions
+    ]);
+
     const providerConfig: Record<string, unknown> = {};
     for (const pair of keyValuePairs) {
       const eqIndex = pair.indexOf('=');
@@ -735,9 +702,11 @@ export const configProviderHandler: CommandHandler = async (
         providerConfig[key] = true;
       } else if (value === 'false') {
         providerConfig[key] = false;
-      } else if (!isNaN(Number(value)) && value !== '') {
+      } else if (numericFields.has(key) && !isNaN(Number(value)) && value !== '') {
+        // Only convert to number if the key is in the whitelist
         providerConfig[key] = Number(value);
       } else {
+        // Keep as string for all other fields (API keys, model names, URLs, etc.)
         providerConfig[key] = value;
       }
     }

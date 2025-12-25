@@ -362,7 +362,16 @@ export class Agent {
   private supportsToolCalling(): boolean {
     const providerName = this.config.providers.default;
 
-    // Foundry local mode doesn't support function calling
+    // Check if user explicitly configured function calling support
+    const providerConfig = this.config.providers[providerName];
+    if (providerConfig && 'supportsFunctionCalling' in providerConfig) {
+      const supports = providerConfig.supportsFunctionCalling;
+      if (supports !== undefined) {
+        return supports;
+      }
+    }
+
+    // Foundry local mode doesn't support function calling by default
     if (providerName === 'foundry') {
       const foundryConfig = this.config.providers.foundry;
       if (foundryConfig?.mode === 'local') {
@@ -370,9 +379,8 @@ export class Agent {
       }
     }
 
-    // Local provider (Ollama, Docker, etc.) may not support function calling
-    // depending on the model - for now we assume they do
-    // Users can use models that support function calling
+    // For other providers, default to true (assume function calling is supported)
+    // Users can explicitly set supportsFunctionCalling: false in config for models that don't support it
 
     return true;
   }

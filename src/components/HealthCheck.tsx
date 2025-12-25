@@ -11,6 +11,7 @@ import { VERSION } from '../cli/version.js';
 import { Spinner } from './Spinner.js';
 import type { AppConfig } from '../config/schema.js';
 import { PROVIDER_NAMES, type ProviderName } from '../config/constants.js';
+import { isProviderConfigured } from '../utils/index.js';
 
 /**
  * Status types for color coding.
@@ -160,16 +161,15 @@ function getProviderSecret(
  * Returns empty array if Model Runner isn't running or no models available.
  */
 async function getDockerModels(): Promise<DockerModel[]> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => {
-      controller.abort();
-    }, 2000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, 2000);
 
+  try {
     const response = await fetch('http://localhost:12434/engines/llama.cpp/v1/models', {
       signal: controller.signal,
     });
-    clearTimeout(timeout);
 
     if (response.ok) {
       const data = (await response.json()) as { data?: Array<{ id?: string }> };
@@ -185,6 +185,8 @@ async function getDockerModels(): Promise<DockerModel[]> {
   } catch {
     // Model Runner not running or not responding
     return [];
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -374,63 +376,6 @@ function buildDockerSection(dockerStatus: DockerStatus): HealthSection {
     name: 'Docker',
     items: [{ label: 'Not Running', value: '', status: 'warning' }],
   };
-}
-
-/**
- * Check if a provider has meaningful configuration beyond schema defaults.
- * A provider is "configured" if it has credentials or explicitly set values.
- */
-function isProviderConfigured(
-  providerName: ProviderName,
-  providerConfig: Record<string, unknown> | undefined
-): boolean {
-  if (providerConfig === undefined) return false;
-
-  switch (providerName) {
-    case 'openai':
-      // OpenAI needs an API key or custom baseUrl
-      return (
-        (typeof providerConfig.apiKey === 'string' && providerConfig.apiKey !== '') ||
-        (typeof providerConfig.baseUrl === 'string' && providerConfig.baseUrl !== '')
-      );
-
-    case 'anthropic':
-      // Anthropic needs an API key
-      return typeof providerConfig.apiKey === 'string' && providerConfig.apiKey !== '';
-
-    case 'azure':
-      // Azure needs endpoint and deployment
-      return (
-        typeof providerConfig.endpoint === 'string' &&
-        providerConfig.endpoint !== '' &&
-        typeof providerConfig.deployment === 'string' &&
-        providerConfig.deployment !== ''
-      );
-
-    case 'foundry':
-      // Foundry cloud needs projectEndpoint, local mode is always available
-      if (providerConfig.mode === 'local') {
-        return true; // Local mode doesn't need credentials
-      }
-      return (
-        typeof providerConfig.projectEndpoint === 'string' && providerConfig.projectEndpoint !== ''
-      );
-
-    case 'gemini':
-      // Gemini needs an API key
-      return typeof providerConfig.apiKey === 'string' && providerConfig.apiKey !== '';
-
-    case 'github':
-      // GitHub needs a token
-      return typeof providerConfig.token === 'string' && providerConfig.token !== '';
-
-    case 'local':
-      // Local provider is configured if baseUrl is set
-      return typeof providerConfig.baseUrl === 'string' && providerConfig.baseUrl !== '';
-
-    default:
-      return false;
-  }
 }
 
 /**

@@ -404,6 +404,50 @@ describe('Provider Setup Wizards', () => {
       expect(result.config?.model).toBe('my-model');
     });
 
+    it('rejects custom backend with empty baseUrl', async () => {
+      const { setupLocal } = await import('../local.js');
+      // Select backend 4 (Custom), then empty URL
+      const context = createMockContext(['4', '']);
+      const result = await setupLocal(context);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('Base URL required');
+      expect(
+        context.outputs.some((o) => o.content.includes('Base URL is required for custom backend'))
+      ).toBe(true);
+    });
+
+    it('rejects custom backend with whitespace-only baseUrl', async () => {
+      const { setupLocal } = await import('../local.js');
+      // Select backend 4 (Custom), then whitespace URL
+      const context = createMockContext(['4', '   ']);
+      const result = await setupLocal(context);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('Base URL required');
+    });
+
+    it('rejects custom backend with empty model name', async () => {
+      const { setupLocal } = await import('../local.js');
+      // Select backend 4 (Custom), valid URL, then empty model
+      const context = createMockContext(['4', 'http://localhost:8080/v1', '']);
+      const result = await setupLocal(context);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('Model name required');
+      expect(context.outputs.some((o) => o.content.includes('Model name is required'))).toBe(true);
+    });
+
+    it('rejects custom backend with whitespace-only model name', async () => {
+      const { setupLocal } = await import('../local.js');
+      // Select backend 4 (Custom), valid URL, then whitespace model
+      const context = createMockContext(['4', 'http://localhost:8080/v1', '   ']);
+      const result = await setupLocal(context);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('Model name required');
+    });
+
     it('rejects invalid backend selection', async () => {
       const { setupLocal } = await import('../local.js');
       const context = createMockContext(['5']); // Invalid selection

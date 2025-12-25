@@ -75,15 +75,11 @@ const [command, ...restArgs] = cli.input;
 if (command === 'config') {
   const context = await createCliContext();
   // Check if --help or -h was passed (meow may have consumed it, check original args)
-  // Only inject --help if there's no subcommand (e.g., "config --help" not "config provider --help")
   const wantsHelp = process.argv.includes('--help') || process.argv.includes('-h');
   const hasSubcommand = restArgs.length > 0;
   let subArgs = restArgs.join(' ');
-  if (wantsHelp && !hasSubcommand) {
-    subArgs = '--help';
-  } else if (wantsHelp && hasSubcommand) {
-    // Pass --help to the subcommand
-    subArgs = restArgs.join(' ') + ' --help';
+  if (wantsHelp) {
+    subArgs = hasSubcommand ? subArgs + ' --help' : '--help';
   }
   const result = await configHandler(subArgs, context);
   process.exit(result.success ? 0 : 1);

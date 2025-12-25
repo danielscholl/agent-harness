@@ -33,4 +33,4 @@ export {
   type TokenEstimatorOptions,
 } from './tokens.js';
 
-export { resolveModelName } from './model.js';
+export { resolveModelName, isProviderConfigured } from './model.js';
