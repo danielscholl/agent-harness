@@ -582,16 +582,38 @@ export async function loadConfigFromFiles(
     const userConfigPath = manager.getUserConfigPath();
     if (await fs.exists(userConfigPath)) {
       const content = await fs.readFile(userConfigPath);
-      const userConfig = parseYaml(content) as Partial<AppConfig>;
-      config = deepMerge(config, userConfig);
+      try {
+        const userConfig = parseYaml(content) as Partial<AppConfig>;
+        config = deepMerge(config, userConfig);
+      } catch (error) {
+        if (error instanceof Error && error.name === 'YAMLParseError') {
+          throw new ConfigError(
+            `Invalid YAML in config file: ${userConfigPath}`,
+            'PARSE_ERROR',
+            userConfigPath
+          );
+        }
+        throw error;
+      }
     }
 
     // Load project config (./.agent/config.yaml)
     const projectConfigPath = manager.getProjectConfigPath(projectPath);
     if (await fs.exists(projectConfigPath)) {
       const content = await fs.readFile(projectConfigPath);
-      const projectConfig = parseYaml(content) as Partial<AppConfig>;
-      config = deepMerge(config, projectConfig);
+      try {
+        const projectConfig = parseYaml(content) as Partial<AppConfig>;
+        config = deepMerge(config, projectConfig);
+      } catch (error) {
+        if (error instanceof Error && error.name === 'YAMLParseError') {
+          throw new ConfigError(
+            `Invalid YAML in config file: ${projectConfigPath}`,
+            'PARSE_ERROR',
+            projectConfigPath
+          );
+        }
+        throw error;
+      }
     }
 
     // Validate the merged config
@@ -602,6 +624,9 @@ export async function loadConfigFromFiles(
 
     return successResponse(validation.data, 'Configuration loaded from files');
   } catch (error) {
+    if (error instanceof ConfigError) {
+      return errorResponse(error.code, error.message);
+    }
     const message = error instanceof Error ? error.message : 'Unknown error loading config';
     return errorResponse('FILE_READ_ERROR', message);
   }
