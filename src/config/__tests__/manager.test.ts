@@ -2,11 +2,19 @@
  * Tests for ConfigManager.
  */
 
-import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
+import * as fs from 'node:fs/promises';
 import os from 'node:os';
+import * as path from 'node:path';
 import { stringify as stringifyYaml, parse as parseYaml } from 'yaml';
 
-import { ConfigManager, deepMerge, loadConfig, NodeFileSystem } from '../manager.js';
+import {
+  ConfigManager,
+  deepMerge,
+  loadConfig,
+  loadConfigFromFiles,
+  NodeFileSystem,
+} from '../manager.js';
 import { getDefaultConfig } from '../schema.js';
 import type { IFileSystem, ConfigCallbacks } from '../types.js';
 import type { IEnvReader } from '../env.js';
@@ -823,6 +831,59 @@ describe('loadConfig convenience function', () => {
     } else {
       expect(result.error).toBeDefined();
     }
+  });
+});
+
+describe('loadConfigFromFiles', () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    // Create a unique temp directory for each test
+    tempDir = path.join(
+      os.tmpdir(),
+      `agent-config-test-${String(Date.now())}-${Math.random().toString(36).slice(2)}`
+    );
+    await fs.mkdir(path.join(tempDir, '.agent'), { recursive: true });
+  });
+
+  afterEach(async () => {
+    // Cleanup temp directory
+    try {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  });
+
+  it('should return PARSE_ERROR for invalid YAML in project config', async () => {
+    // Write invalid YAML to project config
+    const configPath = path.join(tempDir, '.agent', 'config.yaml');
+    await fs.writeFile(configPath, 'invalid: yaml: [unclosed');
+
+    const result = await loadConfigFromFiles(tempDir);
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('PARSE_ERROR');
+    expect(result.message).toContain('Invalid YAML');
+  });
+
+  it('should return success for valid YAML in project config', async () => {
+    // Write valid YAML to project config
+    const configPath = path.join(tempDir, '.agent', 'config.yaml');
+    await fs.writeFile(configPath, stringifyYaml({ providers: { default: 'openai' } }));
+
+    const result = await loadConfigFromFiles(tempDir);
+    expect(result.success).toBe(true);
+    expect(result.result?.providers.default).toBe('openai');
+  });
+
+  it('should return defaults when no config files exist', async () => {
+    // Use a path with no config file
+    const emptyDir = path.join(tempDir, 'empty');
+    await fs.mkdir(emptyDir, { recursive: true });
+
+    const result = await loadConfigFromFiles(emptyDir);
+    expect(result.success).toBe(true);
+    expect(result.result?.providers.default).toBe('openai'); // Default value
   });
 });
 
