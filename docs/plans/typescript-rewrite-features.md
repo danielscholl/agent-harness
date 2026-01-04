@@ -17,7 +17,7 @@ Recreate `agent-base/src/agent/config/schema.py` as Zod schemas with inferred TS
 - Merges project-level config (`./.agent/config.yaml` - committable)
 - Merges user-level config (`~/.agent/config.yaml` - personal)
 - Applies environment variable overrides (highest priority)
-- Validates on load/save and writes to disk in a stable JSON format
+- Validates on load/save and writes to disk in a stable YAML format
 - Uses camelCase for all config keys (TypeScript convention)
 
 Config directory is `.agent/` (matches Python for easier migration).
