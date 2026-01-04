@@ -1,5 +1,8 @@
 # Tools Architecture
 
+> **Status:** Current
+> **Source of truth:** [`src/tools/index.ts`](../../src/tools/index.ts), [`src/tools/registry.ts`](../../src/tools/registry.ts)
+
 This document describes the tool system architecture using the `Tool.define()` pattern.
 
 ---

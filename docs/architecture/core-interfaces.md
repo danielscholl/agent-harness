@@ -1,5 +1,8 @@
 # Core Interfaces
 
+> **Status:** Current
+> **Source of truth:** [`src/agent/callbacks.ts`](../../src/agent/callbacks.ts), [`src/tools/tool.ts`](../../src/tools/tool.ts), [`src/model/types.ts`](../../src/model/types.ts)
+
 This document describes the key interfaces and contracts used throughout the agent framework.
 
 ---
@@ -8,9 +11,10 @@ This document describes the key interfaces and contracts used throughout the age
 
 | Interface | Layer | Purpose |
 |-----------|-------|---------|
-| `AgentCallbacks` | Agent→CLI | Lifecycle events (LLM, tools, agent) with SpanContext |
+| `AgentCallbacks` | Agent->CLI | Lifecycle events (LLM, tools, agent) with SpanContext |
 | `Tool.Result<M>` | Tools | Structured tool execution result |
 | `Tool.Context<M>` | Tools | Execution context with session info and abort |
+| `ToolResponse<T>` | Tools | Legacy success/error union (backward compat) |
 | `ModelResponse<T>` | Model | Structured success/error return (never throw) |
 | `ModelFactory` | Model | Creates LangChain model from config |
 | `AppConfig` | Utils | Root configuration type (Zod-inferred) |
@@ -26,61 +30,86 @@ The callback system enables the Agent layer to communicate with the CLI layer wi
 
 ```
 Agent.run(query)
-    │
-    ├─► onAgentStart(ctx, query)
-    │
-    ├─► onLLMStart(ctx, model, messages)
-    │       │
-    │       └─► onLLMStream(ctx, chunk)  [if streaming]
-    │       │
-    │       └─► onLLMEnd(ctx, response, usage)
-    │
-    ├─► onToolStart(ctx, toolName, args)
-    │       │
-    │       └─► onToolEnd(ctx, toolName, result)
-    │
-    └─► onAgentEnd(ctx, answer)
+    |
+    +-> onAgentStart(ctx, query)
+    |
+    +-> onSpinnerStart(message)
+    |
+    +-> onLLMStart(ctx, model, messages)
+    |       |
+    |       +-> onLLMStream(ctx, chunk)  [if streaming]
+    |       |
+    |       +-> onLLMEnd(ctx, response, usage)
+    |
+    +-> onToolStart(ctx, toolName, args)
+    |       |
+    |       +-> onToolEnd(ctx, toolName, result)
+    |
+    +-> onSpinnerStop()
+    |
+    +-> onAgentEnd(ctx, answer)
+    |
+    +-> onError(ctx, error)  [on failure]
 ```
 
 ### Interface Definition
 
 ```typescript
 interface AgentCallbacks {
-  // Agent lifecycle
+  // ─── Agent Lifecycle ─────────────────────────────────────────────────
+  /** Called when agent starts processing a query */
   onAgentStart?(ctx: SpanContext, query: string): void;
+  /** Called when agent finishes with final answer */
   onAgentEnd?(ctx: SpanContext, answer: string): void;
 
-  // LLM lifecycle
+  // ─── LLM Interaction ─────────────────────────────────────────────────
+  /** Called before LLM invocation */
   onLLMStart?(ctx: SpanContext, model: string, messages: Message[]): void;
+  /** Called for each streamed chunk */
   onLLMStream?(ctx: SpanContext, chunk: string): void;
-  onLLMEnd?(ctx: SpanContext, response: string, usage: TokenUsage): void;
+  /** Called after LLM invocation completes */
+  onLLMEnd?(ctx: SpanContext, response: string, usage?: TokenUsage): void;
 
-  // Tool lifecycle
-  onToolStart?(ctx: SpanContext, toolName: string, args: unknown): void;
-  onToolEnd?(ctx: SpanContext, toolName: string, result: Tool.Result): void;
+  // ─── Tool Execution ──────────────────────────────────────────────────
+  /** Called before tool execution */
+  onToolStart?(ctx: SpanContext, toolName: string, args: Record<string, unknown>): void;
+  /** Called after tool execution */
+  onToolEnd?(ctx: SpanContext, toolName: string, result: ToolResponse): void;
 
-  // Permission requests
-  onPermissionRequest?(request: PermissionRequest): Promise<boolean>;
+  // ─── UI Feedback ─────────────────────────────────────────────────────
+  /** Called to show loading indicator */
+  onSpinnerStart?(message: string): void;
+  /** Called to hide loading indicator */
+  onSpinnerStop?(): void;
+  /** Called with streaming answer generator (for CLI shell integration) */
+  onAnswerStream?(stream: AsyncGenerator<string>): void;
 
-  // Debug output
-  onDebug?(message: string, data?: Record<string, unknown>): void;
+  // ─── Error Handling ────────────────────────────────────────────────────
+  /** Called when an error occurs during agent execution */
+  onError?(ctx: SpanContext, error: AgentErrorResponse): void;
+
+  // ─── Debug/Logging ───────────────────────────────────────────────────
+  /** Debug-level logging */
+  onDebug?(message: string, data?: unknown): void;
+  /** Trace-level logging (verbose) */
+  onTrace?(message: string, data?: unknown): void;
 }
 ```
 
 ### Key Points
 
-- All callbacks receive `SpanContext` for telemetry correlation
+- All callbacks receive `SpanContext` for telemetry correlation (except UI feedback)
 - All callbacks are optional (no-op if not provided)
-- Callbacks are synchronous except `onPermissionRequest`
+- Callbacks are synchronous
 - The CLI layer implements callbacks to update UI state
 
 ---
 
-## Tool Response Contract
+## Tool Response Types
 
-Tools use a standardized response format that provides structure for both success and error cases.
+The framework uses two response patterns: the modern `Tool.Result` pattern and the legacy `ToolResponse` union.
 
-### Tool.Result Type
+### Tool.Result Type (Modern Pattern)
 
 ```typescript
 interface Tool.Result<M extends Tool.Metadata = Tool.Metadata> {
@@ -107,8 +136,10 @@ interface Tool.Context<M extends Tool.Metadata = Tool.Metadata> {
   agent: string;
   /** Abort signal for cancellation support */
   abort: AbortSignal;
-  /** Optional tool call ID */
+  /** Optional tool call ID (for parallel execution tracking) */
   callID?: string;
+  /** Extra context data passed from agent */
+  extra?: Record<string, unknown>;
   /** Stream metadata updates during execution */
   metadata(input: { title?: string; metadata?: Partial<M> }): void;
 }
@@ -141,6 +172,55 @@ const readTool = Tool.define<ReadSchema, ReadMetadata>('read', {
   },
 });
 ```
+
+---
+
+## Legacy ToolResponse Contract
+
+The original `ToolResponse` type is still used in callbacks for backward compatibility.
+
+### ToolResponse Type
+
+```typescript
+type ToolErrorCode =
+  | 'VALIDATION_ERROR'
+  | 'IO_ERROR'
+  | 'CONFIG_ERROR'
+  | 'PERMISSION_DENIED'
+  | 'RATE_LIMITED'
+  | 'NOT_FOUND'
+  | 'LLM_ASSIST_REQUIRED'
+  | 'TIMEOUT'
+  | 'UNKNOWN';
+
+interface SuccessResponse<T = unknown> {
+  success: true;
+  result: T;
+  message: string;
+}
+
+interface ErrorResponse {
+  success: false;
+  error: ToolErrorCode;
+  message: string;
+}
+
+type ToolResponse<T = unknown> = SuccessResponse<T> | ErrorResponse;
+```
+
+### Special Error Code: LLM_ASSIST_REQUIRED
+
+When a tool cannot complete its task without LLM help:
+
+```typescript
+return {
+  success: false,
+  error: 'LLM_ASSIST_REQUIRED',
+  message: 'Content too large for processing. Requesting summarization.'
+};
+```
+
+The Agent Layer interprets this and takes appropriate action.
 
 ---
 
@@ -219,54 +299,6 @@ if (result.success) {
 
 ---
 
-## Legacy ToolResponse Contract
-
-The original `ToolResponse` type is still supported for backwards compatibility with `createTool()`.
-
-### ToolResponse Type
-
-```typescript
-type ToolErrorCode =
-  | 'VALIDATION_ERROR'
-  | 'IO_ERROR'
-  | 'CONFIG_ERROR'
-  | 'PERMISSION_DENIED'
-  | 'RATE_LIMITED'
-  | 'NOT_FOUND'
-  | 'LLM_ASSIST_REQUIRED'
-  | 'TIMEOUT'
-  | 'UNKNOWN';
-
-interface SuccessResponse<T = unknown> {
-  success: true;
-  result: T;
-  message: string;
-}
-
-interface ErrorResponse {
-  success: false;
-  error: ToolErrorCode;
-  message: string;
-}
-
-type ToolResponse<T = unknown> = SuccessResponse<T> | ErrorResponse;
-```
-
-### Special Error Code: LLM_ASSIST_REQUIRED
-
-When a tool cannot complete its task without LLM help:
-
-```typescript
-return errorResponse(
-  'LLM_ASSIST_REQUIRED',
-  'Content too large for processing. Requesting summarization.'
-);
-```
-
-The Agent Layer interprets this and takes appropriate action.
-
----
-
 ## Token Usage Type
 
 Standardized token usage across providers:
@@ -286,18 +318,16 @@ The Model layer normalizes provider-specific formats:
 
 ---
 
-## Permission Request Type
+## SpanContext Type
 
-Used when tools need to request user permission:
+Used for telemetry correlation across callbacks:
 
 ```typescript
-interface PermissionRequest {
-  scope: PermissionScope;
-  resource: string;
-  action: string;
+interface SpanContext {
+  traceId: string;     // 128-bit trace ID (hex)
+  spanId: string;      // 64-bit span ID (hex)
+  parentSpanId?: string;  // Parent span for nested operations
 }
-
-type PermissionScope = 'fs-read' | 'fs-write' | 'fs-delete' | 'shell-run';
 ```
 
 ---

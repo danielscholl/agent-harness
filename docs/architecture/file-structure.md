@@ -1,5 +1,8 @@
 # File Structure
 
+> **Status:** Current
+> **Source of truth:** Actual directory contents in `src/`
+
 This document describes the source code organization of the TypeScript agent framework.
 
 ---
@@ -36,11 +39,9 @@ src/
 ├── tools/
 │   ├── tool.ts               # Tool namespace, Tool.define()
 │   ├── registry.ts           # ToolRegistry
-│   ├── base.ts               # Legacy createTool() factory
-│   ├── types.ts              # Legacy ToolResponse types
+│   ├── types.ts              # ToolResponse types
 │   ├── index.ts              # Public exports + auto-registration
 │   ├── workspace.ts          # Workspace root detection
-│   ├── hello.ts              # Reference implementation
 │   ├── read.ts               # File reading
 │   ├── write.ts              # File writing
 │   ├── edit.ts               # File editing
@@ -49,7 +50,7 @@ src/
 │   ├── list.ts               # Directory listing
 │   ├── bash.ts               # Shell execution
 │   ├── task.ts               # Subagent spawning
-│   ├── todo.ts               # Task tracking
+│   ├── todo.ts               # Task tracking (todowrite, todoread)
 │   └── webfetch.ts           # URL fetching
 │
 ├── config/

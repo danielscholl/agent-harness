@@ -1,6 +1,7 @@
 # Agent Framework Architecture
 
-This directory contains comprehensive architecture documentation for the TypeScript agent framework.
+> **Status:** Current
+> This directory contains comprehensive architecture documentation for the TypeScript agent framework.
 
 **Governance:** See [CLAUDE.md](../../CLAUDE.md) for implementation rules.
 **Implementation Guides:** See [guides/](../guides/) for code patterns.
@@ -14,7 +15,7 @@ This directory contains comprehensive architecture documentation for the TypeScr
 
 | Document | Description |
 |----------|-------------|
-| [System Layers](./layers.md) | Layer diagram and responsibilities |
+| [System Layers](./layers.md) | **Start here** - Layer diagram and responsibilities |
 | [Core Interfaces](./core-interfaces.md) | Callbacks, Tool Response, Model Response contracts |
 | [Tools](./tools.md) | Tool system architecture and patterns |
 | [Providers](./providers.md) | Multi-provider LLM abstraction deep dive |
@@ -41,45 +42,17 @@ This directory contains comprehensive architecture documentation for the TypeScr
 
 ---
 
-## Quick Reference: System Overview
+## Quick Reference: Layer Summary
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                           User                                  │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                      CLI Layer (React/Ink)                      │
-│  • Terminal UI rendering    • State management (React hooks)    │
-│  • User input handling      • Command routing                   │
-└─────────────────────────────────────────────────────────────────┘
-                              │ callbacks
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                   Agent Layer (Orchestration)                   │
-│  • Query → LLM → Tool → Response loop                           │
-│  • Message history assembly    • Tool binding and execution     │
-│  • Callback emission to UI     • Telemetry span management      │
-└─────────────────────────────────────────────────────────────────┘
-          │                                    │
-          │ tool calls                         │ LLM calls
-          ▼                                    ▼
-┌───────────────────────┐       ┌─────────────────────────────────┐
-│     Tools Layer       │       │         Model Layer             │
-│  • Zod input schemas  │       │  • Provider routing             │
-│  • Tool.Result output │       │  • Streaming support            │
-│  • Permission checks  │       │  • Retry with backoff           │
-└───────────────────────┘       └─────────────────────────────────┘
-          │                                    │
-          └──────────────┬─────────────────────┘
-                         ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                       Utils Layer                               │
-│  • Configuration       • Context storage                        │
-│  • Message history     • Session persistence                    │
-└─────────────────────────────────────────────────────────────────┘
-```
+See [System Layers](./layers.md) for the detailed diagram.
+
+| Layer | Responsibility |
+|-------|----------------|
+| CLI (React/Ink) | Terminal UI, React state, user input, command routing |
+| Agent | Orchestration, Query→LLM→Tool→Response loop, callbacks |
+| Tools | Zod validation, Tool.Result output, permissions |
+| Model | Provider routing, streaming, retry with backoff |
+| Utils | Configuration, context storage, session persistence |
 
 ---
 
@@ -105,6 +78,20 @@ See [CLAUDE.md](../../CLAUDE.md) for the complete list of principles and rules.
 - Tools must NOT call LLMs directly
 - If a tool needs LLM assistance, return `Tool.Result` with an error message describing what help is needed
 - The Agent Layer interprets and acts on this
+
+---
+
+## Document Status Legend
+
+Each architecture document includes a status banner:
+
+| Status | Meaning |
+|--------|---------|
+| **Current** | Accurately reflects implemented behavior |
+| **Partial Implementation** | Some features documented are not yet implemented |
+| **Planned** | Describes future functionality not yet built |
+
+Each document also includes a "Source of truth" callout linking to the actual source files.
 
 ---
 

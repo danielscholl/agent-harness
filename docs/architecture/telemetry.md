@@ -1,5 +1,8 @@
 # Telemetry Architecture
 
+> **Status:** Current
+> **Source of truth:** [`src/telemetry/setup.ts`](../../src/telemetry/setup.ts), [`src/config/schema.ts`](../../src/config/schema.ts)
+
 This document describes the OpenTelemetry integration for observability.
 
 ---
@@ -10,8 +13,8 @@ The telemetry system provides:
 
 - **OpenTelemetry SDK** for tracing
 - **GenAI semantic conventions** for LLM operations
-- **OTLP export** to various backends
-- **Opt-in activation** with graceful degradation
+- **OTLP export** to various backends (HTTP/gRPC auto-detection)
+- **Opt-in activation** with graceful no-op degradation
 
 ---
 
@@ -70,12 +73,21 @@ Standard attributes for LLM operations:
 ```typescript
 {
   telemetry: {
-    enabled: boolean,              // Default: false
-    endpoint: string,              // OTLP endpoint
-    enableSensitiveData: boolean   // Default: false
+    enabled: boolean,                              // Default: false
+    enableSensitiveData: boolean,                  // Default: false
+    otlpEndpoint?: string,                         // OTLP endpoint URL
+    applicationinsightsConnectionString?: string   // Azure App Insights
   }
 }
 ```
+
+### Environment Variables
+
+| Variable | Config Path | Notes |
+|----------|-------------|-------|
+| `ENABLE_OTEL` | `telemetry.enabled` | Boolean coercion |
+| `OTLP_ENDPOINT` | `telemetry.otlpEndpoint` | OTLP collector URL |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | `telemetry.applicationinsightsConnectionString` | Azure connection string |
 
 ### Sensitive Data
 
@@ -90,16 +102,50 @@ When `enableSensitiveData: true`:
 
 ---
 
+## Endpoint Auto-Detection
+
+The telemetry setup auto-detects the OTLP protocol:
+
+1. If `otlpEndpoint` contains `:4317` or `:4318/v1/traces` → Use HTTP exporter
+2. If `otlpEndpoint` contains `:4317` without `/v1/traces` → Use gRPC exporter
+3. Otherwise → Use HTTP exporter as default
+
+```typescript
+// Examples
+otlpEndpoint: "http://localhost:4317"           // gRPC
+otlpEndpoint: "http://localhost:4318/v1/traces" // HTTP
+```
+
+---
+
+## No-Op Behavior
+
+When telemetry is disabled (`enabled: false`) or configuration is missing:
+
+- No-op span implementations used
+- Zero performance overhead
+- Agent continues normally
+- All telemetry calls become no-ops
+
+```typescript
+// In setup.ts
+if (!config.telemetry.enabled) {
+  return createNoopHelpers();
+}
+```
+
+---
+
 ## OTLP Export
 
 Telemetry exports to any OTLP-compatible backend:
 
-| Backend | Use Case |
-|---------|----------|
-| Aspire Dashboard | Local development |
-| Jaeger | Self-hosted tracing |
-| Grafana Tempo | Production tracing |
-| Azure Monitor | Azure deployments |
+| Backend | Use Case | Endpoint Example |
+|---------|----------|------------------|
+| Aspire Dashboard | Local development | `http://localhost:4317` |
+| Jaeger | Self-hosted tracing | `http://localhost:4317` |
+| Grafana Tempo | Production tracing | `https://tempo.example.com:4317` |
+| Azure Monitor | Azure deployments | Use connection string instead |
 
 ---
 
@@ -114,16 +160,29 @@ docker run --rm -p 18888:18888 -p 4317:18889 \
   mcr.microsoft.com/dotnet/aspire-dashboard:latest
 ```
 
-Configure endpoint:
+Configure:
 
-```json
-{
-  "telemetry": {
-    "enabled": true,
-    "endpoint": "http://localhost:4317"
-  }
-}
+```yaml
+telemetry:
+  enabled: true
+  otlpEndpoint: http://localhost:4317
 ```
+
+View at: http://localhost:18888
+
+---
+
+## Azure Application Insights
+
+For Azure deployments, use the connection string:
+
+```yaml
+telemetry:
+  enabled: true
+  applicationinsightsConnectionString: "InstrumentationKey=xxx;IngestionEndpoint=https://..."
+```
+
+When `applicationinsightsConnectionString` is provided, the telemetry system configures the Azure Monitor exporter.
 
 ---
 
@@ -150,22 +209,6 @@ interface TelemetryHelpers {
   // Get current trace context
   getContext(): SpanContext;
 }
-```
-
----
-
-## Graceful Degradation
-
-When telemetry is disabled or fails:
-
-- No-op implementations used
-- No performance overhead
-- Agent continues normally
-
-```typescript
-const helpers = telemetry.enabled
-  ? createTelemetryHelpers(config)
-  : createNoopHelpers();
 ```
 
 ---
