@@ -43,7 +43,7 @@ Agent.run(query)
     |
     +-> onToolStart(ctx, toolName, args)
     |       |
-    |       +-> onToolEnd(ctx, toolName, result)
+    |       +-> onToolEnd(ctx, toolName, result, executionResult?)
     |
     +-> onSpinnerStop()
     |
@@ -73,8 +73,8 @@ interface AgentCallbacks {
   // ─── Tool Execution ──────────────────────────────────────────────────
   /** Called before tool execution */
   onToolStart?(ctx: SpanContext, toolName: string, args: Record<string, unknown>): void;
-  /** Called after tool execution */
-  onToolEnd?(ctx: SpanContext, toolName: string, result: ToolResponse): void;
+  /** Called after tool execution (executionResult includes metadata.error detection) */
+  onToolEnd?(ctx: SpanContext, toolName: string, result: ToolResponse, executionResult?: ToolExecutionResult): void;
 
   // ─── UI Feedback ─────────────────────────────────────────────────────
   /** Called to show loading indicator */

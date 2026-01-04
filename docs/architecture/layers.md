@@ -280,19 +280,20 @@ interface AgentCallbacks {
   onLLMStream?(ctx: SpanContext, chunk: string): void;
   onLLMEnd?(ctx: SpanContext, response: string, usage: TokenUsage): void;
   onToolStart?(ctx: SpanContext, toolName: string, args: unknown): void;
-  onToolEnd?(ctx: SpanContext, toolName: string, result: Tool.Result): void;
+  onToolEnd?(ctx: SpanContext, toolName: string, result: ToolResponse, executionResult?: ToolExecutionResult): void;
   onAgentEnd?(ctx: SpanContext, answer: string): void;
 }
 ```
 
 ### Agent ↔ Tools
 
-Communication via **LangChain tool binding**:
+Communication via **LangChain tool binding** (ToolRegistry is default):
 
 - Agent binds tools to LLM via `bindTools()`
 - LLM generates tool calls in responses
-- Agent executes tools via `ToolRegistry.execute()`
-- Tools return `Tool.Result` with metadata
+- Agent executes tools via `ToolRegistry.execute()` (default) or direct invocation (legacy)
+- Tools return `Tool.Result` with metadata; errors set `metadata.error` (return-not-throw pattern)
+- `onToolEnd` receives optional `executionResult` with full metadata including error detection
 
 ### Agent ↔ Model
 
