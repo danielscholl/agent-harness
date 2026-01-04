@@ -1,5 +1,8 @@
 # Permissions Architecture
 
+> **Status:** Partial Implementation
+> **Source of truth:** [`src/tools/registry.ts`](../../src/tools/registry.ts), [`src/tools/index.ts`](../../src/tools/index.ts)
+
 This document describes the permission model used to control tool capabilities.
 
 ---
@@ -8,49 +11,144 @@ This document describes the permission model used to control tool capabilities.
 
 The permission system provides:
 
-- **Scope-based access control** for tool operations
-- **Hierarchical settings** (project → user → interactive)
-- **Sensitive path protection** regardless of general permissions
-- **Callback-based prompting** for user approval
+- **Permission-based tool filtering** at registry level
+- **Four permission types** for different operation categories
+- **Registration-time declaration** of required permissions
+
+> **Note:** The following features are **planned but not yet implemented**:
+> - Hierarchical settings (project -> user -> interactive)
+> - Config-driven permission rules
+> - Callback-based prompting for user approval
+> - Sensitive path protection
 
 ---
 
-## Permission Model
+## Current Implementation
+
+### Permission Types
+
+| Permission | Description | Example Tools |
+|------------|-------------|---------------|
+| `read` | Read files and directories | read, list, glob, grep, todoread, todowrite |
+| `write` | Create or modify files | write, edit |
+| `execute` | Run shell commands or subprocesses | bash, task |
+| `network` | Make network requests | webfetch |
+
+### Permission Declaration
+
+Tools declare required permissions during registration in `src/tools/index.ts`:
+
+```typescript
+const toolPermissions: Record<string, ToolPermissions> = {
+  read: { required: ['read'] },
+  write: { required: ['write'] },
+  edit: { required: ['write'] },
+  list: { required: ['read'] },
+  bash: { required: ['execute'] },
+  glob: { required: ['read'] },
+  grep: { required: ['read'] },
+  webfetch: { required: ['network'] },
+  task: { required: ['execute'] },
+  todowrite: { required: ['read'] },
+  todoread: { required: ['read'] },
+};
+```
+
+### Permission Filtering
+
+The `ToolRegistry.tools()` method accepts an `enabledPermissions` filter:
+
+```typescript
+// Get only tools that require 'read' permission
+const readTools = await ToolRegistry.tools({
+  initCtx: { workingDir: '/project' },
+  createContext: (toolId, callId) => myContext,
+  enabledPermissions: new Set(['read']),
+});
+
+// Get all tools (no permission filtering)
+const allTools = await ToolRegistry.tools({
+  initCtx: { workingDir: '/project' },
+  createContext: (toolId, callId) => myContext,
+});
+```
+
+### ToolPermissions Interface
+
+```typescript
+type ToolPermission = 'read' | 'write' | 'execute' | 'network';
+
+interface ToolPermissions {
+  /** Permissions that must all be granted */
+  required: ToolPermission[];
+  /** Optional permissions that enhance capability if available */
+  optional?: ToolPermission[];
+}
+```
+
+---
+
+## Built-in Tool Permissions
+
+| Tool | Required Permissions | Description |
+|------|---------------------|-------------|
+| `read` | `read` | Read file contents |
+| `write` | `write` | Create or overwrite files |
+| `edit` | `write` | In-place file editing |
+| `list` | `read` | Directory listing |
+| `bash` | `execute` | Shell command execution |
+| `glob` | `read` | File pattern matching |
+| `grep` | `read` | Content searching |
+| `webfetch` | `network` | URL fetching |
+| `task` | `execute` | Subagent spawning |
+| `todowrite` | `read` | Write task list |
+| `todoread` | `read` | Read task list |
+
+---
+
+## Planned Features
+
+The following features are documented for future implementation:
+
+### Hierarchical Permission Settings (Planned)
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    Permission Check                      │
-│                                                          │
-│  Tool requests permission ──► Check settings hierarchy   │
-│                                      │                   │
-│                    ┌─────────────────┼─────────────────┐ │
-│                    ▼                 ▼                 ▼ │
-│              Project rules     User rules      Interactive│
-│              (committed)       (personal)       prompt    │
-│                    │                 │              │     │
-│                    └─────────────────┴──────────────┘     │
-│                                      │                    │
-│                                      ▼                    │
-│                              Allow / Deny                 │
-└─────────────────────────────────────────────────────────┘
+Tool requests permission --> Check settings hierarchy
+                                   |
+                  +----------------+----------------+
+                  v                v                v
+            Project rules     User rules      Interactive
+            (committed)       (personal)       prompt
+                  |                |              |
+                  +----------------+--------------+
+                                   |
+                                   v
+                              Allow / Deny
 ```
 
----
+### Config-Based Permissions (Planned)
 
-## Permission Scopes
+Project settings (`./.agent/config.yaml`):
 
-| Scope | Description | Default |
-|-------|-------------|---------|
-| `fs-read` | Read files in working directory | Allowed within project |
-| `fs-write` | Create/modify files | Denied |
-| `fs-delete` | Delete files | Denied |
-| `shell-run` | Execute shell commands | Denied |
+```yaml
+permissions:
+  read: true
+  write: false
+  execute: false
+```
 
----
+User settings (`~/.agent/config.yaml`):
 
-## Sensitive Paths
+```yaml
+permissions:
+  write: true
+  trusted-paths:
+    - /home/user/projects/*
+```
 
-Regardless of `fs-read` permissions, these paths require explicit per-session approval:
+### Sensitive Path Protection (Planned)
+
+Paths that would require explicit per-session approval:
 
 | Path Pattern | Content |
 |--------------|---------|
@@ -61,99 +159,56 @@ Regardless of `fs-read` permissions, these paths require explicit per-session ap
 | `*secret*` | Secret files |
 | OS keychains | System credential stores |
 
----
-
-## Permission Callback Flow
+### Permission Callback Flow (Planned)
 
 ```
 Tool.execute(input)
-       │
-       ▼
+       |
+       v
 callbacks.onPermissionRequest({
-  scope: 'fs-write',
+  scope: 'write',
   resource: '/path/to/file',
   action: 'write file'
 })
-       │
-       ▼
-┌──────┴──────┐
-│   Allowed?  │
-└──────┬──────┘
-       │
-  ┌────┴────┐
-  ▼         ▼
+       |
+       v
++------+------+
+|   Allowed?  |
++------+------+
+       |
+  +----+----+
+  v         v
 true      false
-  │         │
-  ▼         ▼
+  |         |
+  v         v
 Proceed   Return Permission Denied
 ```
 
 ---
 
-## Tool Permission Declaration
+## Adding Permissions to a New Tool
 
-Tools declare their required permissions during registration:
+1. **Declare permissions in registration** (`src/tools/index.ts`):
 
 ```typescript
-ToolRegistry.register(writeTool, {
-  permissions: {
-    required: ['write'],      // Must have all
-    optional: ['execute'],    // Enhanced if available
-  },
+const toolPermissions: Record<string, ToolPermissions> = {
+  // ... existing
+  mytool: { required: ['read', 'network'] },
+};
+```
+
+2. **Register with permissions**:
+
+```typescript
+ToolRegistry.register(myTool, {
+  permissions: toolPermissions.mytool,
+  descriptionPath: 'src/tools/mytool.txt',
 });
-```
-
----
-
-## Permission Checking in Tools
-
-```typescript
-execute: async (input, config) => {
-  const callbacks = config?.callbacks;
-
-  const permitted = await callbacks?.onPermissionRequest?.({
-    scope: 'fs-write',
-    resource: input.path,
-    action: 'write file',
-  });
-
-  if (!permitted) {
-    return {
-      title: 'Permission Denied',
-      metadata: {},
-      output: `Write permission denied for ${input.path}`,
-    };
-  }
-
-  // Proceed with operation
-}
-```
-
----
-
-## Permission Configuration
-
-### Project Settings (`./.agent/config.yaml`)
-
-```yaml
-permissions:
-  fs-read: true
-  fs-write: false
-  shell-run: false
-```
-
-### User Settings (`~/.agent/config.yaml`)
-
-```yaml
-permissions:
-  fs-write: true
-  trusted-paths:
-    - /home/user/projects/*
 ```
 
 ---
 
 ## Related Documentation
 
-- [Tools Architecture](./tools.md) - Tool permission integration
-- [Configuration](./configuration.md) - Permission settings
+- [Tools Architecture](./tools.md) - Tool system and registry
+- [Configuration](./configuration.md) - Permission settings (planned)

@@ -1,6 +1,9 @@
 # Context Storage Architecture
 
-This document describes the context storage strategy for managing large tool outputs.
+> **Status:** Current
+> **Source of truth:** [`src/utils/context.ts`](../../src/utils/context.ts)
+
+This document describes the context storage strategy for managing tool outputs.
 
 ---
 
@@ -8,141 +11,171 @@ This document describes the context storage strategy for managing large tool out
 
 **Problem:** Tool outputs can be very large (search results, file contents). Keeping all outputs in memory causes unbounded growth.
 
-**Solution:** Filesystem-backed storage with lazy loading.
+**Solution:** Filesystem-backed storage with lazy loading and keyword-based relevance matching.
 
 ---
 
-## Strategy
+## Current Implementation
+
+### Persistence Strategy
+
+**All tool outputs are persisted to disk** as JSON files with metadata. The `persistThreshold` option (32KB default) is reserved for future size-aware caching but is not currently used - all outputs go to disk regardless of size.
 
 ```
-Execution Phase                    Answer Phase
-───────────────                    ────────────
-
-Tool executes                      Select relevant contexts
-     │                                  │
-     ▼                                  ▼
-Save to filesystem              Load only selected data
-     │                                  │
-     ▼                                  ▼
-Store pointer in memory         Build answer prompt
-(lightweight metadata)
+Tool executes
+     |
+     v
+Save to filesystem (always)
+     |
+     v
+Store pointer in memory (lightweight metadata)
+     |
+     v
+Later: Load by filepath when needed
 ```
 
----
-
-## Storage Thresholds
-
-| Size | Strategy |
-|------|----------|
-| < 32KB | Keep in memory for session |
-| > 32KB | Persist to filesystem |
-
----
-
-## Storage Layout
+### Storage Location
 
 ```
 ~/.agent/context/
-├── session-abc123-read_file-a1b2c3.json
-├── session-abc123-search_code-d4e5f6.json
-└── session-def456-grep-g7h8i9.json
+|-- readFile_a1b2c3_1735012345678_0_x9k2.json
+|-- search_code_d4e5f6_1735012346789_1_m3n4.json
++-- grep_g7h8i9_1735012347890_2_p5q6.json
 ```
 
-### File Contents
+Filenames include: `{toolName}_{argsHash}_{timestamp}_{counter}_{random}.json`
 
-```json
-{
-  "toolName": "search_code",
-  "args": { "query": "TODO" },
-  "result": { /* full tool result */ },
-  "timestamp": "2024-01-15T10:30:00Z",
-  "queryId": "query-abc123",
-  "sessionId": "session-abc123"
-}
-```
-
----
-
-## Lifecycle
-
-1. **During execution:** Tool outputs saved, pointers tracked
-2. **During answer:** LLM selects relevant pointers, full data loaded
-3. **End of session:** Context directory cleared
-
----
-
-## ContextManager Interface
+### Stored Context Format
 
 ```typescript
-interface IContextManager {
-  // Save tool output to storage
-  saveContext(
-    toolName: string,
-    args: Record<string, unknown>,
-    result: unknown,
-    taskId?: string,
-    queryId?: string
-  ): Promise<string>;  // Returns filepath
-
-  // Load context from storage
-  loadContext(filepath: string): Promise<unknown>;
-
-  // List available contexts for session
-  listContexts(sessionId: string): Promise<ContextPointer[]>;
-
-  // Clear all contexts (session end)
-  clearContexts(): Promise<void>;
-
-  // Generate deterministic query ID
-  static hashQuery(query: string): string;
+interface StoredContext {
+  toolName: string;           // Tool that generated this context
+  toolDescription: string;    // Human-readable description
+  args: Record<string, unknown>;  // Tool input arguments
+  timestamp: string;          // ISO 8601 timestamp
+  taskId?: number;           // Optional task ID for grouping
+  queryId?: string;          // Query ID for filtering
+  result: unknown;           // The tool execution result
 }
 ```
 
----
-
-## Context Pointer
+### Context Pointer (In-Memory)
 
 ```typescript
 interface ContextPointer {
-  filepath: string;
-  toolName: string;
-  timestamp: number;
-  sizeBytes: number;
+  filepath: string;           // Full path to context file
+  filename: string;           // Just the filename
+  toolName: string;          // Tool that generated this
+  toolDescription: string;   // Human-readable description
+  args: Record<string, unknown>;
+  taskId?: number;
   queryId?: string;
 }
 ```
 
 ---
 
-## Session Resume and Context
+## ContextManager API
 
-**Important:** Context is ephemeral and not preserved across session resume.
+```typescript
+class ContextManager {
+  constructor(options?: {
+    contextDir?: string;        // Default: ~/.agent/context
+    persistThreshold?: number;  // Reserved for future (default: 32KB)
+    fileSystem?: IFileSystem;   // For testing
+    onDebug?: (msg: string, data?: unknown) => void;
+  });
 
-When a session is resumed:
-- ✅ Conversation history is restored
-- ✅ Event logs are available
-- ❌ Context data is NOT restored
+  // Save tool output to storage (always persists to disk)
+  async saveContext(
+    toolName: string,
+    args: Record<string, unknown>,
+    result: unknown,
+    taskId?: number,
+    queryId?: string
+  ): Promise<string>;  // Returns filepath
 
-**Rationale:** Context can be very large (hundreds of MB in some cases).
+  // Get all stored pointers
+  getAllPointers(): ContextPointer[];
 
-**Implication:** Resumed sessions may need to re-execute tools to regenerate context.
+  // Get pointers for a specific query
+  getPointersForQuery(queryId: string): ContextPointer[];
+
+  // Get pointers for a specific task
+  getPointersForTask(taskId: number): ContextPointer[];
+
+  // Load full context data from disk
+  async loadContexts(filepaths: string[]): Promise<StoredContext[]>;
+
+  // Select relevant contexts using keyword matching
+  selectRelevantContexts(query: string, pointers: ContextPointer[]): string[];
+
+  // Generate deterministic query ID from query string
+  static hashQuery(query: string): string;
+
+  // Clear pointers (in-memory only)
+  clearPointers(): void;
+
+  // Clear context directory (filesystem)
+  async clearContextDir(): Promise<void>;
+
+  // Full cleanup (both pointers and filesystem)
+  async clear(): Promise<void>;
+
+  // Get number of stored pointers
+  get size(): number;
+
+  // Get context directory path
+  getContextDir(): string;
+}
+```
 
 ---
 
-## Context Selection
+## Relevance Selection
 
-The Agent uses LLM to select which contexts are relevant for answering:
+The `selectRelevantContexts()` method uses keyword matching to find relevant contexts:
 
+1. Extract keywords from search query (words > 2 chars)
+2. Extract keywords from each pointer's `toolDescription`
+3. Score by keyword overlap
+4. Return filepaths sorted by score (highest first)
+5. If no matches, return all pointers
+
+```typescript
+// Example usage
+const pointers = manager.getPointersForQuery(queryId);
+const relevantPaths = manager.selectRelevantContexts('authentication error', pointers);
+const contexts = await manager.loadContexts(relevantPaths);
 ```
-Available contexts:
-1. search_code: Found 150 matches for "TODO"
-2. read_file: Contents of src/main.ts (2KB)
-3. grep: 45 matches for "error" in logs
 
-LLM selects: [1, 2]
+> **Note:** This is a simple heuristic-based approach. LLM-based selection is a potential future enhancement.
 
-Only load selected contexts into answer prompt.
+---
+
+## Lifecycle and Cleanup
+
+### When to Call clear()
+
+Context cleanup is **not automatic**. You must explicitly call `clear()`:
+
+```typescript
+// At session end
+await contextManager.clear();  // Deletes files AND clears pointers
 ```
+
+### Session Resume Behavior
+
+**Important:** Context is NOT restored on session resume.
+
+When a session is resumed:
+- Conversation history is restored (from SessionManager)
+- Context pointers are empty
+- Context files may still exist on disk (not auto-cleaned)
+
+**Rationale:** Context can be very large (hundreds of MB). Auto-loading would cause memory issues.
+
+**Implication:** Resumed sessions may need to re-execute tools to regenerate context.
 
 ---
 
@@ -150,10 +183,20 @@ Only load selected contexts into answer prompt.
 
 | Aspect | Memory | Disk |
 |--------|--------|------|
-| Access speed | Fast | Slower |
+| Access speed | Fast | Slower (disk I/O) |
 | Size limits | Limited by RAM | Limited by disk |
-| Session resume | Lost | Cleared anyway |
-| Concurrency | Simple | Needs locking |
+| Session resume | Lost (pointers cleared) | Files persist |
+| Concurrency | Simple | Handled by unique filenames |
+
+---
+
+## Planned Enhancements
+
+The following features may be added in future versions:
+
+- **Size-aware caching**: Use `persistThreshold` to keep small outputs in memory
+- **LLM-based selection**: Replace keyword matching with LLM relevance scoring
+- **Auto-cleanup on session end**: Integrate with SessionManager for automatic cleanup
 
 ---
 

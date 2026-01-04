@@ -1,5 +1,8 @@
 # Provider Architecture
 
+> **Status:** Current
+> **Source of truth:** [`src/config/constants.ts`](../../src/config/constants.ts), [`src/model/registry.ts`](../../src/model/registry.ts)
+
 This document provides comprehensive documentation for the Model Layer (`src/model/`), explaining how providers, registry, LLMClient, retry logic, and response contracts work together to create a robust multi-provider LLM abstraction.
 
 ---
@@ -11,12 +14,14 @@ The Model Layer provides a unified interface to 7 LLM providers:
 | Provider | Description | Default Model |
 |----------|-------------|---------------|
 | `openai` | OpenAI API | gpt-5-mini |
-| `anthropic` | Anthropic API | claude-haiku-4-5 |
-| `azure` | Azure OpenAI | (deployment) |
-| `foundry` | Azure AI Foundry | (deployment) |
+| `anthropic` | Anthropic API | claude-sonnet-4-20250514 |
+| `azure` | Azure OpenAI | (deployment name) |
+| `foundry` | Azure AI Foundry | gpt-4o (cloud mode) |
 | `gemini` | Google Gemini | gemini-2.0-flash-exp |
-| `github` | GitHub Models | gpt-4o-mini |
-| `local` | Docker Model Runner | llama3.3:latest |
+| `github` | GitHub Models | gpt-4o |
+| `local` | Ollama/Docker Model Runner | qwen3:latest |
+
+**Common Feature:** All providers include `supportsFunctionCalling?: boolean` (optional, undefined = assume true) for tool use capability.
 
 ---
 
@@ -42,67 +47,17 @@ src/model/
 
 ---
 
-## Module Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                         Model Module                             │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│  types.ts                                                        │
-│  ├─ ModelResponse<T> (discriminated union)                      │
-│  ├─ ModelErrorCode (10 error types)                             │
-│  ├─ InvokeResult, TokenUsage                                    │
-│  ├─ LLMCallbacks (streaming + retry events)                     │
-│  └─ ProviderFactory (factory function type)                     │
-│                                                                  │
-│  base.ts                                                         │
-│  ├─ successResponse<T>()                                         │
-│  ├─ errorResponse()                                              │
-│  ├─ mapErrorToCode() (keyword-based error mapping)              │
-│  └─ extractTokenUsage() (multi-provider format support)         │
-│                                                                  │
-│  registry.ts                                                     │
-│  ├─ PROVIDER_REGISTRY (7 providers)                             │
-│  ├─ getProviderFactory()                                         │
-│  ├─ isProviderSupported()                                        │
-│  └─ getSupportedProviders()                                      │
-│                                                                  │
-│  retry.ts                                                        │
-│  ├─ withRetry() (exponential backoff wrapper)                   │
-│  ├─ isRetryableError() (3 transient error types)                │
-│  ├─ calculateDelay() (exponential + jitter)                     │
-│  └─ extractRetryAfter() (provider Retry-After headers)          │
-│                                                                  │
-│  llm.ts                                                          │
-│  └─ LLMClient (main orchestrator)                               │
-│      ├─ invoke() (complete response with retry)                 │
-│      ├─ stream() (async iterator with retry)                    │
-│      └─ getClient() (lazy client initialization + caching)      │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
 ## Provider Selection
 
 Providers are selected by **name** in configuration, not by model prefix:
 
-```json
-{
-  "providers": {
-    "default": "openai",
-    "openai": {
-      "apiKey": "...",
-      "model": "gpt-4o"
-    },
-    "anthropic": {
-      "apiKey": "...",
-      "model": "claude-sonnet-4-5"
-    }
-  }
-}
+```yaml
+providers:
+  default: openai
+  openai:
+    model: gpt-4o
+  anthropic:
+    model: claude-sonnet-4-20250514
 ```
 
 **Note:** Config uses camelCase consistently (TypeScript convention).
@@ -140,6 +95,130 @@ isProviderSupported(providerName: ProviderName): boolean
 // Get array of supported provider names
 getSupportedProviders(): ProviderName[]
 ```
+
+---
+
+## Provider Implementations
+
+### OpenAI Provider
+
+**Package:** `@langchain/openai` (ChatOpenAI)
+
+```typescript
+{
+  apiKey?: string,                 // Falls back to OPENAI_API_KEY
+  model: string,                   // Default: "gpt-5-mini"
+  baseUrl?: string,                // Optional custom endpoint
+  supportsFunctionCalling?: boolean // Optional (undefined = assume true)
+}
+```
+
+### Anthropic Provider
+
+**Package:** `@langchain/anthropic` (ChatAnthropic)
+
+```typescript
+{
+  apiKey?: string,                 // Falls back to ANTHROPIC_API_KEY
+  model: string,                   // Default: "claude-sonnet-4-20250514"
+  supportsFunctionCalling?: boolean // Optional (undefined = assume true)
+}
+```
+
+### Azure OpenAI Provider
+
+**Package:** `@langchain/openai` (AzureChatOpenAI)
+
+```typescript
+{
+  endpoint?: string,               // Required - Azure endpoint URL
+  deployment?: string,             // Required - Deployment name (NOT model)
+  apiVersion: string,              // Default: "2024-06-01"
+  apiKey?: string,                 // Falls back to AZURE_OPENAI_API_KEY
+  supportsFunctionCalling?: boolean // Optional (undefined = assume true)
+}
+```
+
+**Note:** Azure uses `deployment` not `model`. The deployment name maps to a model in Azure portal.
+
+### Azure AI Foundry Provider
+
+**Package:** `@langchain/openai` + optional `foundry-local-sdk`
+
+```typescript
+{
+  mode: "local" | "cloud",         // Default: "cloud"
+
+  // Cloud mode:
+  projectEndpoint?: string,        // Required for cloud
+  modelDeployment?: string,        // e.g., "claude-sonnet-4-5"
+  apiKey?: string,                 // Falls back to AZURE_FOUNDRY_API_KEY
+
+  // Local mode:
+  modelAlias: string,              // Default: "qwen2.5-coder-14b"
+  temperature?: number,
+
+  supportsFunctionCalling?: boolean // Optional (undefined = assume true)
+}
+```
+
+**Mode Behaviors:**
+- **Cloud (default):** Uses Azure AI Foundry OpenAI v1-compatible API
+- **Local:** Uses `foundry-local-sdk` for on-device model execution
+
+### Google Gemini Provider
+
+**Package:** `@langchain/google-genai` (ChatGoogleGenerativeAI)
+
+```typescript
+{
+  apiKey?: string,                 // Falls back to GEMINI_API_KEY
+  model: string,                   // Default: "gemini-2.0-flash-exp"
+  useVertexai: boolean,            // Default: false (RESERVED)
+  projectId?: string,              // RESERVED for future Vertex AI
+  location: string,                // Default: "us-central1" (RESERVED)
+  supportsFunctionCalling?: boolean // Optional (undefined = assume true)
+}
+```
+
+**Important:** Vertex AI (`useVertexai: true`) is **not implemented**. Setting it returns an error. The `projectId` and `location` fields are reserved for future implementation.
+
+### GitHub Models Provider
+
+**Package:** `@langchain/openai` (ChatOpenAI with custom endpoint)
+
+```typescript
+{
+  token?: string,                  // Falls back to GITHUB_TOKEN or gh CLI
+  model: string,                   // Default: "gpt-4o"
+  endpoint: string,                // Default: "https://models.github.ai/inference"
+  org?: string,                    // Optional org name for enterprise
+  supportsFunctionCalling?: boolean // Optional (undefined = assume true)
+}
+```
+
+**Authentication Flow:**
+```
+config.token → GITHUB_TOKEN env var → `gh auth token` command → ERROR
+```
+
+### Local Provider
+
+**Package:** `@langchain/openai` (ChatOpenAI with custom endpoint)
+
+```typescript
+{
+  baseUrl: string,                 // Default: "http://localhost:11434/v1" (Ollama)
+  model: string,                   // Default: "qwen3:latest"
+  supportsFunctionCalling?: boolean // Optional (undefined = assume true)
+}
+```
+
+**Supported Backends:**
+- **Ollama** (default): `http://localhost:11434/v1`
+- **Docker Model Runner**: `http://model-runner.docker.internal/engines/llama.cpp/v1`
+- **LM Studio**: `http://localhost:1234/v1`
+- Any OpenAI-compatible server
 
 ---
 
@@ -206,40 +285,6 @@ Return client
 
 ---
 
-## Invoke Flow
-
-```
-invoke(input)
-    ↓
-┌────────────────────┐
-│ Retry enabled?     │ No → invokeOnce() → return
-└─────────┬──────────┘
-          │ Yes
-          ↓
-withRetry(() => invokeOnce(input))
-    ↓
-Loop: attempt 0 to maxRetries
-    ↓
-invokeOnce(input)
-    ├─ getClient()
-    ├─ toMessages(input)
-    ├─ client.invoke(messages)
-    ├─ Extract content + usage
-    └─ Return ModelResponse
-    ↓
-If error && retryable && retries left:
-    ├─ Calculate delay
-    ├─ Fire onRetry callback
-    ├─ Sleep(delay)
-    └─ Loop
-    ↓
-Return final result
-    ↓
-If error: Fire onError callback
-```
-
----
-
 ## Retry Logic
 
 ### Configuration
@@ -257,7 +302,7 @@ If error: Fire onError callback
 ### Retry Strategy
 
 - **Exponential backoff**: `delay = baseDelay * 2^attempt` (capped at maxDelay)
-- **Jitter**: Random variation ±25% to avoid thundering herd
+- **Jitter**: Random variation ±20% to avoid thundering herd
 - **Provider-aware**: Respects `Retry-After` headers from providers
 
 ### Retryable Error Codes
@@ -268,148 +313,6 @@ If error: Fire onError callback
 | `NETWORK_ERROR` | Connection issues | Yes |
 | `TIMEOUT` | Request timeout | Yes |
 | All others | Permanent failures | No |
-
-### Retry Flow
-
-```
-Execute operation()
-        ↓
-┌─────────────┐
-│ Success?    │ Yes → Return result
-└──────┬──────┘
-       │ No
-       ↓
-┌─────────────────┐
-│ Retryable error?│ No → Return error immediately
-└──────┬──────────┘
-       │ Yes
-       ↓
-┌─────────────────┐
-│ Retries left?   │ No → Return error
-└──────┬──────────┘
-       │ Yes
-       ↓
-Calculate delay (use Retry-After or exponential backoff)
-       ↓
-Fire onRetry callback
-       ↓
-Sleep(delay)
-       ↓
-attempt++
-       ↓
-(loop back to Execute)
-```
-
----
-
-## Provider Implementations
-
-### OpenAI Provider
-
-**Package:** `@langchain/openai` (ChatOpenAI)
-
-```typescript
-{
-  apiKey?: string,      // Falls back to OPENAI_API_KEY
-  model?: string,       // Default: gpt-5-mini
-  baseUrl?: string      // Optional custom endpoint
-}
-```
-
-### Anthropic Provider
-
-**Package:** `@langchain/anthropic` (ChatAnthropic)
-
-```typescript
-{
-  apiKey?: string,      // Falls back to ANTHROPIC_API_KEY
-  model?: string        // Default: claude-sonnet-4-20250514
-}
-```
-
-### Azure OpenAI Provider
-
-**Package:** `@langchain/openai` (AzureChatOpenAI)
-
-```typescript
-{
-  endpoint: string,         // Required: Azure endpoint URL
-  deployment: string,       // Required: Deployment name
-  apiVersion?: string,      // Default: '2024-06-01'
-  apiKey?: string          // Falls back to AZURE_OPENAI_API_KEY
-}
-```
-
-### Gemini Provider
-
-**Package:** `@langchain/google-genai` (ChatGoogleGenerativeAI)
-
-```typescript
-{
-  apiKey?: string,          // Falls back to GOOGLE_API_KEY
-  model?: string,           // Default: gemini-2.0-flash-exp
-  useVertexai?: boolean     // Default: false
-}
-```
-
-**Note:** Vertex AI mode is NOT supported. Setting `useVertexai: true` returns an error.
-
-### GitHub Models Provider
-
-**Package:** `@langchain/openai` (ChatOpenAI with custom endpoint)
-
-```typescript
-{
-  token?: string,           // Falls back to GITHUB_TOKEN or gh CLI
-  model?: string,           // Default: gpt-4o-mini
-  endpoint?: string,        // Default: https://models.github.ai/inference
-  org?: string             // Optional org name for enterprise
-}
-```
-
-**Authentication Flow:**
-```
-config.token → GITHUB_TOKEN env var → gh auth token → ERROR
-```
-
-### Local Provider
-
-**Package:** `@langchain/openai` (ChatOpenAI with custom endpoint)
-
-```typescript
-{
-  baseUrl?: string,         // Default: http://localhost:11434/v1 (Ollama)
-  model?: string           // Default: llama3.3:latest
-}
-```
-
-**Supported Backends:**
-- **Ollama** (default): `http://localhost:11434/v1`
-- **Docker Model Runner**: `http://model-runner.docker.internal/engines/llama.cpp/v1`
-- **LM Studio**: `http://localhost:1234/v1`
-- Any OpenAI-compatible server
-
-### Azure AI Foundry Provider
-
-**Package:** `@langchain/openai` + optional `foundry-local-sdk`
-
-```typescript
-{
-  mode?: 'local' | 'cloud',    // Default: 'local'
-
-  // Local mode:
-  modelAlias?: string,          // Default: 'phi-4'
-  temperature?: number,
-
-  // Cloud mode:
-  projectEndpoint?: string,     // Required
-  modelDeployment?: string,     // Default: 'gpt-4o'
-  apiKey?: string              // Falls back to AZURE_FOUNDRY_API_KEY
-}
-```
-
-**Local Mode:** Uses `foundry-local-sdk` for on-device model execution.
-**Cloud Mode:** Uses Azure AI Foundry OpenAI v1-compatible API.
 
 ---
 
@@ -440,6 +343,20 @@ Handles multiple provider formats:
 | Generic | `{ token_usage: { ... } }` |
 
 Falls back to camelCase variants (`promptTokens`, `completionTokens`).
+
+---
+
+## Provider-Specific Notes
+
+| Provider | Authentication | Notes |
+|----------|----------------|-------|
+| `openai` | API key | Standard OpenAI API |
+| `anthropic` | API key | Anthropic Claude API |
+| `azure` | API key or Azure CLI | Supports AzureCliCredential fallback |
+| `foundry` | Azure CLI (local) or API key (cloud) | Cloud mode is default |
+| `gemini` | API key | Vertex AI reserved, not implemented |
+| `github` | GitHub token | Falls back to `gh` CLI token |
+| `local` | None | Placeholder key used internally |
 
 ---
 
@@ -480,20 +397,6 @@ export const PROVIDER_REGISTRY = {
 4. **Define Config Schema** (`src/config/schema.ts`)
 
 5. **Write Tests** (`src/model/__tests__/<provider>.test.ts`)
-
----
-
-## Provider-Specific Notes
-
-| Provider | Authentication | Notes |
-|----------|----------------|-------|
-| `openai` | API key | Standard OpenAI API |
-| `anthropic` | API key | Anthropic Claude API |
-| `azure` | API key or Azure CLI | Supports AzureCliCredential fallback |
-| `foundry` | Azure CLI (local) or API key (cloud) | Async credential required |
-| `gemini` | API key | Vertex AI not supported |
-| `github` | GitHub token | Supports org-scoped rate limits |
-| `local` | None | Placeholder key used |
 
 ---
 

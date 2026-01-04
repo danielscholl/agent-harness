@@ -1,5 +1,8 @@
 # Telemetry Architecture
 
+> **Status:** Current
+> **Source of truth:** [`src/telemetry/setup.ts`](../../src/telemetry/setup.ts), [`src/config/schema.ts`](../../src/config/schema.ts)
+
 This document describes the OpenTelemetry integration for observability.
 
 ---
@@ -10,8 +13,8 @@ The telemetry system provides:
 
 - **OpenTelemetry SDK** for tracing
 - **GenAI semantic conventions** for LLM operations
-- **OTLP export** to various backends
-- **Opt-in activation** with graceful degradation
+- **OTLP export** to various backends (HTTP/gRPC auto-detection)
+- **Opt-in activation** with graceful no-op degradation
 
 ---
 
@@ -41,11 +44,13 @@ agent.run (root span)
 ```
 AgentCallbacks
      │
-     ├─► onLLMStart   ──► startLLMSpan()
-     ├─► onLLMEnd     ──► recordTokenUsage(), span.end()
-     ├─► onToolStart  ──► startToolSpan()
-     └─► onToolEnd    ──► recordToolResult(), span.end()
+     ├─► onLLMStart   ──► startLLMSpan(options)
+     ├─► onLLMEnd     ──► endLLMSpan(span, { inputTokens, outputTokens })
+     ├─► onToolStart  ──► startToolSpan(options)
+     └─► onToolEnd    ──► endToolSpan(span, { success })
 ```
+
+**Source of truth:** [`src/telemetry/spans.ts`](../../src/telemetry/spans.ts)
 
 ---
 
@@ -70,12 +75,21 @@ Standard attributes for LLM operations:
 ```typescript
 {
   telemetry: {
-    enabled: boolean,              // Default: false
-    endpoint: string,              // OTLP endpoint
-    enableSensitiveData: boolean   // Default: false
+    enabled: boolean,                              // Default: false
+    enableSensitiveData: boolean,                  // Default: false
+    otlpEndpoint?: string,                         // OTLP endpoint URL
+    applicationinsightsConnectionString?: string   // Azure App Insights
   }
 }
 ```
+
+### Environment Variables
+
+| Variable | Config Path | Notes |
+|----------|-------------|-------|
+| `ENABLE_OTEL` | `telemetry.enabled` | Boolean coercion |
+| `OTLP_ENDPOINT` | `telemetry.otlpEndpoint` | OTLP collector URL |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | `telemetry.applicationinsightsConnectionString` | Azure connection string |
 
 ### Sensitive Data
 
@@ -90,16 +104,64 @@ When `enableSensitiveData: true`:
 
 ---
 
+## Endpoint Auto-Detection
+
+The telemetry setup probes endpoint reachability and auto-detects the OTLP protocol:
+
+1. If user specifies `otlpEndpoint`, probe its reachability first
+2. If unreachable or unspecified, try HTTP endpoint (`http://localhost:4318/v1/traces`)
+3. If HTTP unreachable, try gRPC endpoint (`http://localhost:4317`)
+4. If both unreachable, fall back to no-op mode (`exporterType: 'none'`)
+
+Protocol detection (when reachable):
+- Port `4317` → gRPC exporter
+- Otherwise → HTTP exporter
+
+```typescript
+// Examples
+otlpEndpoint: "http://localhost:4317"           // gRPC (if reachable)
+otlpEndpoint: "http://localhost:4318/v1/traces" // HTTP (if reachable)
+```
+
+**Note:** Use `skipEndpointCheck: true` in options to bypass reachability probing.
+
+---
+
+## No-Op Behavior
+
+When telemetry is disabled (`enabled: false`) or no endpoints are reachable:
+
+- OpenTelemetry's built-in no-op tracer is used
+- Zero performance overhead (no provider/resource allocation)
+- Agent continues normally
+- All telemetry calls become no-ops
+
+```typescript
+// In setup.ts - disabled via config
+if (!config.enabled) {
+  initResult = { enabled: false, exporterType: 'none', serviceName };
+  return successResponse(initResult, 'Telemetry disabled');
+}
+
+// Or when no endpoints reachable
+if (exporterType === 'none') {
+  initResult = { enabled: false, exporterType: 'none', serviceName };
+  return successResponse(initResult, 'Telemetry initialized with none exporter');
+}
+```
+
+---
+
 ## OTLP Export
 
 Telemetry exports to any OTLP-compatible backend:
 
-| Backend | Use Case |
-|---------|----------|
-| Aspire Dashboard | Local development |
-| Jaeger | Self-hosted tracing |
-| Grafana Tempo | Production tracing |
-| Azure Monitor | Azure deployments |
+| Backend | Use Case | Endpoint Example |
+|---------|----------|------------------|
+| Aspire Dashboard | Local development | `http://localhost:4317` |
+| Jaeger | Self-hosted tracing | `http://localhost:4317` |
+| Grafana Tempo | Production tracing | `https://tempo.example.com:4317` |
+| Azure Monitor | Azure deployments | Use connection string instead |
 
 ---
 
@@ -114,16 +176,29 @@ docker run --rm -p 18888:18888 -p 4317:18889 \
   mcr.microsoft.com/dotnet/aspire-dashboard:latest
 ```
 
-Configure endpoint:
+Configure:
 
-```json
-{
-  "telemetry": {
-    "enabled": true,
-    "endpoint": "http://localhost:4317"
-  }
-}
+```yaml
+telemetry:
+  enabled: true
+  otlpEndpoint: http://localhost:4317
 ```
+
+View at: http://localhost:18888
+
+---
+
+## Azure Application Insights
+
+For Azure deployments, use the connection string:
+
+```yaml
+telemetry:
+  enabled: true
+  applicationinsightsConnectionString: "InstrumentationKey=xxx;IngestionEndpoint=https://..."
+```
+
+When `applicationinsightsConnectionString` is provided, the telemetry system configures the Azure Monitor exporter.
 
 ---
 
@@ -131,57 +206,68 @@ Configure endpoint:
 
 ```typescript
 interface TelemetryHelpers {
-  // Start LLM span with GenAI conventions
-  startLLMSpan(
-    model: string,
-    provider: string,
-    options?: { temperature?: number; maxTokens?: number }
-  ): Span;
+  /** Get a tracer for creating spans */
+  getTracer(name?: string, version?: string): Tracer;
 
-  // Record token usage on span
-  recordTokenUsage(span: Span, usage: TokenUsage): void;
+  /** Get a meter for creating metrics */
+  getMeter(name?: string, version?: string): Meter;
 
-  // Start tool execution span
-  startToolSpan(toolName: string): Span;
+  /** Check if telemetry is enabled */
+  isEnabled(): boolean;
 
-  // Record tool result on span
-  recordToolResult(span: Span, success: boolean): void;
+  /** Get current configuration */
+  getConfig(): TelemetryInitResult | null;
 
-  // Get current trace context
-  getContext(): SpanContext;
+  /** Shutdown telemetry (flush and close) */
+  shutdown(): Promise<TelemetryResponse>;
 }
 ```
 
 ---
 
-## Graceful Degradation
+## GenAI Span Types
 
-When telemetry is disabled or fails:
-
-- No-op implementations used
-- No performance overhead
-- Agent continues normally
+The framework provides typed options for creating GenAI-compliant spans:
 
 ```typescript
-const helpers = telemetry.enabled
-  ? createTelemetryHelpers(config)
-  : createNoopHelpers();
+// LLM span options
+interface LLMSpanOptions {
+  operationName?: string;      // Defaults to 'chat'
+  providerName: string;        // e.g., 'openai', 'anthropic'
+  modelName: string;
+  temperature?: number;
+  maxTokens?: number;
+  enableSensitiveData?: boolean;
+  messages?: unknown[];        // Only recorded if enableSensitiveData
+}
+
+// Tool span options
+interface ToolSpanOptions {
+  toolName: string;
+  toolCallId?: string;
+  enableSensitiveData?: boolean;
+  arguments?: Record<string, unknown>;
+}
+
+// Agent span options
+interface AgentSpanOptions {
+  operationName?: string;
+  providerName?: string;
+  modelName?: string;
+  conversationId?: string;
+}
 ```
 
 ---
 
-## SpanContext Propagation
-
-All callbacks receive `SpanContext` for correlation:
+## Active Span Handle
 
 ```typescript
-onLLMStart(ctx: SpanContext, model: string, messages: Message[]): void;
+interface ActiveSpan {
+  span: Span;    // The underlying OTel span
+  end: () => void;  // End the span
+}
 ```
-
-This enables:
-- Distributed tracing across services
-- Correlation of LLM calls with tool executions
-- Parent-child span relationships
 
 ---
 
