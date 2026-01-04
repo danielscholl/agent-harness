@@ -4,8 +4,8 @@
  * This module provides:
  * - Tool namespace with define() factory and types
  * - ToolRegistry for centralized tool management
- * - Individual tool implementations using the new pattern
- * - Legacy createTool factory (deprecated) for backward compatibility
+ * - Individual tool implementations (read, write, edit, bash, etc.)
+ * - Workspace utilities for path validation
  */
 
 // =============================================================================
@@ -25,7 +25,6 @@ export {
 } from './registry.js';
 
 // New pattern tools
-export { helloTool, greetTool } from './hello.js';
 export { readTool } from './read.js';
 export { writeTool } from './write.js';
 export { editTool } from './edit.js';
@@ -38,20 +37,11 @@ export { taskTool } from './task.js';
 export { todoWriteTool, todoReadTool, clearTodos, getTodos } from './todo.js';
 
 // =============================================================================
-// Legacy Tool System (Deprecated)
+// Tool Response Types (used by Agent callbacks)
 // =============================================================================
 
-// Type exports (still used by legacy code)
+// Type exports for agent callback system (onToolEnd, error handling)
 export type { ToolErrorCode, ToolResponse, SuccessResponse, ErrorResponse } from './types.js';
-
-// Type guards
-export { isSuccessResponse, isErrorResponse } from './types.js';
-
-// Helper functions (deprecated - use Tool.define() instead)
-export { successResponse, errorResponse, createTool, wrapWithToolResponse } from './base.js';
-
-// Types for tool creation (deprecated)
-export type { CreateToolOptions } from './base.js';
 
 // Filesystem utilities (used by new tools)
 export {
@@ -79,7 +69,6 @@ export {
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ToolRegistry, type ToolPermissions } from './registry.js';
-import { helloTool, greetTool } from './hello.js';
 import { readTool } from './read.js';
 import { writeTool } from './write.js';
 import { editTool } from './edit.js';
@@ -96,8 +85,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Permission definitions for built-in tools
 const toolPermissions: Record<string, ToolPermissions> = {
-  hello: { required: ['read'] },
-  greet: { required: ['read'] },
   read: { required: ['read'] },
   write: { required: ['write'] },
   edit: { required: ['write'] },
@@ -113,8 +100,6 @@ const toolPermissions: Record<string, ToolPermissions> = {
 
 // Auto-register all built-in tools
 const builtinTools = [
-  { tool: helloTool, permissions: toolPermissions.hello },
-  { tool: greetTool, permissions: toolPermissions.greet },
   { tool: readTool, permissions: toolPermissions.read },
   { tool: writeTool, permissions: toolPermissions.write },
   { tool: editTool, permissions: toolPermissions.edit },
