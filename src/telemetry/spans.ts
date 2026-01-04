@@ -581,16 +581,20 @@ export function createTracingCallbacks(
           span.setAttribute(ATTR_GEN_AI_TOOL_CALL_RESULT, JSON.stringify(result.result));
         }
 
+        // Prefer executionResult when available (includes metadata.error detection)
+        const success = executionResult?.success ?? result.success;
+        const errorCode = executionResult?.error ?? result.error;
+
         // Set status based on success
-        if (result.success) {
+        if (success) {
           span.setStatus({ code: SpanStatusCode.OK });
         } else {
-          if (result.error !== undefined) {
-            span.setAttribute(ATTR_ERROR_TYPE, result.error);
+          if (errorCode !== undefined) {
+            span.setAttribute(ATTR_ERROR_TYPE, errorCode);
           }
           span.setStatus({
             code: SpanStatusCode.ERROR,
-            message: result.error ?? 'Tool execution failed',
+            message: errorCode ?? 'Tool execution failed',
           });
         }
 

@@ -898,16 +898,28 @@ export class Agent {
    */
   private parseLLMAssistRequest(content: string): LLMAssistRequest | undefined {
     // Try multiple parsing strategies for different content formats
-    const tryParse = (text: string): LLMAssistRequest | undefined => {
+    const tryParseAction = (text: string): LLMAssistRequest | undefined => {
       try {
         const parsed: unknown = JSON.parse(text);
+        if (typeof parsed !== 'object' || parsed === null) {
+          return undefined;
+        }
+
+        // Strategy A: Check for action: 'LLM_ASSIST_REQUIRED' (task tool format)
         if (
-          typeof parsed === 'object' &&
-          parsed !== null &&
           'action' in parsed &&
           (parsed as { action: unknown }).action === 'LLM_ASSIST_REQUIRED'
         ) {
           return parsed as LLMAssistRequest;
+        }
+
+        // Strategy B: Check for legacy ToolResponse format { error: 'LLM_ASSIST_REQUIRED' }
+        if ('error' in parsed && (parsed as { error: unknown }).error === 'LLM_ASSIST_REQUIRED') {
+          const legacy = parsed as { error: string; message?: string };
+          return {
+            action: 'LLM_ASSIST_REQUIRED',
+            message: legacy.message,
+          };
         }
       } catch {
         // Not valid JSON
@@ -916,7 +928,7 @@ export class Agent {
     };
 
     // Strategy 1: Try parsing full content (legacy tools return plain JSON)
-    const fromFull = tryParse(content);
+    const fromFull = tryParseAction(content);
     if (fromFull !== undefined) {
       return fromFull;
     }
@@ -925,7 +937,7 @@ export class Agent {
     const separatorIndex = content.indexOf('\n\n');
     if (separatorIndex !== -1) {
       const outputPart = content.slice(separatorIndex + 2);
-      const fromOutput = tryParse(outputPart);
+      const fromOutput = tryParseAction(outputPart);
       if (fromOutput !== undefined) {
         return fromOutput;
       }

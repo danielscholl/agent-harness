@@ -642,6 +642,112 @@ describe('Agent', () => {
       );
     });
 
+    it('detects LLM_ASSIST_REQUIRED in ToolRegistry format (title\\n\\noutput)', async () => {
+      // Tool that returns ToolRegistry format: "title\n\nJSON"
+      const assistTool = {
+        name: 'delegate_task',
+        description: 'Delegate a task',
+        invoke: jest.fn<(args: Record<string, unknown>) => Promise<string>>().mockResolvedValue(
+          `Task delegated: research\n\n${JSON.stringify({
+            action: 'LLM_ASSIST_REQUIRED',
+            taskType: 'subagent_delegation',
+          })}`
+        ),
+      };
+
+      let callCount = 0;
+      const mockModelWithAssist = {
+        invoke: jest.fn<(messages: unknown) => Promise<AIMessage>>().mockImplementation(() => {
+          callCount++;
+          if (callCount === 1) {
+            return Promise.resolve(
+              new AIMessage({
+                content: '',
+                tool_calls: [{ id: 'call_1', name: 'delegate_task', args: {} }],
+              })
+            );
+          }
+          return Promise.resolve(new AIMessage({ content: 'Done' }));
+        }),
+        bindTools: jest.fn<(tools: StructuredToolInterface[]) => unknown>().mockReturnThis(),
+      };
+
+      mockGetModel.mockReturnValue({
+        success: true,
+        result: mockModelWithAssist as unknown as BaseChatModel,
+        message: 'Model retrieved',
+      });
+
+      const onDebug = jest.fn();
+      const agent = new Agent({
+        config,
+        callbacks: { ...callbacks, onDebug },
+        tools: [assistTool as unknown as StructuredToolInterface],
+      });
+
+      await agent.run('Delegate task');
+
+      expect(onDebug).toHaveBeenCalledWith(
+        'LLM_ASSIST_REQUIRED detected',
+        expect.objectContaining({ action: 'LLM_ASSIST_REQUIRED' })
+      );
+    });
+
+    it('detects LLM_ASSIST_REQUIRED in legacy ToolResponse format', async () => {
+      // Tool that returns legacy ToolResponse with error: 'LLM_ASSIST_REQUIRED'
+      const assistTool = {
+        name: 'legacy_tool',
+        description: 'Legacy tool',
+        invoke: jest.fn<(args: Record<string, unknown>) => Promise<string>>().mockResolvedValue(
+          JSON.stringify({
+            success: false,
+            error: 'LLM_ASSIST_REQUIRED',
+            message: 'Need LLM help with this',
+          })
+        ),
+      };
+
+      let callCount = 0;
+      const mockModelWithAssist = {
+        invoke: jest.fn<(messages: unknown) => Promise<AIMessage>>().mockImplementation(() => {
+          callCount++;
+          if (callCount === 1) {
+            return Promise.resolve(
+              new AIMessage({
+                content: '',
+                tool_calls: [{ id: 'call_1', name: 'legacy_tool', args: {} }],
+              })
+            );
+          }
+          return Promise.resolve(new AIMessage({ content: 'Done' }));
+        }),
+        bindTools: jest.fn<(tools: StructuredToolInterface[]) => unknown>().mockReturnThis(),
+      };
+
+      mockGetModel.mockReturnValue({
+        success: true,
+        result: mockModelWithAssist as unknown as BaseChatModel,
+        message: 'Model retrieved',
+      });
+
+      const onDebug = jest.fn();
+      const agent = new Agent({
+        config,
+        callbacks: { ...callbacks, onDebug },
+        tools: [assistTool as unknown as StructuredToolInterface],
+      });
+
+      await agent.run('Use legacy tool');
+
+      expect(onDebug).toHaveBeenCalledWith(
+        'LLM_ASSIST_REQUIRED detected',
+        expect.objectContaining({
+          action: 'LLM_ASSIST_REQUIRED',
+          message: 'Need LLM help with this',
+        })
+      );
+    });
+
     it('respects max iterations limit', async () => {
       // Set up model to always return tool calls (infinite loop scenario)
       const mockModelWithTools = {
