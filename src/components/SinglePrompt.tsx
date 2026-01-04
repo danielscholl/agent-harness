@@ -478,6 +478,7 @@ export function SinglePrompt({
     }
 
     // Show ExecutionStatus with phase info
+    // Note: toolNodes are already included in phases, so we don't need to pass them separately
     return (
       <Box flexDirection="column">
         {state.currentPhase > 0 && (
@@ -489,27 +490,6 @@ export function SinglePrompt({
               messageCount: state.messageCount,
               isActive: state.spinnerMessage !== '' && state.output === '',
             }}
-            toolNodes={[
-              ...state.completedTasks.map(
-                (task): ToolNode => ({
-                  id: task.id,
-                  name: task.name,
-                  status: task.success ? 'complete' : 'error',
-                  duration: task.duration >= 0 ? task.duration / 1000 : undefined,
-                  error: task.error,
-                  phase: task.phase,
-                })
-              ),
-              ...state.activeTasks.map(
-                (task): ToolNode => ({
-                  id: task.id,
-                  name: task.name,
-                  args: task.args !== undefined ? formatToolArgs(task.args) : undefined,
-                  status: 'running',
-                  phase: task.phase,
-                })
-              ),
-            ]}
             phases={phases}
             showToolHistory={true}
           />

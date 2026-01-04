@@ -79,7 +79,7 @@ Hello, Alice!
 
 # After completion (verbose shows phase history)
 • Phase 1 (2.9s)
-└── • Thinking (1 messages) - Response received (2.9s)
+└── • Thinking (1 messages) - Response received
 ```
 
 ## Prerequisites
