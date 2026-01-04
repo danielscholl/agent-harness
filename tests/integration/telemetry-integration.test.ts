@@ -46,7 +46,19 @@ jest.unstable_mockModule('../../src/model/llm.js', () => ({
   },
 }));
 
-// Import Agent after mocking LLMClient
+// Mock ToolRegistry
+const mockToolRegistryTools = jest.fn<() => Promise<StructuredToolInterface[]>>();
+const mockToolRegistryGetLastResult = jest.fn<() => undefined>();
+
+jest.unstable_mockModule('../../src/tools/index.js', () => ({
+  Tool,
+  ToolRegistry: {
+    tools: mockToolRegistryTools,
+    getLastResult: mockToolRegistryGetLastResult,
+  },
+}));
+
+// Import Agent after mocking LLMClient and ToolRegistry
 const { Agent } = await import('../../src/agent/agent.js');
 
 /**
@@ -99,6 +111,10 @@ describe('Telemetry Integration', () => {
     config.telemetry.enabled = true;
 
     jest.clearAllMocks();
+
+    // Default ToolRegistry mock returns
+    mockToolRegistryTools.mockResolvedValue([]);
+    mockToolRegistryGetLastResult.mockReturnValue(undefined);
 
     // Default mock for simple invocation
     mockInvoke.mockResolvedValue({
@@ -203,10 +219,11 @@ describe('Telemetry Integration', () => {
         modelName: 'gpt-4o',
       });
 
+      mockToolRegistryTools.mockResolvedValue([await toolToLangChain(greetingTool)]);
+
       const agent = new Agent({
         config,
         callbacks: callbacks as unknown as AgentCallbacks,
-        tools: [await toolToLangChain(greetingTool)],
         systemPrompt: 'Test',
       });
 
@@ -253,10 +270,11 @@ describe('Telemetry Integration', () => {
         modelName: 'gpt-4o',
       });
 
+      mockToolRegistryTools.mockResolvedValue([await toolToLangChain(greetingTool)]);
+
       const agent = new Agent({
         config,
         callbacks: callbacks as unknown as AgentCallbacks,
-        tools: [await toolToLangChain(greetingTool)],
         systemPrompt: 'Test',
       });
 
@@ -369,10 +387,11 @@ describe('Telemetry Integration', () => {
         modelName: 'gpt-4o',
       });
 
+      mockToolRegistryTools.mockResolvedValue([await toolToLangChain(greetingTool)]);
+
       const agent = new Agent({
         config,
         callbacks: callbacks as unknown as AgentCallbacks,
-        tools: [await toolToLangChain(greetingTool)],
         systemPrompt: 'Test',
       });
 
@@ -423,10 +442,11 @@ describe('Telemetry Integration', () => {
         modelName: 'gpt-4o',
       });
 
+      mockToolRegistryTools.mockResolvedValue([await toolToLangChain(failingTool)]);
+
       const agent = new Agent({
         config,
         callbacks: callbacks as unknown as AgentCallbacks,
-        tools: [await toolToLangChain(failingTool)],
         systemPrompt: 'Test',
       });
 
@@ -577,10 +597,11 @@ describe('Telemetry Integration', () => {
         modelName: 'gpt-4o',
       });
 
+      mockToolRegistryTools.mockResolvedValue([await toolToLangChain(greetingTool)]);
+
       const agent = new Agent({
         config,
         callbacks: callbacks as unknown as AgentCallbacks,
-        tools: [await toolToLangChain(greetingTool)],
         systemPrompt: 'Test',
       });
 

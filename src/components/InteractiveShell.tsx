@@ -1009,7 +1009,6 @@ export function InteractiveShell({
         agentRef.current = new Agent({
           config: currentState.config,
           callbacks: tracedCallbacks,
-          useToolRegistry: true,
         });
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';

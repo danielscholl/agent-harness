@@ -54,7 +54,21 @@ jest.unstable_mockModule('../../src/model/llm.js', () => ({
   },
 }));
 
-// Import Agent after mocking LLMClient
+// Mock ToolRegistry for tool injection
+// Note: Tool is imported statically above for test usage
+// This mock affects Agent's import of ToolRegistry
+const mockToolRegistryTools = jest.fn<() => Promise<StructuredToolInterface[]>>();
+const mockToolRegistryGetLastResult = jest.fn<() => undefined>();
+
+jest.unstable_mockModule('../../src/tools/index.js', () => ({
+  Tool, // Re-export real Tool for Agent's usage
+  ToolRegistry: {
+    tools: mockToolRegistryTools,
+    getLastResult: mockToolRegistryGetLastResult,
+  },
+}));
+
+// Import Agent after mocking
 const { Agent } = await import('../../src/agent/agent.js');
 
 describe('Agent Integration', () => {
@@ -97,6 +111,10 @@ describe('Agent Integration', () => {
       result: { content: SIMPLE_GREETING_RESPONSE.content },
       message: 'Success',
     });
+
+    // Default: no tools from registry
+    mockToolRegistryTools.mockResolvedValue([]);
+    mockToolRegistryGetLastResult.mockReturnValue(undefined);
 
     // Default: no model for tools
     mockGetModel.mockReturnValue({
@@ -186,10 +204,12 @@ describe('Agent Integration', () => {
     });
 
     it('executes tool calls and returns final response', async () => {
+      // Configure ToolRegistry to return the greeting tool
+      mockToolRegistryTools.mockResolvedValue([await toolToLangChain(greetingTool)]);
+
       const agent = new Agent({
         config,
         callbacks,
-        tools: [await toolToLangChain(greetingTool)],
         systemPrompt: 'You are a helpful assistant.',
       });
 
@@ -199,10 +219,12 @@ describe('Agent Integration', () => {
     });
 
     it('emits tool callbacks during execution', async () => {
+      // Configure ToolRegistry to return the greeting tool
+      mockToolRegistryTools.mockResolvedValue([await toolToLangChain(greetingTool)]);
+
       const agent = new Agent({
         config,
         callbacks,
-        tools: [await toolToLangChain(greetingTool)],
         systemPrompt: 'You are a helpful assistant.',
       });
 
@@ -276,10 +298,12 @@ describe('Agent Integration', () => {
         message: 'Model retrieved',
       });
 
+      // Configure ToolRegistry to return the failing tool
+      mockToolRegistryTools.mockResolvedValue([await toolToLangChain(failingTool)]);
+
       const agent = new Agent({
         config,
         callbacks,
-        tools: [await toolToLangChain(failingTool)],
         systemPrompt: 'You are a helpful assistant.',
       });
 
@@ -416,10 +440,15 @@ describe('Agent Integration', () => {
         message: 'Model retrieved',
       });
 
+      // Configure ToolRegistry to return both tools
+      mockToolRegistryTools.mockResolvedValue([
+        await toolToLangChain(addTool),
+        await toolToLangChain(multiplyTool),
+      ]);
+
       const agent = new Agent({
         config,
         callbacks,
-        tools: [await toolToLangChain(addTool), await toolToLangChain(multiplyTool)],
         systemPrompt: 'You are a calculator assistant.',
       });
 
@@ -467,10 +496,15 @@ describe('Agent Integration', () => {
         message: 'Model retrieved',
       });
 
+      // Configure ToolRegistry to return both tools
+      mockToolRegistryTools.mockResolvedValue([
+        await toolToLangChain(addTool),
+        await toolToLangChain(multiplyTool),
+      ]);
+
       const agent = new Agent({
         config,
         callbacks,
-        tools: [await toolToLangChain(addTool), await toolToLangChain(multiplyTool)],
         systemPrompt: 'You are a calculator assistant.',
       });
 
@@ -507,10 +541,12 @@ describe('Agent Integration', () => {
         message: 'Model retrieved',
       });
 
+      // Configure ToolRegistry to return the greeting tool
+      mockToolRegistryTools.mockResolvedValue([await toolToLangChain(greetingTool)]);
+
       const agent = new Agent({
         config,
         callbacks,
-        tools: [await toolToLangChain(greetingTool)],
         systemPrompt: 'Test',
         maxIterations: 3, // Limit iterations
       });
@@ -612,10 +648,12 @@ describe('Agent Integration', () => {
         message: 'Model retrieved',
       });
 
+      // Configure ToolRegistry to return the error tool
+      mockToolRegistryTools.mockResolvedValue([await toolToLangChain(errorTool)]);
+
       const agent = new Agent({
         config,
         callbacks,
-        tools: [await toolToLangChain(errorTool)],
         systemPrompt: 'Test',
       });
 
@@ -659,10 +697,12 @@ describe('Agent Integration', () => {
         message: 'Model retrieved',
       });
 
+      // Configure ToolRegistry to return the large tool
+      mockToolRegistryTools.mockResolvedValue([await toolToLangChain(largeTool)]);
+
       const agent = new Agent({
         config,
         callbacks,
-        tools: [await toolToLangChain(largeTool)],
         systemPrompt: 'Test',
       });
 
