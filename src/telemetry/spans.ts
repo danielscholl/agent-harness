@@ -36,6 +36,7 @@ import type {
   ToolSpanEndOptions,
   AgentSpanOptions,
 } from './types.js';
+import type { ToolExecutionResult } from '../tools/index.js';
 
 // -----------------------------------------------------------------------------
 // Constants
@@ -405,7 +406,8 @@ export interface TracingCallbacksInput {
   onToolEnd?: (
     ctx: CallbackSpanContext,
     toolName: string,
-    result: { success: boolean; error?: string; result?: unknown }
+    result: { success: boolean; error?: string; result?: unknown },
+    executionResult?: ToolExecutionResult
   ) => void;
 }
 
@@ -569,7 +571,7 @@ export function createTracingCallbacks(
       baseCallbacks?.onToolStart?.(ctx, toolName, args);
     },
 
-    onToolEnd: (ctx, toolName, result) => {
+    onToolEnd: (ctx, toolName, result, executionResult) => {
       const spanKey = getSpanKey(ctx);
       const span = state.toolSpans.get(spanKey);
 
@@ -596,8 +598,8 @@ export function createTracingCallbacks(
         state.toolSpans.delete(spanKey);
       }
 
-      // Call base callback
-      baseCallbacks?.onToolEnd?.(ctx, toolName, result);
+      // Call base callback (pass executionResult for extended signature)
+      baseCallbacks?.onToolEnd?.(ctx, toolName, result, executionResult);
     },
   };
 

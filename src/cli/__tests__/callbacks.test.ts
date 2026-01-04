@@ -352,7 +352,7 @@ describe('wrapWithTelemetry', () => {
       enableSensitiveData: false,
       result: undefined,
     });
-    expect(baseOnToolEnd).toHaveBeenCalledWith(ctx, 'read_file', result);
+    expect(baseOnToolEnd).toHaveBeenCalledWith(ctx, 'read_file', result, undefined);
   });
 
   it('records sensitive data when enabled', () => {

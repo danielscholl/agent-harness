@@ -93,6 +93,7 @@ export class Agent {
     this.enabledPermissions =
       options.enabledPermissions ??
       new Set<ToolPermission>(['read', 'write', 'execute', 'network']);
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- internal usage of deprecated option
     this.onToolResult = options.onToolResult;
 
     // Create LLMClient from config
@@ -480,8 +481,13 @@ export class Agent {
         callbackResult = toolResponse;
       }
 
-      // Emit tool end callback
-      this.callbacks?.onToolEnd?.(ctx, toolCall.name, callbackResult);
+      // Get execution result from registry if using ToolRegistry
+      const executionResult = this.useToolRegistry
+        ? ToolRegistry.getLastResult(toolCall.name)
+        : undefined;
+
+      // Emit tool end callback with execution result
+      this.callbacks?.onToolEnd?.(ctx, toolCall.name, callbackResult, executionResult);
 
       return { name: toolCall.name, id: toolCall.id, content };
     } catch (error) {
@@ -491,7 +497,12 @@ export class Agent {
         message: error instanceof Error ? error.message : 'Unknown error',
       };
 
-      this.callbacks?.onToolEnd?.(ctx, toolCall.name, errorResult);
+      // Get execution result from registry if using ToolRegistry (may have error info)
+      const executionResult = this.useToolRegistry
+        ? ToolRegistry.getLastResult(toolCall.name)
+        : undefined;
+
+      this.callbacks?.onToolEnd?.(ctx, toolCall.name, errorResult, executionResult);
 
       return { name: toolCall.name, id: toolCall.id, content: JSON.stringify(errorResult) };
     }

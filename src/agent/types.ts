@@ -107,6 +107,8 @@ export interface AgentOptions {
   /**
    * Callback for receiving structured tool execution results.
    * Called with full Tool.Result including metadata for each tool execution.
+   * @deprecated Use AgentCallbacks.onToolEnd with the optional executionResult parameter instead.
+   * This callback will be removed in a future version.
    */
   onToolResult?: (result: ToolExecutionResult) => void;
 }

@@ -576,7 +576,8 @@ describe('Agent', () => {
           success: false,
           error: 'UNKNOWN',
           message: 'Tool execution failed',
-        })
+        }),
+        undefined // executionResult is undefined for legacy tools
       );
     });
 

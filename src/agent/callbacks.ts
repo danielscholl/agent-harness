@@ -9,6 +9,7 @@
 import type { SpanContext, Message } from './types.js';
 import type { TokenUsage } from '../model/types.js';
 import type { ToolResponse } from '../tools/types.js';
+import type { ToolExecutionResult } from '../tools/index.js';
 import type { AgentErrorResponse } from '../errors/index.js';
 
 /**
@@ -33,8 +34,19 @@ export interface AgentCallbacks {
   // ─── Tool Execution ──────────────────────────────────────────────────
   /** Called before tool execution */
   onToolStart?: (ctx: SpanContext, toolName: string, args: Record<string, unknown>) => void;
-  /** Called after tool execution */
-  onToolEnd?: (ctx: SpanContext, toolName: string, result: ToolResponse) => void;
+  /**
+   * Called after tool execution.
+   * @param ctx - Span context for telemetry correlation
+   * @param toolName - Name of the executed tool
+   * @param result - Tool response (success/error with message)
+   * @param executionResult - Full execution result with metadata (when using ToolRegistry)
+   */
+  onToolEnd?: (
+    ctx: SpanContext,
+    toolName: string,
+    result: ToolResponse,
+    executionResult?: ToolExecutionResult
+  ) => void;
 
   // ─── UI Feedback ─────────────────────────────────────────────────────
   /** Called to show loading indicator */
