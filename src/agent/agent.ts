@@ -527,9 +527,13 @@ export class Agent {
   /**
    * Run the agent with a query and return the final answer.
    *
+   * Returns a plain string - either the LLM's answer or an error message prefixed with "Error:".
+   * For structured error handling, subscribe to the `onError` callback which receives
+   * `AgentErrorResponse` with error codes and metadata.
+   *
    * @param query - User's input query
    * @param history - Optional conversation history
-   * @returns Final answer string
+   * @returns Final answer string (or error message string prefixed with "Error:")
    */
   async run(query: string, history?: Message[]): Promise<string> {
     // Ensure initialized

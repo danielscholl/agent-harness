@@ -89,7 +89,12 @@ export interface AgentErrorResponse {
 
 /**
  * Discriminated union for agent responses.
- * Agent operations return this type at public boundaries.
+ * Used internally by error helper functions and callback payloads.
+ *
+ * Note: `Agent.run()` returns `Promise<string>`, not `AgentResponse`.
+ * Use `onError` callback to receive structured `AgentErrorResponse`.
+ *
+ * @internal Used by error helpers, not the public API return type
  */
 export type AgentResponse<T = unknown> = AgentSuccessResponse<T> | AgentErrorResponse;
 
