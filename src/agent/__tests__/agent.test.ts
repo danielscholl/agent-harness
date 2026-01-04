@@ -749,6 +749,7 @@ describe('Agent', () => {
         config: foundryConfig,
         callbacks,
         tools: [mockTool],
+        useToolRegistry: false, // Test legacy tool injection
       });
 
       await agent.run('Test query');
@@ -756,7 +757,7 @@ describe('Agent', () => {
       // Verify getModel was called (tool binding happened)
       expect(mockGetModel).toHaveBeenCalled();
 
-      // Verify bindTools was called
+      // Verify bindTools was called with only injected tools
       expect(mockModelWithTools.bindTools).toHaveBeenCalledWith([mockTool]);
 
       // Verify NO debug message about skipping tool binding
@@ -791,6 +792,7 @@ describe('Agent', () => {
         config: openaiConfig,
         callbacks,
         tools: [mockTool],
+        useToolRegistry: false, // Test legacy tool injection
       });
 
       await agent.run('Test query');
@@ -798,7 +800,7 @@ describe('Agent', () => {
       // Verify getModel was called (tool binding happened)
       expect(mockGetModel).toHaveBeenCalled();
 
-      // Verify bindTools was called
+      // Verify bindTools was called with only injected tools
       expect(mockModelWithTools.bindTools).toHaveBeenCalledWith([mockTool]);
     });
 
@@ -816,6 +818,7 @@ describe('Agent', () => {
         config: configWithDisabled,
         callbacks,
         tools: [mockTool],
+        useToolRegistry: false, // Test legacy tool injection
       });
 
       await agent.run('Test query');
@@ -858,6 +861,7 @@ describe('Agent', () => {
         config: configWithEnabled,
         callbacks,
         tools: [mockTool],
+        useToolRegistry: false, // Test legacy tool injection
       });
 
       await agent.run('Test query');
@@ -865,7 +869,7 @@ describe('Agent', () => {
       // Verify getModel was called (tool binding happened)
       expect(mockGetModel).toHaveBeenCalled();
 
-      // Verify bindTools was called
+      // Verify bindTools was called with only injected tools
       expect(mockModelWithTools.bindTools).toHaveBeenCalledWith([mockTool]);
 
       // Verify NO debug message about skipping tool binding
@@ -874,16 +878,17 @@ describe('Agent', () => {
       );
     });
 
-    it('skips tool binding when no tools provided', async () => {
+    it('skips tool binding when no tools provided in legacy mode', async () => {
       const agent = new Agent({
         config,
         callbacks,
         tools: [], // No tools
+        useToolRegistry: false, // Test legacy mode with no tools
       });
 
       await agent.run('Test query');
 
-      // Verify getModel was NOT called since there are no tools
+      // Verify getModel was NOT called since there are no tools in legacy mode
       expect(mockGetModel).not.toHaveBeenCalled();
     });
   });

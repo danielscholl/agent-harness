@@ -92,9 +92,10 @@ export interface AgentOptions {
   /** Options for skill loader (custom directories, debug callback) */
   skillLoaderOptions?: SkillLoaderOptions;
   /**
-   * Use ToolRegistry for tool management (default: false for backward compatibility).
+   * Use ToolRegistry for tool management (default: true).
    * When true, tools are retrieved from ToolRegistry based on enabledPermissions.
-   * Set to true to use the new tool system with structured results and metadata.
+   * Set to false to use legacy mode with only injected tools.
+   * @deprecated Legacy mode (useToolRegistry: false) will be removed in a future version.
    */
   useToolRegistry?: boolean;
   /**

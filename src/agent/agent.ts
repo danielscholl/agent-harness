@@ -88,7 +88,8 @@ export class Agent {
     this.maxIterations = options.maxIterations ?? DEFAULT_MAX_ITERATIONS;
     this.includeSkills = options.includeSkills !== false; // Default: true
     this.skillLoaderOptions = options.skillLoaderOptions;
-    this.useToolRegistry = options.useToolRegistry === true; // Default: false for backward compatibility
+    // eslint-disable-next-line @typescript-eslint/no-deprecated -- internal usage of deprecated option
+    this.useToolRegistry = options.useToolRegistry !== false; // Default: true (new standard)
     this.enabledPermissions =
       options.enabledPermissions ??
       new Set<ToolPermission>(['read', 'write', 'execute', 'network']);
