@@ -54,9 +54,13 @@ export interface VersionCheckResult {
 /**
  * Detect installation type based on executable path.
  * Resolves symlinks to get the actual installation location.
+ * Falls back to process.execPath if argv[1] doesn't look like a path.
  */
 function detectInstallationType(): InstallationType {
-  const execPath = process.argv[1] ?? '';
+  // Try argv[1] first (script path), then execPath (binary path)
+  // For compiled binaries, argv[1] may be the subcommand, not a path
+  const argv1 = process.argv[1] ?? '';
+  const execPath = argv1.includes('/') || argv1.includes('\\') ? argv1 : process.execPath;
 
   // Resolve symlinks to get the real path
   let resolvedPath = execPath;
@@ -293,9 +297,11 @@ export async function checkForUpdates(): Promise<VersionCheckResult | null> {
     return null;
   }
 
-  // If version is unknown, assume update is available to allow --force updates
+  // Only show update available when we can properly compare versions
+  // When currentVersion is 'unknown', don't show banner (avoids "unknown → x" messages)
+  // Users can still use --force to update when version is unknown
   const updateAvailable =
-    currentVersion === 'unknown' || compareSemver(currentVersion, latestVersion) < 0;
+    currentVersion !== 'unknown' && compareSemver(currentVersion, latestVersion) < 0;
 
   return {
     currentVersion,
@@ -430,15 +436,33 @@ function verifyChecksum(data: Buffer, expectedHash: string): boolean {
 }
 
 /**
+ * Normalize a filename from checksum files by removing common prefixes.
+ * Handles: "./" prefix, "*" binary mode prefix
+ */
+function normalizeChecksumFilename(filename: string): string {
+  let normalized = filename.trim();
+  // Remove leading "./" path prefix
+  if (normalized.startsWith('./')) {
+    normalized = normalized.slice(2);
+  }
+  // Remove leading "*" binary mode indicator (used by some sha256sum tools)
+  if (normalized.startsWith('*')) {
+    normalized = normalized.slice(1);
+  }
+  return normalized;
+}
+
+/**
  * Fetch checksum file from GitHub releases.
+ * Prioritizes SHA256SUMS/checksums.txt over per-asset .sha256 files.
  */
 async function fetchChecksumFile(release: GitHubRelease): Promise<Map<string, string>> {
   const checksums = new Map<string, string>();
 
-  // Look for checksums file (SHA256SUMS or similar)
-  const checksumAsset = release.assets.find(
-    (a) => a.name === 'SHA256SUMS' || a.name === 'checksums.txt' || a.name.endsWith('.sha256')
-  );
+  // Prioritize combined checksum files over per-asset .sha256 files
+  const checksumAsset =
+    release.assets.find((a) => a.name === 'SHA256SUMS' || a.name === 'checksums.txt') ??
+    release.assets.find((a) => a.name.endsWith('.sha256'));
 
   if (checksumAsset === undefined) {
     return checksums;
@@ -451,11 +475,12 @@ async function fetchChecksumFile(release: GitHubRelease): Promise<Map<string, st
     }
 
     const content = await response.text();
-    // Parse format: "hash  filename" or "hash filename"
+    // Parse format: "hash  filename" or "hash *filename" or "hash ./filename"
     for (const line of content.split('\n')) {
       const match = line.match(/^([a-fA-F0-9]{64})\s+(.+)$/);
       if (match !== null && match[1] !== undefined && match[2] !== undefined) {
-        checksums.set(match[2].trim(), match[1]);
+        const normalizedName = normalizeChecksumFilename(match[2]);
+        checksums.set(normalizedName, match[1]);
       }
     }
   } catch {
@@ -689,12 +714,17 @@ export const updateHandler: CommandHandler = async (args, context): Promise<Comm
     context.onOutput(`Latest version: ${versionInfo.latestVersion}`, 'info');
     context.onOutput('', 'info');
 
-    if (!versionInfo.updateAvailable && !force) {
+    // Handle unknown current version
+    if (versionInfo.currentVersion === 'unknown') {
+      if (!force) {
+        context.onOutput('Current version unknown. Use --force to update.', 'warning');
+        return { success: false, message: 'Version unknown - use --force' };
+      }
+      context.onOutput('Current version unknown, proceeding with --force...', 'info');
+    } else if (!versionInfo.updateAvailable && !force) {
       context.onOutput('You are already on the latest version!', 'success');
       return { success: true, message: 'Already up to date' };
-    }
-
-    if (versionInfo.updateAvailable) {
+    } else if (versionInfo.updateAvailable) {
       context.onOutput(
         `Update available: ${versionInfo.currentVersion} → ${versionInfo.latestVersion}`,
         'success'

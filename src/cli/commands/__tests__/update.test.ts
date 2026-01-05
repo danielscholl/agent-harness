@@ -222,6 +222,30 @@ describe('update command handler', () => {
       );
     });
 
+    it('requires --force when VERSION is unknown', async () => {
+      mockVersion = '';
+      // Mock GitHub API to return a version
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            tag_name: 'v0.2.0',
+            html_url: 'https://github.com/danielscholl/agent-base-v2/releases/tag/v0.2.0',
+            assets: [],
+          }),
+      });
+
+      const { updateHandler } = await import('../update.js');
+      const context = createMockContext();
+      const result = await updateHandler('', context);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('Version unknown - use --force');
+      expect(
+        context.outputs.some((o) => o.content.includes('Current version unknown. Use --force'))
+      ).toBe(true);
+    });
+
     it('allows updates when VERSION is unknown with --force', async () => {
       mockVersion = '';
       // Mock GitHub API to return a version
@@ -256,6 +280,11 @@ describe('update command handler', () => {
 
       expect(result.success).toBe(true);
       expect(result.message).toBe('Update complete');
+      expect(
+        context.outputs.some((o) =>
+          o.content.includes('Current version unknown, proceeding with --force')
+        )
+      ).toBe(true);
     });
   });
 
