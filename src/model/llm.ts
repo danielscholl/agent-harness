@@ -361,6 +361,12 @@ export class LLMClient {
       return typeof deployment === 'string' ? deployment : 'unknown';
     }
     if (providerName === 'foundry') {
+      // Local mode uses modelAlias, cloud mode uses modelDeployment
+      const mode = providerConfig.mode;
+      if (mode === 'local') {
+        const modelAlias = providerConfig.modelAlias;
+        return typeof modelAlias === 'string' ? modelAlias : 'unknown';
+      }
       const modelDeployment = providerConfig.modelDeployment;
       return typeof modelDeployment === 'string' ? modelDeployment : 'unknown';
     }

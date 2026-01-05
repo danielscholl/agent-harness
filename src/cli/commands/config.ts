@@ -165,8 +165,42 @@ export const configShowHandler: CommandHandler = async (_args, context): Promise
     const defaultConfig = config.providers[defaultProvider] as Record<string, unknown> | undefined;
 
     if (defaultConfig !== undefined) {
-      // Show endpoint for azure/foundry
-      if (defaultProvider === 'azure') {
+      // Handle foundry specially - show mode and appropriate settings
+      if (defaultProvider === 'foundry') {
+        const mode = (defaultConfig.mode as string | undefined) ?? 'cloud';
+        rows.push({
+          setting: `  ${defaultProvider} Mode`,
+          value: mode,
+        });
+
+        if (mode === 'local') {
+          // Local mode: show modelAlias
+          const modelAlias = defaultConfig.modelAlias as string | undefined;
+          if (modelAlias !== undefined) {
+            rows.push({
+              setting: `  ${defaultProvider} Model`,
+              value: modelAlias,
+            });
+          }
+        } else {
+          // Cloud mode: show endpoint and deployment
+          const endpoint = defaultConfig.projectEndpoint as string | undefined;
+          if (endpoint !== undefined) {
+            rows.push({
+              setting: `  ${defaultProvider} Endpoint`,
+              value: endpoint,
+            });
+          }
+          const modelDeployment = defaultConfig.modelDeployment as string | undefined;
+          if (modelDeployment !== undefined) {
+            rows.push({
+              setting: `  ${defaultProvider} Deployment`,
+              value: modelDeployment,
+            });
+          }
+        }
+      } else if (defaultProvider === 'azure') {
+        // Azure: show endpoint and deployment
         const endpoint = defaultConfig.endpoint as string | undefined;
         if (endpoint !== undefined) {
           rows.push({
@@ -174,51 +208,36 @@ export const configShowHandler: CommandHandler = async (_args, context): Promise
             value: endpoint,
           });
         }
-      }
-      if (defaultProvider === 'foundry') {
-        const endpoint = defaultConfig.projectEndpoint as string | undefined;
-        if (endpoint !== undefined) {
+        const deployment = defaultConfig.deployment as string | undefined;
+        if (deployment !== undefined) {
           rows.push({
-            setting: `  ${defaultProvider} Endpoint`,
-            value: endpoint,
+            setting: `  ${defaultProvider} Deployment`,
+            value: deployment,
           });
         }
-      }
-
-      // Show model/deployment
-      const deployment = defaultConfig.deployment as string | undefined;
-      const modelDeployment = defaultConfig.modelDeployment as string | undefined;
-      const model = defaultConfig.model as string | undefined;
-      const modelAlias = defaultConfig.modelAlias as string | undefined;
-
-      if (deployment !== undefined) {
-        rows.push({
-          setting: `  ${defaultProvider} Deployment`,
-          value: deployment,
-        });
-      } else if (modelDeployment !== undefined) {
-        rows.push({
-          setting: `  ${defaultProvider} Deployment`,
-          value: modelDeployment,
-        });
-      } else if (model !== undefined) {
-        rows.push({
-          setting: `  ${defaultProvider} Model`,
-          value: model,
-        });
-      } else if (modelAlias !== undefined) {
-        rows.push({
-          setting: `  ${defaultProvider} Model`,
-          value: modelAlias,
-        });
+      } else {
+        // Other providers: show model
+        const model = defaultConfig.model as string | undefined;
+        if (model !== undefined) {
+          rows.push({
+            setting: `  ${defaultProvider} Model`,
+            value: model,
+          });
+        }
       }
     }
   }
 
   // Telemetry row
+  const telemetryParts: string[] = [config.telemetry.enabled ? 'Enabled' : 'Disabled'];
+  if (config.telemetry.enabled) {
+    telemetryParts.push(
+      config.telemetry.enableSensitiveData ? 'sensitive data: on' : 'sensitive data: off'
+    );
+  }
   rows.push({
     setting: 'Telemetry',
-    value: config.telemetry.enabled ? 'Enabled' : 'Disabled',
+    value: telemetryParts.join(', '),
   });
 
   // Memory row
