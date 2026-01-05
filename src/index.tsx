@@ -84,9 +84,10 @@ if (command === 'skill') {
 if (command === 'update') {
   const context = await createCliContext();
   const wantsHelp = process.argv.includes('--help') || process.argv.includes('-h');
+  const hasSubcommand = restArgs.length > 0;
   let subArgs = restArgs.join(' ');
   if (wantsHelp) {
-    subArgs = subArgs ? subArgs + ' --help' : '--help';
+    subArgs = hasSubcommand ? subArgs + ' --help' : '--help';
   }
   const result = await updateHandler(subArgs, context);
   process.exit(result.success ? 0 : 1);

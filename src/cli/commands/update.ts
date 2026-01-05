@@ -17,14 +17,18 @@ const GIT_HTTPS_URL = 'https://github.com/danielscholl/agent-base-v2';
  */
 function detectInstallationType(): 'global' | 'local' | 'unknown' {
   const execPath = process.argv[1] ?? '';
+  const normalizedPath = execPath.replace(/\\/g, '/');
 
-  // Check for global bun installation patterns
-  if (execPath.includes('.bun/install/global') || execPath.includes('node_modules/.bin')) {
+  // Check for global bun installation patterns using path segment boundaries
+  if (
+    /(^|\/)\.bun\/install\/global(\/|$)/.test(normalizedPath) ||
+    /(^|\/)node_modules\/\.bin(\/|$)/.test(normalizedPath)
+  ) {
     return 'global';
   }
 
-  // Check for local development (running from source)
-  if (execPath.includes('src/index.tsx') || execPath.includes('dist/')) {
+  // Check for local development (running from source) with more specific path checks
+  if (/(^|\/)src\/index\.tsx$/.test(normalizedPath) || /(^|\/)dist\//.test(normalizedPath)) {
     return 'local';
   }
 
@@ -41,22 +45,34 @@ async function runCommand(
   return new Promise((resolve) => {
     const proc = spawn(command, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
-      shell: true,
     });
 
     let output = '';
     let errorOutput = '';
+    let settled = false;
+
+    // Named handlers for proper cleanup
+    const stdoutHandler = (data: Buffer): void => {
+      output += data.toString();
+    };
+
+    const stderrHandler = (data: Buffer): void => {
+      errorOutput += data.toString();
+    };
+
+    const cleanup = (): void => {
+      proc.stdout.removeListener('data', stdoutHandler);
+      proc.stderr.removeListener('data', stderrHandler);
+    };
 
     // stdout and stderr are guaranteed to be Readable streams since stdio is ['ignore', 'pipe', 'pipe']
-    proc.stdout.on('data', (data: Buffer) => {
-      output += data.toString();
-    });
+    proc.stdout.on('data', stdoutHandler);
+    proc.stderr.on('data', stderrHandler);
 
-    proc.stderr.on('data', (data: Buffer) => {
-      errorOutput += data.toString();
-    });
-
-    proc.on('close', (code) => {
+    proc.once('close', (code) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
       if (code === 0) {
         resolve({ success: true, output });
       } else {
@@ -64,7 +80,10 @@ async function runCommand(
       }
     });
 
-    proc.on('error', (err) => {
+    proc.once('error', (err) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
       resolve({ success: false, output: err.message });
     });
   });
