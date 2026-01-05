@@ -1,6 +1,6 @@
 # Context Storage Architecture
 
-> **Status:** Current
+> **Status:** Planned
 > **Source of truth:** [`src/utils/context.ts`](../../src/utils/context.ts)
 
 This document describes the context storage strategy for managing tool outputs.
@@ -15,7 +15,13 @@ This document describes the context storage strategy for managing tool outputs.
 
 ---
 
-## Current Implementation
+## Implementation Status
+
+> **Note:** The `ContextManager` class is fully implemented in `src/utils/context.ts`, but is **not yet integrated** into the Agent's tool execution loop. Tool outputs are currently kept in message history only. Integration is planned for a future release.
+
+---
+
+## Planned Implementation
 
 ### Persistence Strategy
 

@@ -198,7 +198,7 @@ This prevents corruption if write is interrupted.
 
 ## Context Summary Generation
 
-When a session is saved, a context summary is generated for AI resume:
+When a session is resumed, a context summary is generated for **user display only**:
 
 ```
 You are resuming a previous conversation session.
@@ -211,6 +211,8 @@ First topic: Help me implement JWT authentication...
 
 The conversation history follows. Continue naturally from where you left off.
 ```
+
+> **Note:** This summary is shown to the user in the UI as a visual indicator of session resumption. It is **not injected into the LLM's message history**. The LLM receives the actual conversation history directly, which provides sufficient context for continuation. This design avoids duplicating information and keeps the context window focused on the real conversation.
 
 ---
 

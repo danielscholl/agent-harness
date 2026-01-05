@@ -261,10 +261,12 @@ Capped at: maxDelay = 10000ms
 
 ### Jitter
 
-Random variation (±25%) to prevent thundering herd:
+Random variation (±20%) to prevent thundering herd:
 
 ```typescript
-delay = baseDelay * (0.75 + Math.random() * 0.5);
+// jitterMultiplier ranges from 0.8 to 1.2 (±20%)
+jitterMultiplier = 1 + (Math.random() * 2 - 1) * 0.2;
+delay = cappedDelay * jitterMultiplier;
 ```
 
 ### Retry-After Header

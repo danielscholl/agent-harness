@@ -209,6 +209,9 @@ export const bashTool = Tool.define<
         title = `Failed (exit ${String(result.exitCode)}): ${displayCmd}`;
       }
 
+      // Set error flag for non-zero exit codes (used by ToolRegistry for failure signaling)
+      const isError = result.exitCode !== 0;
+
       return {
         title,
         metadata: {
@@ -216,6 +219,7 @@ export const bashTool = Tool.define<
           exitCode: result.exitCode,
           truncated: result.truncated,
           durationMs,
+          error: isError,
         },
         output,
       };
@@ -230,6 +234,7 @@ export const bashTool = Tool.define<
           exitCode: null,
           truncated: false,
           durationMs,
+          error: true,
         },
         output: `Error executing command: ${message}`,
       };
