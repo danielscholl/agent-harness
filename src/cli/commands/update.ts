@@ -226,12 +226,13 @@ async function fetchLatestRelease(): Promise<GitHubRelease | null> {
 /**
  * Validate and sanitize a semver version string.
  * Returns the cleaned version or null if invalid.
+ * Follows Semantic Versioning 2.0.0 spec: pre-release uses [0-9A-Za-z-] only.
  */
 function sanitizeSemver(version: string): string | null {
   // Strip 'v' prefix and validate format: major.minor.patch with optional pre-release
   const cleaned = version.replace(/^v/, '');
-  // Match: X.Y.Z or X.Y.Z-prerelease or X.Y.Z-prerelease.N
-  const semverPattern = /^(\d+)\.(\d+)\.(\d+)(?:-[\w.]+)?$/;
+  // Match: X.Y.Z or X.Y.Z-prerelease (semver 2.0.0: alphanumerics and hyphens only)
+  const semverPattern = /^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z-.]+)?$/;
   if (!semverPattern.test(cleaned)) {
     return null;
   }
@@ -262,14 +263,20 @@ function sanitizeReleaseUrl(url: string): string | null {
 /**
  * Compare two semver versions.
  * Returns: -1 if a < b, 0 if a == b, 1 if a > b
+ * Handles pre-release versions: 1.0.0-alpha < 1.0.0-beta < 1.0.0
  */
 function compareSemver(a: string, b: string): number {
   // Strip 'v' prefix if present
   const cleanA = a.replace(/^v/, '');
   const cleanB = b.replace(/^v/, '');
 
-  const partsA = cleanA.split('.').map((n) => parseInt(n, 10) || 0);
-  const partsB = cleanB.split('.').map((n) => parseInt(n, 10) || 0);
+  // Split into base version and pre-release
+  const [baseA, preA] = cleanA.split('-');
+  const [baseB, preB] = cleanB.split('-');
+
+  // Compare base versions (major.minor.patch)
+  const partsA = (baseA ?? '').split('.').map((n) => parseInt(n, 10) || 0);
+  const partsB = (baseB ?? '').split('.').map((n) => parseInt(n, 10) || 0);
 
   for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
     const numA = partsA[i] ?? 0;
@@ -277,6 +284,19 @@ function compareSemver(a: string, b: string): number {
     if (numA < numB) return -1;
     if (numA > numB) return 1;
   }
+
+  // Base versions are equal, compare pre-release
+  // No pre-release > pre-release (1.0.0 > 1.0.0-beta)
+  if (preA === undefined && preB !== undefined) return 1;
+  if (preA !== undefined && preB === undefined) return -1;
+  if (preA === undefined && preB === undefined) return 0;
+
+  // Both have pre-release, compare lexicographically
+  // TypeScript knows both are defined here due to the checks above
+  const preAStr = preA as string;
+  const preBStr = preB as string;
+  if (preAStr < preBStr) return -1;
+  if (preAStr > preBStr) return 1;
   return 0;
 }
 
@@ -330,10 +350,13 @@ function getVersionCacheFile(): string {
 
 /**
  * Load cached version check result with validation.
+ * Deletes invalid cache files to prevent repeated validation failures.
  */
 export async function loadVersionCache(): Promise<VersionCheckResult | null> {
+  const cacheFile = getVersionCacheFile();
+
   try {
-    const content = await readFile(getVersionCacheFile(), 'utf-8');
+    const content = await readFile(cacheFile, 'utf-8');
     const parsed = JSON.parse(content) as Record<string, unknown>;
 
     // Validate required fields exist and have correct types
@@ -344,6 +367,8 @@ export async function loadVersionCache(): Promise<VersionCheckResult | null> {
       typeof parsed.releaseUrl !== 'string' ||
       typeof parsed.checkedAt !== 'number'
     ) {
+      // Invalid structure - delete the cache file
+      await unlink(cacheFile).catch(() => {});
       return null;
     }
 
@@ -352,7 +377,8 @@ export async function loadVersionCache(): Promise<VersionCheckResult | null> {
     const releaseUrl = sanitizeReleaseUrl(parsed.releaseUrl);
 
     if (latestVersion === null || releaseUrl === null) {
-      // Invalid cached data - delete and return null
+      // Invalid cached data - delete the cache file
+      await unlink(cacheFile).catch(() => {});
       return null;
     }
 
@@ -531,6 +557,9 @@ async function updateShellBinary(
 
   context.onOutput(`Downloading ${archiveName}...`, 'info');
 
+  // Create temp directory early so we can clean it up in finally
+  const tmpDir = join(INSTALL_DIR, `tmp.${randomUUID()}`);
+
   try {
     // Download archive
     const response = await fetch(asset.browser_download_url);
@@ -540,8 +569,6 @@ async function updateShellBinary(
 
     const arrayBuffer = await response.arrayBuffer();
     const downloadedData = Buffer.from(arrayBuffer);
-    // Use UUID for unique temp directory to avoid collisions
-    const tmpDir = join(INSTALL_DIR, `tmp.${randomUUID()}`);
     const archivePath = join(tmpDir, archiveName);
 
     // Verify checksum if available
@@ -604,9 +631,6 @@ async function updateShellBinary(
       );
     }
 
-    // Cleanup
-    await runCommand('rm', ['-rf', tmpDir]);
-
     return true;
   } catch (error) {
     context.onOutput(
@@ -614,6 +638,9 @@ async function updateShellBinary(
       'error'
     );
     return false;
+  } finally {
+    // Always cleanup temp directory, even on error
+    await runCommand('rm', ['-rf', tmpDir]).catch(() => {});
   }
 }
 
