@@ -103,8 +103,15 @@ function Install-Binary {
     New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
     Expand-Archive -Path $archivePath -DestinationPath $extractDir -Force
 
-    # Copy binary to WindowsApps
+    # Copy binary and assets to WindowsApps
+    # Assets (prompts/, _bundled_skills/) must be alongside agent.exe for runtime resolution
     Copy-Item -Path "$extractDir\agent.exe" -Destination "$BIN_DIR\agent.exe" -Force
+    if (Test-Path "$extractDir\prompts") {
+        Copy-Item -Path "$extractDir\prompts" -Destination "$BIN_DIR\prompts" -Recurse -Force
+    }
+    if (Test-Path "$extractDir\_bundled_skills") {
+        Copy-Item -Path "$extractDir\_bundled_skills" -Destination "$BIN_DIR\_bundled_skills" -Recurse -Force
+    }
 
     Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
 
