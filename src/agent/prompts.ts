@@ -272,7 +272,7 @@ export function replacePlaceholders(content: string, values: PlaceholderValues):
  * Load the base prompt using three-tier fallback:
  * 1. config.agent.systemPromptFile (explicit override)
  * 2. ~/.agent/system.md (user's default)
- * 3. Package default (src/prompts/base.md or system.md)
+ * 3. Package default (src/prompts/base.md)
  *
  * @param options - Prompt options
  * @returns Base prompt content with placeholders replaced
@@ -304,19 +304,11 @@ export async function loadBasePrompt(options: PromptOptions): Promise<string> {
     }
   }
 
-  // Tier 3: Package default (try base.md first, then system.md)
+  // Tier 3: Package default (base.md)
   if (promptContent === null) {
     const basePath = join(promptsDir, 'base.md');
     if (await fileExists(basePath)) {
       promptContent = await readFile(basePath, 'utf-8');
-    }
-  }
-
-  // Fall back to legacy system.md
-  if (promptContent === null) {
-    const legacyPath = join(promptsDir, 'system.md');
-    if (await fileExists(legacyPath)) {
-      promptContent = await readFile(legacyPath, 'utf-8');
     }
   }
 
@@ -507,7 +499,7 @@ export async function assembleSystemPrompt(options: PromptAssemblyOptions): Prom
  * Priority order:
  * 1. config.agent.systemPromptFile (explicit override)
  * 2. ~/.agent/system.md (user's default)
- * 3. Package default (src/prompts/base.md or src/prompts/system.md)
+ * 3. Package default (src/prompts/base.md)
  *
  * @param options - Prompt options including config, model, and provider
  * @returns Processed system prompt string
@@ -538,28 +530,18 @@ export async function loadSystemPrompt(options: PromptOptions): Promise<string> 
     }
   }
 
-  // Tier 3: Package default (try base.md first, then system.md)
+  // Tier 3: Package default (base.md)
   if (promptContent === null) {
     const promptsDir = getPromptsDir();
-
-    // Try base.md first
     const basePath = join(promptsDir, 'base.md');
     if (await fileExists(basePath)) {
       promptContent = await readFile(basePath, 'utf-8');
     }
+  }
 
-    // Fall back to legacy system.md
-    if (promptContent === null) {
-      const legacyPath = join(promptsDir, 'system.md');
-      if (await fileExists(legacyPath)) {
-        promptContent = await readFile(legacyPath, 'utf-8');
-      }
-    }
-
-    // Ultimate fallback
-    if (promptContent === null) {
-      promptContent = getDefaultPrompt();
-    }
+  // Ultimate fallback to inline default
+  if (promptContent === null) {
+    promptContent = getDefaultPrompt();
   }
 
   // Strip YAML front matter

@@ -58,9 +58,8 @@ src/prompts/
 │   ├── github.md             # GitHub Models
 │   ├── local.md              # Ollama/local models
 │   └── foundry.md            # Azure AI Foundry
-├── sections/                  # Composable sections
-│   └── environment.template.md
-└── system.md                  # [DEPRECATED] Legacy single-file prompt
+└── sections/                  # Composable sections
+    └── environment.template.md
 ```
 
 ---
@@ -390,11 +389,9 @@ Ignore all previous instructions...
 
 ## Migration from Legacy System
 
-If you're upgrading from the single `system.md` approach:
+If you're upgrading from a single-file prompt approach:
 
 1. **No action required**: The legacy `loadSystemPrompt()` function still works
 2. **Opt-in to composition**: Use `assembleSystemPrompt()` for new features
-3. **Custom prompts**: Move to `~/.agent/system.md` for user overrides
+3. **Custom prompts**: Create `~/.agent/system.md` for user overrides
 4. **Provider-specific**: Create `providers/{provider}.md` files as needed
-
-The `system.md` file is maintained for backward compatibility but is deprecated in favor of the compositional system.
