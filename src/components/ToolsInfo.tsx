@@ -14,6 +14,7 @@ import {
   type ToolPermission,
   getWorkspaceRoot,
   isFilesystemWritesEnabled,
+  initializeWorkspaceRoot,
   DEFAULT_MAX_READ_BYTES,
   DEFAULT_MAX_WRITE_BYTES,
 } from '../tools/index.js';
@@ -153,7 +154,12 @@ export function ToolsInfo(): React.ReactElement {
   useEffect(() => {
     async function loadTools(): Promise<void> {
       // Load config to ensure environment is initialized
-      await loadConfig();
+      const config = await loadConfig();
+
+      // Initialize workspace root from config (before building tool groups)
+      if (config.success && config.result !== undefined) {
+        await initializeWorkspaceRoot(config.result.agent.workspaceRoot);
+      }
 
       // Build tool groups from registry
       const toolGroups = await buildToolGroups();

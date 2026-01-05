@@ -113,7 +113,7 @@ export class Agent {
 
     // Initialize workspace root from config (respects env var as hard cap)
     // This ensures tools use the correct workspace before any tool calls
-    const workspaceInit = initializeWorkspaceRoot(
+    const workspaceInit = await initializeWorkspaceRoot(
       this.config.agent.workspaceRoot,
       this.callbacks?.onDebug
     );

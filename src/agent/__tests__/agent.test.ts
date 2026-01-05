@@ -65,10 +65,11 @@ jest.unstable_mockModule('../../tools/index.js', () => ({
     tools: mockToolRegistryTools,
     getLastResult: mockToolRegistryGetLastResult,
   },
-  initializeWorkspaceRoot: () => ({
-    workspaceRoot: '/test/workspace',
-    source: 'env' as const,
-  }),
+  initializeWorkspaceRoot: () =>
+    Promise.resolve({
+      workspaceRoot: '/test/workspace',
+      source: 'env' as const,
+    }),
 }));
 
 // Import after all mocks are set up
