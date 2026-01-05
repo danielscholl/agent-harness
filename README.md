@@ -106,6 +106,24 @@ Requires [Ollama](https://ollama.ai/) or [Docker Desktop](https://www.docker.com
 
 ## Quick Setup
 
+### Option 1: Install as Global Tool (Recommended)
+
+```bash
+# 1. Install agent globally
+bun install -g github:danielscholl/agent-base-v2
+
+# 2. Configure provider (example: OpenAI)
+export OPENAI_API_KEY="your-api-key"
+
+# 3. Start agent
+agent
+
+# Update to latest version
+agent update
+```
+
+### Option 2: Run from Source (Development)
+
 ```bash
 # 1. Clone and install
 git clone https://github.com/danielscholl/agent-base-v2.git
