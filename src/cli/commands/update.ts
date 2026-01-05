@@ -211,6 +211,42 @@ async function fetchLatestRelease(): Promise<GitHubRelease | null> {
 }
 
 /**
+ * Validate and sanitize a semver version string.
+ * Returns the cleaned version or null if invalid.
+ */
+function sanitizeSemver(version: string): string | null {
+  // Strip 'v' prefix and validate format: major.minor.patch with optional pre-release
+  const cleaned = version.replace(/^v/, '');
+  // Match: X.Y.Z or X.Y.Z-prerelease or X.Y.Z-prerelease.N
+  const semverPattern = /^(\d+)\.(\d+)\.(\d+)(?:-[\w.]+)?$/;
+  if (!semverPattern.test(cleaned)) {
+    return null;
+  }
+  // Return only the sanitized string (prevents injection of unexpected characters)
+  return cleaned;
+}
+
+/**
+ * Validate a GitHub release URL.
+ * Returns the URL if valid, null otherwise.
+ */
+function sanitizeReleaseUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    // Only allow github.com release URLs
+    if (
+      parsed.hostname === 'github.com' &&
+      parsed.pathname.startsWith(`/${REPO_OWNER}/${REPO_NAME}/releases/`)
+    ) {
+      return parsed.href;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Compare two semver versions.
  * Returns: -1 if a < b, 0 if a == b, 1 if a > b
  */
@@ -234,7 +270,7 @@ function compareSemver(a: string, b: string): number {
 /**
  * Check for updates and return version info.
  * This is exported for use by other components (e.g., startup banner).
- * Returns null only if we can't reach GitHub API.
+ * Returns null only if we can't reach GitHub API or data validation fails.
  */
 export async function checkForUpdates(): Promise<VersionCheckResult | null> {
   const currentVersion = getCurrentVersion();
@@ -244,7 +280,19 @@ export async function checkForUpdates(): Promise<VersionCheckResult | null> {
     return null;
   }
 
-  const latestVersion = release.tag_name.replace(/^v/, '');
+  // Validate and sanitize network data to prevent malicious data from being cached
+  const latestVersion = sanitizeSemver(release.tag_name);
+  if (latestVersion === null) {
+    // Invalid version format from API - reject to prevent cache poisoning
+    return null;
+  }
+
+  const releaseUrl = sanitizeReleaseUrl(release.html_url);
+  if (releaseUrl === null) {
+    // Invalid or unexpected URL - reject for security
+    return null;
+  }
+
   // If version is unknown, assume update is available to allow --force updates
   const updateAvailable =
     currentVersion === 'unknown' || compareSemver(currentVersion, latestVersion) < 0;
@@ -253,7 +301,7 @@ export async function checkForUpdates(): Promise<VersionCheckResult | null> {
     currentVersion,
     latestVersion,
     updateAvailable,
-    releaseUrl: release.html_url,
+    releaseUrl,
     checkedAt: Date.now(),
   };
 }
@@ -266,12 +314,40 @@ function getVersionCacheFile(): string {
 }
 
 /**
- * Load cached version check result.
+ * Load cached version check result with validation.
  */
 export async function loadVersionCache(): Promise<VersionCheckResult | null> {
   try {
     const content = await readFile(getVersionCacheFile(), 'utf-8');
-    return JSON.parse(content) as VersionCheckResult;
+    const parsed = JSON.parse(content) as Record<string, unknown>;
+
+    // Validate required fields exist and have correct types
+    if (
+      typeof parsed.currentVersion !== 'string' ||
+      typeof parsed.latestVersion !== 'string' ||
+      typeof parsed.updateAvailable !== 'boolean' ||
+      typeof parsed.releaseUrl !== 'string' ||
+      typeof parsed.checkedAt !== 'number'
+    ) {
+      return null;
+    }
+
+    // Validate the cached data hasn't been tampered with
+    const latestVersion = sanitizeSemver(parsed.latestVersion);
+    const releaseUrl = sanitizeReleaseUrl(parsed.releaseUrl);
+
+    if (latestVersion === null || releaseUrl === null) {
+      // Invalid cached data - delete and return null
+      return null;
+    }
+
+    return {
+      currentVersion: parsed.currentVersion,
+      latestVersion,
+      updateAvailable: parsed.updateAvailable,
+      releaseUrl,
+      checkedAt: parsed.checkedAt,
+    };
   } catch {
     return null;
   }
@@ -279,11 +355,21 @@ export async function loadVersionCache(): Promise<VersionCheckResult | null> {
 
 /**
  * Save version check result to cache.
+ * Note: Data is validated/sanitized in checkForUpdates() before being passed here.
+ * The VersionCheckResult type only contains safe, validated fields.
  */
 export async function saveVersionCache(result: VersionCheckResult): Promise<void> {
   try {
     await mkdir(INSTALL_DIR, { recursive: true });
-    await writeFile(getVersionCacheFile(), JSON.stringify(result, null, 2));
+    // Only write known safe fields to prevent any additional properties from being cached
+    const safeResult: VersionCheckResult = {
+      currentVersion: result.currentVersion,
+      latestVersion: result.latestVersion,
+      updateAvailable: result.updateAvailable,
+      releaseUrl: result.releaseUrl,
+      checkedAt: result.checkedAt,
+    };
+    await writeFile(getVersionCacheFile(), JSON.stringify(safeResult, null, 2));
   } catch {
     // Ignore cache write failures
   }
