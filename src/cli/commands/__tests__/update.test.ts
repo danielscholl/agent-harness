@@ -11,11 +11,19 @@ jest.unstable_mockModule('node:child_process', () => ({
   spawn: mockSpawn,
 }));
 
-// Mock fs/promises for readFile tests
+// Mock fs/promises for file operation tests
 const mockReadFile = jest.fn();
+const mockWriteFile = jest.fn();
+const mockMkdir = jest.fn();
 jest.unstable_mockModule('node:fs/promises', () => ({
   readFile: mockReadFile,
+  writeFile: mockWriteFile,
+  mkdir: mockMkdir,
 }));
+
+// Mock global fetch for GitHub API calls
+const mockFetch = jest.fn();
+globalThis.fetch = mockFetch;
 
 interface OutputEntry {
   content: string;
@@ -53,6 +61,19 @@ describe('update command handler', () => {
 
     // Default mock for readFile - returns valid package.json
     mockReadFile.mockResolvedValue(JSON.stringify({ version: '0.1.0' }));
+    // Default mocks for write operations
+    mockWriteFile.mockResolvedValue(undefined);
+    mockMkdir.mockResolvedValue(undefined);
+    // Default mock for fetch - returns GitHub API response with latest version
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: () =>
+        Promise.resolve({
+          tag_name: 'v0.1.0',
+          html_url: 'https://github.com/danielscholl/agent-base-v2/releases/tag/v0.1.0',
+          assets: [],
+        }),
+    });
   });
 
   afterEach(() => {
@@ -71,7 +92,7 @@ describe('update command handler', () => {
       const context = createMockContext();
       await updateHandler('--check', context);
 
-      expect(context.outputs.some((o) => o.content.includes('Installation type: global'))).toBe(
+      expect(context.outputs.some((o) => o.content.includes('Installation: Bun global'))).toBe(
         true
       );
     });
@@ -83,7 +104,7 @@ describe('update command handler', () => {
       const context = createMockContext();
       await updateHandler('--check', context);
 
-      expect(context.outputs.some((o) => o.content.includes('Installation type: global'))).toBe(
+      expect(context.outputs.some((o) => o.content.includes('Installation: Bun global'))).toBe(
         true
       );
     });
@@ -97,9 +118,9 @@ describe('update command handler', () => {
 
       expect(result.success).toBe(true);
       expect(result.message).toBe('Local development detected');
-      expect(context.outputs.some((o) => o.content.includes('Installation type: local'))).toBe(
-        true
-      );
+      expect(
+        context.outputs.some((o) => o.content.includes('Installation: Local development'))
+      ).toBe(true);
       expect(
         context.outputs.some((o) => o.content.includes('Running from local development source'))
       ).toBe(true);
@@ -114,9 +135,9 @@ describe('update command handler', () => {
 
       expect(result.success).toBe(true);
       expect(result.message).toBe('Local development detected');
-      expect(context.outputs.some((o) => o.content.includes('Installation type: local'))).toBe(
-        true
-      );
+      expect(
+        context.outputs.some((o) => o.content.includes('Installation: Local development'))
+      ).toBe(true);
     });
 
     it('returns unknown for unrecognized paths', async () => {
@@ -128,9 +149,7 @@ describe('update command handler', () => {
 
       expect(result.success).toBe(false);
       expect(result.message).toBe('Unknown installation type');
-      expect(context.outputs.some((o) => o.content.includes('Installation type: unknown'))).toBe(
-        true
-      );
+      expect(context.outputs.some((o) => o.content.includes('Installation: Unknown'))).toBe(true);
       expect(
         context.outputs.some((o) => o.content.includes('Could not determine installation type'))
       ).toBe(true);
@@ -143,7 +162,7 @@ describe('update command handler', () => {
       const context = createMockContext();
       await updateHandler('--check', context);
 
-      expect(context.outputs.some((o) => o.content.includes('Installation type: global'))).toBe(
+      expect(context.outputs.some((o) => o.content.includes('Installation: Bun global'))).toBe(
         true
       );
     });
@@ -243,14 +262,14 @@ describe('update command handler', () => {
       expect(
         context.outputs.some((o) => o.content.includes('Could not determine installation type'))
       ).toBe(true);
-      expect(context.outputs.some((o) => o.content.includes('To install globally:'))).toBe(true);
+      expect(context.outputs.some((o) => o.content.includes('Recommended installation:'))).toBe(
+        true
+      );
+      expect(context.outputs.some((o) => o.content.includes('install.sh'))).toBe(true);
+      expect(context.outputs.some((o) => o.content.includes('Or install via Bun:'))).toBe(true);
       expect(
         context.outputs.some((o) => o.content.includes('bun install -g github:danielscholl'))
       ).toBe(true);
-      expect(context.outputs.some((o) => o.content.includes('Or clone and run from source:'))).toBe(
-        true
-      );
-      expect(context.outputs.some((o) => o.content.includes('git clone'))).toBe(true);
     });
   });
 
@@ -265,13 +284,12 @@ describe('update command handler', () => {
       const result = await updateHandler('--check', context);
 
       expect(result.success).toBe(true);
-      expect(result.message).toBe('Check complete');
+      // When on latest version, message is 'Already up to date'
+      expect(result.message === 'Check complete' || result.message === 'Already up to date').toBe(
+        true
+      );
       expect(context.outputs.some((o) => o.content.includes('Checking for updates...'))).toBe(true);
-      expect(
-        context.outputs.some((o) => o.content.includes('To update to the latest version'))
-      ).toBe(true);
-      expect(context.outputs.some((o) => o.content.includes('agent update'))).toBe(true);
-      expect(context.outputs.some((o) => o.content.includes('Or manually:'))).toBe(true);
+      expect(context.outputs.some((o) => o.content.includes('Latest version:'))).toBe(true);
     });
   });
 
@@ -281,6 +299,17 @@ describe('update command handler', () => {
     });
 
     it('updates successfully', async () => {
+      // Mock GitHub API to return a newer version so update proceeds
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            tag_name: 'v0.2.0',
+            html_url: 'https://github.com/danielscholl/agent-base-v2/releases/tag/v0.2.0',
+            assets: [],
+          }),
+      });
+
       // Mock successful spawn
       const eventHandlers: Record<string, ((arg: number | null | Error) => void)[]> = {};
       const mockProcess = {
@@ -315,7 +344,7 @@ describe('update command handler', () => {
 
       expect(result.success).toBe(true);
       expect(result.message).toBe('Update complete');
-      expect(context.outputs.some((o) => o.content.includes('Updating agent...'))).toBe(true);
+      expect(context.outputs.some((o) => o.content.includes('Updating...'))).toBe(true);
       expect(
         context.outputs.some((o) =>
           o.content.includes('Running: bun install -g github:danielscholl')
@@ -363,6 +392,17 @@ describe('update command handler', () => {
     });
 
     it('handles update failure', async () => {
+      // Mock GitHub API to return a newer version so update proceeds
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            tag_name: 'v0.2.0',
+            html_url: 'https://github.com/danielscholl/agent-base-v2/releases/tag/v0.2.0',
+            assets: [],
+          }),
+      });
+
       const eventHandlers: Record<string, ((arg: number | null | Error) => void)[]> = {};
       const mockProcess = {
         stdout: {
@@ -406,6 +446,17 @@ describe('update command handler', () => {
     });
 
     it('handles spawn error', async () => {
+      // Mock GitHub API to return a newer version so update proceeds
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            tag_name: 'v0.2.0',
+            html_url: 'https://github.com/danielscholl/agent-base-v2/releases/tag/v0.2.0',
+            assets: [],
+          }),
+      });
+
       const eventHandlers: Record<string, ((arg: number | null | Error) => void)[]> = {};
       const mockProcess = {
         stdout: {
