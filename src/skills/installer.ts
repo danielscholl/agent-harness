@@ -67,9 +67,8 @@ export function getPluginsDir(baseDir?: string): string {
  * Extract repository name from git URL.
  */
 export function extractRepoName(url: string): string {
-  // Handle various git URL formats:
+  // Handle HTTPS git URL formats:
   // https://github.com/user/repo.git
-  // git@github.com:user/repo.git
   // https://github.com/user/repo
   const match = url.match(/\/([^/]+?)(\.git)?$/);
   return match?.[1] ?? 'unknown-skill';
@@ -88,11 +87,13 @@ async function pathExists(path: string): Promise<boolean> {
 }
 
 /**
- * Validate URL to prevent shell injection.
+ * Validate URL format.
+ * Only HTTPS URLs are supported to ensure config schema compatibility.
+ * SSH URLs (git@) are not supported because z.url() validation rejects them.
  */
 function isValidGitUrl(url: string): boolean {
-  // Only allow https:// or git@ URLs
-  return /^(https:\/\/|git@)[\w.-]+/.test(url);
+  // Only allow https:// URLs (SSH git@ URLs don't pass z.url() schema validation)
+  return /^https:\/\/[\w.-]+/.test(url);
 }
 
 /**
@@ -135,7 +136,7 @@ export async function installSkill(options: InstallOptions): Promise<InstallResu
       success: false,
       skillName: repoName,
       path: targetDir,
-      error: `Invalid git URL format. Must start with https:// or git@`,
+      error: `Invalid git URL format. Only HTTPS URLs are supported (e.g., https://github.com/user/repo).`,
     };
   }
 
