@@ -292,10 +292,44 @@ export type MemoryConfig = z.infer<typeof MemoryConfigSchema>;
 // -----------------------------------------------------------------------------
 
 /**
+ * Plugin definition for installed skills from git repositories.
+ */
+export const PluginDefinitionSchema = z.object({
+  url: z.url().describe('Git repository URL'),
+  ref: z.string().optional().describe('Branch/tag/commit to checkout'),
+  name: z.string().optional().describe('Override skill name (defaults to repo name)'),
+  enabled: z.boolean().default(true).describe('Whether the plugin is enabled'),
+  installedAt: z.string().optional().describe('ISO timestamp when installed'),
+});
+
+export type PluginDefinition = z.infer<typeof PluginDefinitionSchema>;
+
+/**
+ * Plugin item schema supporting both object and legacy string formats.
+ *
+ * This schema uses z.union with a transform to maintain backward compatibility
+ * with older configuration files:
+ *
+ * 1. Object format (PluginDefinition): Full plugin configuration with url, ref,
+ *    name, enabled, and installedAt fields
+ * 2. Legacy string format: Plain URL strings are automatically transformed to
+ *    PluginDefinition objects with { url: string, enabled: true }
+ *
+ * The transform ensures that older configs using string arrays (e.g.,
+ * `plugins: ["https://github.com/user/skill.git"]`) continue to work
+ * without requiring manual migration.
+ */
+const PluginItemSchema = z.union([
+  PluginDefinitionSchema,
+  z.string().transform((url): PluginDefinition => ({ url, enabled: true })),
+]);
+
+/**
  * Skills configuration.
  */
 export const SkillsConfigSchema = z.object({
-  plugins: z.array(z.string()).default([]).describe('Plugin paths or URLs to load'),
+  plugins: z.array(PluginItemSchema).default([]).describe('Installed plugin skills'),
+  pluginsDir: z.string().optional().describe('Directory for installed plugins'),
   disabledBundled: z.array(z.string()).default([]).describe('Bundled skills to disable'),
   enabledBundled: z
     .array(z.string())

@@ -36,7 +36,7 @@ export interface SkillContent {
 /**
  * Skill source location type.
  */
-export type SkillSource = 'bundled' | 'user' | 'project';
+export type SkillSource = 'bundled' | 'user' | 'project' | 'plugin';
 
 /**
  * Discovered skill with filesystem location.
@@ -48,8 +48,10 @@ export interface DiscoveredSkill {
   path: string;
   /** Parent directory path */
   directory: string;
-  /** Source type (bundled, user, project) */
+  /** Source type (bundled, user, project, plugin) */
   source: SkillSource;
+  /** Whether the skill is disabled by configuration */
+  disabled?: boolean;
 }
 
 /**
@@ -84,6 +86,22 @@ export interface SkillLoaderOptions {
   userDir?: string;
   /** Project skills directory (defaults to ./.agent/skills) */
   projectDir?: string;
+  /** Plugins directory (defaults to ~/.agent/plugins) */
+  pluginsDir?: string;
+  /** Installed plugin definitions from config */
+  plugins?: Array<{
+    url: string;
+    ref?: string;
+    name?: string;
+    enabled?: boolean;
+    installedAt?: string;
+  }>;
+  /** Bundled skills to disable (by name) */
+  disabledBundled?: string[];
+  /** Bundled skills to enable (overrides defaults) */
+  enabledBundled?: string[];
+  /** Include disabled skills with disabled flag set (for management UI) */
+  includeDisabled?: boolean;
   /** Debug callback */
   onDebug?: (msg: string, data?: unknown) => void;
 }

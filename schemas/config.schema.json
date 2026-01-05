@@ -326,9 +326,36 @@
       "properties": {
         "plugins": {
           "type": "array",
-          "items": { "type": "string" },
-          "description": "Plugin paths or URLs to load",
-          "default": []
+          "description": "Installed plugin skills from git repositories",
+          "default": [],
+          "items": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string",
+                "format": "uri",
+                "description": "Git repository URL"
+              },
+              "ref": {
+                "type": "string",
+                "description": "Branch/tag/commit to checkout"
+              },
+              "name": {
+                "type": "string",
+                "description": "Override skill name (defaults to repo name)"
+              },
+              "enabled": {
+                "type": "boolean",
+                "description": "Whether the plugin is enabled",
+                "default": true
+              },
+              "installedAt": {
+                "type": "string",
+                "description": "ISO timestamp when installed"
+              }
+            },
+            "required": ["url"]
+          }
         },
         "disabledBundled": {
           "type": "array",
@@ -342,9 +369,13 @@
           "description": "Bundled skills to enable (overrides defaults)",
           "default": []
         },
+        "pluginsDir": {
+          "type": "string",
+          "description": "Directory for installed plugins (default: ~/.agent/plugins)"
+        },
         "userDir": {
           "type": "string",
-          "description": "Directory for user skills"
+          "description": "Directory for user skills (default: ~/.agent/skills)"
         },
         "scriptTimeout": {
           "type": "integer",

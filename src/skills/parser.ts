@@ -19,14 +19,27 @@ export type ParseResult =
   | { success: false; error: string; type: 'PARSE_ERROR' | 'VALIDATION_ERROR' };
 
 /**
+ * Options for parsing SKILL.md.
+ */
+export interface ParseOptions {
+  /** Skip directory name validation (for install/rename scenarios) */
+  skipNameValidation?: boolean;
+}
+
+/**
  * Parse SKILL.md content into manifest and body.
  * Validates frontmatter against the Agent Skills spec.
  *
  * @param content - Raw SKILL.md file content
  * @param directoryName - Parent directory name for name validation
+ * @param options - Parse options
  * @returns Parse result with content or error
  */
-export function parseSkillMd(content: string, directoryName: string): ParseResult {
+export function parseSkillMd(
+  content: string,
+  directoryName?: string,
+  options?: ParseOptions
+): ParseResult {
   const trimmed = content.trim();
 
   // Check for YAML frontmatter opening delimiter
@@ -80,14 +93,16 @@ export function parseSkillMd(content: string, directoryName: string): ParseResul
 
   const rawManifest = validation.data;
 
-  // Validate name matches directory
-  const nameError = validateNameMatchesDirectory(rawManifest.name, directoryName);
-  if (nameError !== undefined) {
-    return {
-      success: false,
-      error: nameError,
-      type: 'VALIDATION_ERROR',
-    };
+  // Validate name matches directory (unless skipped)
+  if (directoryName !== undefined && options?.skipNameValidation !== true) {
+    const nameError = validateNameMatchesDirectory(rawManifest.name, directoryName);
+    if (nameError !== undefined) {
+      return {
+        success: false,
+        error: nameError,
+        type: 'VALIDATION_ERROR',
+      };
+    }
   }
 
   // Transform raw manifest to typed interface

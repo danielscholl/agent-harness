@@ -287,14 +287,19 @@ describe('SkillsConfigSchema', () => {
     expect(result.scriptTimeout).toBe(DEFAULT_SKILL_SCRIPT_TIMEOUT);
   });
 
-  it('should accept plugins array', () => {
+  it('should accept plugins array with PluginDefinition objects', () => {
     const input = {
-      plugins: ['plugin-a', 'plugin-b'],
+      plugins: [
+        { url: 'https://github.com/user/plugin-a', name: 'plugin-a', enabled: true },
+        { url: 'https://github.com/user/plugin-b', enabled: false },
+      ],
       disabledBundled: ['bundled-skill'],
       userDir: '~/.agent/skills',
     };
     const result = SkillsConfigSchema.parse(input);
-    expect(result.plugins).toEqual(['plugin-a', 'plugin-b']);
+    expect(result.plugins).toHaveLength(2);
+    expect(result.plugins[0]?.name).toBe('plugin-a');
+    expect(result.plugins[1]?.enabled).toBe(false);
     expect(result.disabledBundled).toEqual(['bundled-skill']);
     expect(result.userDir).toBe('~/.agent/skills');
   });

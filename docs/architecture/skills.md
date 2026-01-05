@@ -1,9 +1,9 @@
 # Skills Architecture
 
-> **Status:** Partial Implementation
-> **Source of truth:** [`src/skills/manifest.ts`](../../src/skills/manifest.ts), [`src/skills/context-provider.ts`](../../src/skills/context-provider.ts)
+> **Status:** Implemented
+> **Source of truth:** [`src/skills/manifest.ts`](../../src/skills/manifest.ts), [`src/skills/context-provider.ts`](../../src/skills/context-provider.ts), [`src/skills/installer.ts`](../../src/skills/installer.ts)
 
-This document describes the skills system, including manifests and progressive disclosure.
+This document describes the skills system, including manifests, progressive disclosure, and plugin management.
 
 ---
 
@@ -14,6 +14,8 @@ Skills extend the agent's capabilities through:
 - **SKILL.md manifests** with YAML front matter (Agent Skills spec)
 - **Progressive disclosure** for efficient context usage (3-tier model)
 - **Resource directories** for scripts, references, and assets
+- **Plugin installation** from git repositories
+- **Skill management** (enable/disable/update/remove)
 
 > **Note:** The following features are **planned but not yet implemented**:
 > - Toolsets (dynamic tool loading from skill directories)
@@ -162,8 +164,117 @@ The `getTier1Context()` method generates an `<available_skills>` XML block:
 | Source | Location | Lifecycle |
 |--------|----------|-----------|
 | Bundled | `src/_bundled_skills/` | Shipped with agent |
-| User plugins | `~/.agent/skills/` | Installed by user |
+| Plugin | `~/.agent/plugins/` | Installed via `agent skill install` |
+| User | `~/.agent/skills/` | Manually created by user |
 | Project | `./.agent/skills/` | Project-specific |
+
+**Priority:** When skills have the same name, later sources override earlier ones: `plugin > project > user > bundled`
+
+---
+
+## CLI Commands
+
+The skill CLI provides commands for viewing and managing skills:
+
+```bash
+# Show all skills with status
+agent skill show
+
+# Install a plugin from git
+agent skill install https://github.com/user/my-skill
+agent skill install https://github.com/user/my-skill --ref v1.0.0
+agent skill install https://github.com/user/my-skill --name custom-name
+
+# Manage skills
+agent skill manage                    # Show available actions
+agent skill manage disable gh         # Disable a bundled skill
+agent skill manage enable gh          # Re-enable a skill
+agent skill manage update my-plugin   # Update a plugin (git pull)
+agent skill manage remove my-plugin   # Remove a plugin
+agent skill manage list               # List installed plugins
+```
+
+---
+
+## Plugin Installation
+
+Plugins are skills installed from git repositories. The installer:
+
+1. **Clones** the repository with `--depth 1` for efficiency
+2. **Validates** that SKILL.md exists and is valid
+3. **Renames** the directory to match the manifest name
+4. **Tracks** the plugin in `~/.agent/config.yaml`
+
+```typescript
+// Installation API
+interface InstallOptions {
+  url: string;           // Git repository URL
+  ref?: string;          // Branch/tag/commit
+  name?: string;         // Override skill name
+}
+
+interface InstallResult {
+  success: boolean;
+  skillName: string;
+  path: string;
+  error?: string;
+}
+```
+
+**Error Handling:**
+- Invalid git URL: Clear error message
+- Missing SKILL.md: Rollback (remove cloned directory)
+- Invalid manifest: Rollback with validation errors
+- Name conflict: Prompt to rename or skip
+- Network failure: Clean up partial clone
+
+---
+
+## Configuration
+
+Skills are configured in `~/.agent/config.yaml`:
+
+```yaml
+skills:
+  # Installed plugins (tracked automatically)
+  plugins:
+    - url: "https://github.com/user/my-skill"
+      name: "my-skill"
+      enabled: true
+      installedAt: "2024-01-05T10:30:00Z"
+    - url: "https://github.com/user/another-skill"
+      ref: "v1.0.0"
+      enabled: false
+      installedAt: "2024-01-04T15:20:00Z"
+
+  # Custom plugins directory (default: ~/.agent/plugins)
+  pluginsDir: "~/.agent/plugins"
+
+  # Custom user skills directory (default: ~/.agent/skills)
+  userDir: "~/.agent/skills"
+
+  # Disable bundled skills by name
+  disabledBundled:
+    - "gh"
+
+  # Only enable specific bundled skills (overrides defaults)
+  enabledBundled: []
+
+  # Script execution timeout (planned)
+  scriptTimeout: 30000
+```
+
+### Plugin Schema
+
+```typescript
+interface PluginDefinition {
+  url: string;           // Git repository URL (required)
+  ref?: string;          // Branch/tag/commit
+  name?: string;         // Override skill name
+  enabled?: boolean;     // Default: true
+  installedAt?: string;  // ISO timestamp
+}
+```
 
 ---
 

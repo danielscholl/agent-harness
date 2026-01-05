@@ -48,3 +48,14 @@ export {
 // Context provider
 export { SkillContextProvider, createSkillContextProvider } from './context-provider.js';
 export type { ContextProviderOptions } from './context-provider.js';
+
+// Plugin installer
+export {
+  installSkill,
+  updateSkill,
+  removeSkill,
+  listInstalledPlugins,
+  getPluginsDir,
+  extractRepoName,
+} from './installer.js';
+export type { InstallOptions, InstallResult, UpdateResult } from './installer.js';

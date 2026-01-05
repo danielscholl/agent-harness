@@ -112,13 +112,19 @@ if (command === 'skill') {
     `
   Usage: agent skill [command]
 
-    Manage agent skills
+    Manage agent skills (bundled and plugins)
 
   Commands
-    (none)           List all discovered skills
-    list             List all discovered skills
-    info <name>      Show detailed skill information
-    validate <path>  Validate a SKILL.md file
+    show                    Show all skills with status
+    install <url>           Install plugin from git repository
+    manage                  Manage skills (enable/disable/update/remove)
+
+  Examples
+    agent skill                           Show all skills
+    agent skill show                      Show all skills with status
+    agent skill install <git-url>         Install a plugin skill
+    agent skill manage disable gh         Disable the gh skill
+    agent skill manage list               List installed plugins
 `,
     { importMeta: import.meta, argv: skillArgv, description: false }
   );

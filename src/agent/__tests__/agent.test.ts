@@ -23,12 +23,16 @@ const mockGetModelName = jest.fn<() => string>();
 const mockGetProviderName = jest.fn<() => string>();
 
 // Mock fs/promises for prompt loading
+// Note: mkdir, rm, and rename are required because the skills/installer module imports them
 jest.unstable_mockModule('node:fs/promises', () => ({
   readFile: () => Promise.resolve('You are a helpful assistant. Model: {{MODEL}}'),
   access: () => Promise.reject(new Error('ENOENT')),
   readdir: () => Promise.resolve([]),
   stat: () => Promise.resolve({ isDirectory: () => false }),
   realpath: (path: string) => Promise.resolve(path),
+  mkdir: () => Promise.resolve(),
+  rm: () => Promise.resolve(),
+  rename: () => Promise.resolve(),
   constants: { R_OK: 4 },
 }));
 

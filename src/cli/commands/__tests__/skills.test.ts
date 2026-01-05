@@ -30,38 +30,58 @@ jest.unstable_mockModule('../../../skills/loader.js', () => ({
           directory: '/home/user/.agent/skills/user-skill',
           source: 'user',
         },
+        {
+          manifest: {
+            name: 'my-plugin',
+            description: 'An installed plugin skill',
+          },
+          path: '/home/user/.agent/skills/my-plugin/SKILL.md',
+          directory: '/home/user/.agent/skills/my-plugin',
+          source: 'plugin',
+        },
       ] as DiscoveredSkill[],
       errors: [],
     }),
   })),
 }));
 
-// Mock the parser
-jest.unstable_mockModule('../../../skills/parser.js', () => ({
-  parseSkillMd: jest.fn().mockReturnValue({
+// Mock the installer
+jest.unstable_mockModule('../../../skills/installer.js', () => ({
+  installSkill: jest.fn().mockResolvedValue({
     success: true,
-    content: {
-      manifest: {
-        name: 'validated-skill',
-        description: 'A validated skill',
-        license: 'Apache-2.0',
-      },
-      body: '# Skill body',
-    },
+    skillName: 'new-skill',
+    path: '/home/user/.agent/skills/new-skill',
+  }),
+  updateSkill: jest.fn().mockResolvedValue({
+    success: true,
+    skillName: 'my-plugin',
+    updated: true,
+  }),
+  removeSkill: jest.fn().mockResolvedValue(true),
+  listInstalledPlugins: jest.fn().mockResolvedValue(['my-plugin', 'another-plugin']),
+  getPluginsDir: jest.fn().mockReturnValue('/home/user/.agent/skills'),
+  extractRepoName: jest.fn().mockImplementation((url: string) => {
+    // Simple extraction for test purposes
+    const match = url.match(/\/([^/]+?)(\.git)?$/);
+    return match?.[1] ?? 'unknown-skill';
   }),
 }));
 
-// Mock fs/promises
-jest.unstable_mockModule('node:fs/promises', () => ({
-  readFile: jest.fn().mockResolvedValue(`---
-name: validated-skill
-description: A validated skill
-license: Apache-2.0
----
-
-# Skill body
-This is the skill content.
-`),
+// Mock the config manager
+jest.unstable_mockModule('../../../config/manager.js', () => ({
+  loadConfig: jest.fn().mockResolvedValue({
+    success: true,
+    result: {
+      skills: {
+        plugins: [{ url: 'https://github.com/user/my-plugin', name: 'my-plugin', enabled: true }],
+        disabledBundled: [],
+        enabledBundled: [],
+      },
+    },
+  }),
+  ConfigManager: jest.fn().mockImplementation(() => ({
+    save: jest.fn().mockResolvedValue({ success: true }),
+  })),
 }));
 
 interface OutputEntry {
@@ -89,15 +109,8 @@ function createMockContext(): CommandContext & {
 }
 
 describe('skill command handlers', () => {
-  let parseSkillMd: jest.MockedFunction<(content: string, dirName: string) => unknown>;
-  let readFile: jest.MockedFunction<(path: string, encoding: string) => Promise<string>>;
-
-  beforeEach(async () => {
+  beforeEach(() => {
     jest.clearAllMocks();
-    const parser = await import('../../../skills/parser.js');
-    parseSkillMd = parser.parseSkillMd as typeof parseSkillMd;
-    const fs = await import('node:fs/promises');
-    readFile = fs.readFile as typeof readFile;
   });
 
   afterEach(() => {
@@ -105,40 +118,42 @@ describe('skill command handlers', () => {
   });
 
   describe('skillHandler', () => {
-    it('routes to skillListHandler by default', async () => {
+    it('routes to skillShowHandler by default', async () => {
       const { skillHandler } = await import('../skills.js');
       const context = createMockContext();
       const result = await skillHandler('', context);
 
       expect(result.success).toBe(true);
-      expect(context.outputs.some((o) => o.content.includes('Discovered Skills'))).toBe(true);
+      expect(context.outputs.some((o) => o.content.includes('Skill Management'))).toBe(true);
     });
 
-    it('routes to list subcommand', async () => {
+    it('routes to show subcommand', async () => {
       const { skillHandler } = await import('../skills.js');
       const context = createMockContext();
-      const result = await skillHandler('list', context);
+      const result = await skillHandler('show', context);
 
       expect(result.success).toBe(true);
-      expect(context.outputs.some((o) => o.content.includes('Discovered Skills'))).toBe(true);
+      expect(context.outputs.some((o) => o.content.includes('Skill Management'))).toBe(true);
     });
 
-    it('routes to info subcommand', async () => {
+    it('routes to install subcommand', async () => {
       const { skillHandler } = await import('../skills.js');
       const context = createMockContext();
-      const result = await skillHandler('info test-skill', context);
+      const result = await skillHandler('install https://github.com/user/skill', context);
 
       expect(result.success).toBe(true);
-      expect(context.outputs.some((o) => o.content.includes('Skill: test-skill'))).toBe(true);
+      expect(context.outputs.some((o) => o.content.includes('Installed'))).toBe(true);
     });
 
-    it('routes to validate subcommand', async () => {
+    it('routes to manage subcommand', async () => {
       const { skillHandler } = await import('../skills.js');
       const context = createMockContext();
-      const result = await skillHandler('validate /path/to/SKILL.md', context);
+      const result = await skillHandler('manage', context);
 
       expect(result.success).toBe(true);
-      expect(context.outputs.some((o) => o.content.includes('Validation PASSED'))).toBe(true);
+      expect(context.outputs.some((o) => o.content.includes('Skill Management Actions'))).toBe(
+        true
+      );
     });
 
     it('shows error for unknown subcommand', async () => {
@@ -151,112 +166,142 @@ describe('skill command handlers', () => {
     });
   });
 
-  describe('skillListHandler', () => {
+  describe('skillShowHandler', () => {
     it('shows discovered skills grouped by source', async () => {
-      const { skillListHandler } = await import('../skills.js');
+      const { skillShowHandler } = await import('../skills.js');
       const context = createMockContext();
-      const result = await skillListHandler('', context);
+      const result = await skillShowHandler('', context);
 
       expect(result.success).toBe(true);
       expect(context.outputs.some((o) => o.content.includes('[Bundled Skills]'))).toBe(true);
       expect(context.outputs.some((o) => o.content.includes('[User Skills]'))).toBe(true);
+      expect(context.outputs.some((o) => o.content.includes('[Plugin Skills]'))).toBe(true);
       expect(context.outputs.some((o) => o.content.includes('test-skill'))).toBe(true);
       expect(context.outputs.some((o) => o.content.includes('user-skill'))).toBe(true);
+      expect(context.outputs.some((o) => o.content.includes('my-plugin'))).toBe(true);
     });
 
     it('returns data with discovered skills', async () => {
-      const { skillListHandler } = await import('../skills.js');
+      const { skillShowHandler } = await import('../skills.js');
       const context = createMockContext();
-      const result = await skillListHandler('', context);
+      const result = await skillShowHandler('', context);
 
       expect(result.success).toBe(true);
       expect(result.data).toBeDefined();
       const data = result.data as { skills: unknown[]; errors: unknown[] };
-      expect(data.skills.length).toBe(2);
+      expect(data.skills.length).toBe(3);
       expect(data.errors.length).toBe(0);
     });
   });
 
-  describe('skillInfoHandler', () => {
-    it('requires skill name', async () => {
-      const { skillInfoHandler } = await import('../skills.js');
+  describe('skillInstallHandler', () => {
+    it('requires git URL', async () => {
+      const { skillInstallHandler } = await import('../skills.js');
       const context = createMockContext();
-      const result = await skillInfoHandler('', context);
+      const result = await skillInstallHandler('', context);
 
       expect(result.success).toBe(false);
-      expect(result.message).toBe('Skill name required');
-      expect(context.outputs.some((o) => o.content.includes('Usage: /skill info'))).toBe(true);
+      expect(result.message).toBe('Git URL required');
+      expect(context.outputs.some((o) => o.content.includes('Usage:'))).toBe(true);
     });
 
-    it('shows skill details when found', async () => {
-      const { skillInfoHandler } = await import('../skills.js');
+    it('installs skill from git URL', async () => {
+      const { skillInstallHandler } = await import('../skills.js');
       const context = createMockContext();
-      const result = await skillInfoHandler('test-skill', context);
+      const result = await skillInstallHandler('https://github.com/user/my-skill', context);
 
       expect(result.success).toBe(true);
-      expect(context.outputs.some((o) => o.content.includes('Skill: test-skill'))).toBe(true);
-      expect(context.outputs.some((o) => o.content.includes('Description'))).toBe(true);
-      expect(context.outputs.some((o) => o.content.includes('Source: bundled'))).toBe(true);
-      expect(context.outputs.some((o) => o.content.includes('License: MIT'))).toBe(true);
+      expect(context.outputs.some((o) => o.content.includes('Installed: new-skill'))).toBe(true);
+      expect(context.outputs.some((o) => o.content.includes('Location:'))).toBe(true);
     });
 
-    it('shows error when skill not found', async () => {
-      const { skillInfoHandler } = await import('../skills.js');
+    it('parses --name and --ref flags', async () => {
+      const { skillInstallHandler } = await import('../skills.js');
+      const installer = await import('../../../skills/installer.js');
       const context = createMockContext();
-      const result = await skillInfoHandler('nonexistent', context);
 
-      expect(result.success).toBe(false);
-      expect(result.message).toBe('Skill not found');
-      expect(context.outputs.some((o) => o.content.includes('Skill not found'))).toBe(true);
+      await skillInstallHandler(
+        'https://github.com/user/my-skill --name custom-name --ref v1.0.0',
+        context
+      );
+
+      expect(installer.installSkill).toHaveBeenCalledWith({
+        url: 'https://github.com/user/my-skill',
+        name: 'custom-name',
+        ref: 'v1.0.0',
+      });
     });
   });
 
-  describe('skillValidateHandler', () => {
-    it('requires path argument', async () => {
-      const { skillValidateHandler } = await import('../skills.js');
+  describe('skillManageHandler', () => {
+    it('shows help when no action provided', async () => {
+      const { skillManageHandler } = await import('../skills.js');
       const context = createMockContext();
-      const result = await skillValidateHandler('', context);
-
-      expect(result.success).toBe(false);
-      expect(result.message).toBe('Path required');
-      expect(context.outputs.some((o) => o.content.includes('Usage: /skill validate'))).toBe(true);
-    });
-
-    it('validates a valid SKILL.md file', async () => {
-      const { skillValidateHandler } = await import('../skills.js');
-      const context = createMockContext();
-      const result = await skillValidateHandler('/path/to/validated-skill/SKILL.md', context);
+      const result = await skillManageHandler('', context);
 
       expect(result.success).toBe(true);
-      expect(context.outputs.some((o) => o.content.includes('Validation PASSED'))).toBe(true);
-      expect(context.outputs.some((o) => o.content.includes('validated-skill'))).toBe(true);
+      expect(context.outputs.some((o) => o.content.includes('Skill Management Actions'))).toBe(
+        true
+      );
+      expect(context.outputs.some((o) => o.content.includes('enable'))).toBe(true);
+      expect(context.outputs.some((o) => o.content.includes('disable'))).toBe(true);
+      expect(context.outputs.some((o) => o.content.includes('update'))).toBe(true);
+      expect(context.outputs.some((o) => o.content.includes('remove'))).toBe(true);
     });
 
-    it('reports validation errors', async () => {
-      parseSkillMd.mockReturnValueOnce({
-        success: false,
-        error: 'Missing required field: name',
-        type: 'VALIDATION_ERROR',
-      });
-
-      const { skillValidateHandler } = await import('../skills.js');
+    it('requires skill name for enable', async () => {
+      const { skillManageHandler } = await import('../skills.js');
       const context = createMockContext();
-      const result = await skillValidateHandler('/path/to/invalid/SKILL.md', context);
+      const result = await skillManageHandler('enable', context);
 
       expect(result.success).toBe(false);
-      expect(context.outputs.some((o) => o.content.includes('Validation FAILED'))).toBe(true);
-      expect(context.outputs.some((o) => o.content.includes('Missing required field'))).toBe(true);
+      expect(result.message).toBe('Skill name required');
     });
 
-    it('handles file read errors', async () => {
-      readFile.mockRejectedValueOnce(new Error('File not found'));
-
-      const { skillValidateHandler } = await import('../skills.js');
+    it('requires skill name for disable', async () => {
+      const { skillManageHandler } = await import('../skills.js');
       const context = createMockContext();
-      const result = await skillValidateHandler('/path/to/missing/SKILL.md', context);
+      const result = await skillManageHandler('disable', context);
 
       expect(result.success).toBe(false);
-      expect(context.outputs.some((o) => o.content.includes('Failed to read file'))).toBe(true);
+      expect(result.message).toBe('Skill name required');
+    });
+
+    it('updates a plugin skill', async () => {
+      const { skillManageHandler } = await import('../skills.js');
+      const context = createMockContext();
+      const result = await skillManageHandler('update my-plugin', context);
+
+      expect(result.success).toBe(true);
+      expect(context.outputs.some((o) => o.content.includes('Updated: my-plugin'))).toBe(true);
+    });
+
+    it('removes a plugin skill', async () => {
+      const { skillManageHandler } = await import('../skills.js');
+      const context = createMockContext();
+      const result = await skillManageHandler('remove my-plugin', context);
+
+      expect(result.success).toBe(true);
+      expect(context.outputs.some((o) => o.content.includes('Removed: my-plugin'))).toBe(true);
+    });
+
+    it('lists installed plugins', async () => {
+      const { skillManageHandler } = await import('../skills.js');
+      const context = createMockContext();
+      const result = await skillManageHandler('list', context);
+
+      expect(result.success).toBe(true);
+      expect(context.outputs.some((o) => o.content.includes('Installed Plugins'))).toBe(true);
+      expect(context.outputs.some((o) => o.content.includes('my-plugin'))).toBe(true);
+    });
+
+    it('shows error for unknown action', async () => {
+      const { skillManageHandler } = await import('../skills.js');
+      const context = createMockContext();
+      const result = await skillManageHandler('invalid', context);
+
+      expect(result.success).toBe(false);
+      expect(context.outputs.some((o) => o.content.includes('Unknown action'))).toBe(true);
     });
   });
 });

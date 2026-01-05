@@ -15,6 +15,7 @@ import type {
   SkillSource,
 } from './types.js';
 import { parseSkillMd } from './parser.js';
+import { extractRepoName } from './installer.js';
 
 // Default directories
 // Bundled skills location depends on execution context:
@@ -37,6 +38,7 @@ function getBundledDir(): string {
 
 const DEFAULT_BUNDLED_DIR = getBundledDir();
 const DEFAULT_USER_DIR = join(homedir(), '.agent', 'skills');
+const DEFAULT_PLUGINS_DIR = join(homedir(), '.agent', 'plugins');
 const DEFAULT_PROJECT_DIR = join(process.cwd(), '.agent', 'skills');
 
 /**
@@ -46,12 +48,22 @@ export class SkillLoader {
   private readonly bundledDir: string;
   private readonly userDir: string;
   private readonly projectDir: string;
+  private readonly pluginsDir: string;
+  private readonly plugins: SkillLoaderOptions['plugins'];
+  private readonly disabledBundled: string[];
+  private readonly enabledBundled: string[];
+  private readonly includeDisabled: boolean;
   private readonly onDebug?: (msg: string, data?: unknown) => void;
 
   constructor(options: SkillLoaderOptions = {}) {
     this.bundledDir = options.bundledDir ?? DEFAULT_BUNDLED_DIR;
     this.userDir = options.userDir ?? DEFAULT_USER_DIR;
     this.projectDir = options.projectDir ?? DEFAULT_PROJECT_DIR;
+    this.pluginsDir = options.pluginsDir ?? DEFAULT_PLUGINS_DIR;
+    this.plugins = options.plugins;
+    this.disabledBundled = options.disabledBundled ?? [];
+    this.enabledBundled = options.enabledBundled ?? [];
+    this.includeDisabled = options.includeDisabled ?? false;
     this.onDebug = options.onDebug;
   }
 
@@ -61,7 +73,8 @@ export class SkillLoader {
 
   /**
    * Discover all skills from configured directories.
-   * Scans bundled, user, and project directories in order.
+   * Scans bundled, user, project, and plugin directories in order.
+   * Respects enabled/disabled configuration.
    *
    * @returns Discovery result with skills and errors
    */
@@ -92,9 +105,47 @@ export class SkillLoader {
       errors.push(...result.errors);
     }
 
-    // Check for duplicate skill names (later sources win)
+    // Scan plugins if configured
+    if (this.plugins && this.plugins.length > 0) {
+      const pluginResult = await this.scanPlugins();
+      skills.push(...pluginResult.skills);
+      errors.push(...pluginResult.errors);
+    }
+
+    // Mark and optionally filter bundled skills based on enabled/disabled lists
+    const filteredSkills = skills
+      .map((skill) => {
+        if (skill.source === 'bundled') {
+          // Check if explicitly disabled
+          if (this.disabledBundled.includes(skill.manifest.name)) {
+            this.debug(`Bundled skill disabled by config`, { name: skill.manifest.name });
+            return { ...skill, disabled: true };
+          }
+          // Check if enabledBundled is specified and skill not in list
+          if (
+            this.enabledBundled.length > 0 &&
+            !this.enabledBundled.includes(skill.manifest.name)
+          ) {
+            this.debug(`Bundled skill not in enabledBundled list`, { name: skill.manifest.name });
+            return { ...skill, disabled: true };
+          }
+        }
+        // Preserve disabled status if already set (e.g., for plugins from scanPlugins)
+        // Otherwise default to enabled
+        return { ...skill, disabled: skill.disabled ?? false };
+      })
+      .filter((skill) => {
+        // If includeDisabled is true, keep all skills
+        if (this.includeDisabled) return true;
+        // Otherwise, filter out disabled skills
+        return !skill.disabled;
+      });
+
+    // Check for duplicate skill names - effective priority: plugin > project > user > bundled
+    // Skills are scanned in order: bundled, user, project, plugins
+    // Later sources override earlier ones (Map.set replaces duplicates), so plugins win
     const seen = new Map<string, DiscoveredSkill>();
-    for (const skill of skills) {
+    for (const skill of filteredSkills) {
       if (seen.has(skill.manifest.name)) {
         this.debug(`Duplicate skill name, later definition wins`, {
           name: skill.manifest.name,
@@ -113,6 +164,64 @@ export class SkillLoader {
     });
 
     return { skills: uniqueSkills, errors };
+  }
+
+  /**
+   * Scan installed plugins from config.
+   * Loads plugins and marks disabled ones appropriately.
+   *
+   * Plugin disabled flag handling:
+   * - If plugin.enabled === false AND includeDisabled === false: skip entirely (not loaded)
+   * - If plugin.enabled === false AND includeDisabled === true: load with disabled: true
+   * - If plugin.enabled !== false: load normally with disabled: false
+   */
+  private async scanPlugins(): Promise<SkillDiscoveryResult> {
+    const skills: DiscoveredSkill[] = [];
+    const errors: SkillError[] = [];
+
+    if (!this.plugins) {
+      return { skills, errors };
+    }
+
+    for (const plugin of this.plugins) {
+      const isDisabled = plugin.enabled === false;
+
+      // Skip disabled plugins unless includeDisabled is true
+      // This implements the first case: plugin.enabled === false AND includeDisabled === false
+      if (isDisabled && !this.includeDisabled) {
+        this.debug(`Plugin disabled, skipping`, { name: plugin.name, url: plugin.url });
+        continue;
+      }
+
+      // Determine skill name from plugin config or extract from URL
+      const skillName = plugin.name ?? extractRepoName(plugin.url);
+      const skillDir = join(this.pluginsDir, skillName);
+      const skillMdPath = join(skillDir, 'SKILL.md');
+
+      this.debug(`Loading plugin skill`, { name: skillName, dir: skillDir, disabled: isDisabled });
+
+      // Check if skill directory exists
+      if (!(await this.directoryExists(skillDir))) {
+        errors.push({
+          path: skillDir,
+          message: `Plugin directory not found. Run 'agent skill install <url>' to install.`,
+          type: 'NOT_FOUND',
+        });
+        continue;
+      }
+
+      // Load skill from directory
+      const result = await this.loadSkill(skillMdPath, skillName, 'plugin');
+      if (result.success) {
+        // Mark disabled status based on plugin.enabled flag
+        // If we reached here, either plugin is enabled OR includeDisabled is true
+        skills.push({ ...result.skill, disabled: isDisabled });
+      } else {
+        errors.push(result.error);
+      }
+    }
+
+    return { skills, errors };
   }
 
   /**
