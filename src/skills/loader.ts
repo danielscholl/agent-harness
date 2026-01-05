@@ -46,12 +46,20 @@ export class SkillLoader {
   private readonly bundledDir: string;
   private readonly userDir: string;
   private readonly projectDir: string;
+  private readonly pluginsDir: string;
+  private readonly plugins: SkillLoaderOptions['plugins'];
+  private readonly disabledBundled: string[];
+  private readonly enabledBundled: string[];
   private readonly onDebug?: (msg: string, data?: unknown) => void;
 
   constructor(options: SkillLoaderOptions = {}) {
     this.bundledDir = options.bundledDir ?? DEFAULT_BUNDLED_DIR;
     this.userDir = options.userDir ?? DEFAULT_USER_DIR;
     this.projectDir = options.projectDir ?? DEFAULT_PROJECT_DIR;
+    this.pluginsDir = options.pluginsDir ?? DEFAULT_USER_DIR;
+    this.plugins = options.plugins;
+    this.disabledBundled = options.disabledBundled ?? [];
+    this.enabledBundled = options.enabledBundled ?? [];
     this.onDebug = options.onDebug;
   }
 
@@ -61,7 +69,8 @@ export class SkillLoader {
 
   /**
    * Discover all skills from configured directories.
-   * Scans bundled, user, and project directories in order.
+   * Scans bundled, user, project, and plugin directories in order.
+   * Respects enabled/disabled configuration.
    *
    * @returns Discovery result with skills and errors
    */
@@ -92,9 +101,33 @@ export class SkillLoader {
       errors.push(...result.errors);
     }
 
+    // Scan plugins if configured
+    if (this.plugins && this.plugins.length > 0) {
+      const pluginResult = await this.scanPlugins();
+      skills.push(...pluginResult.skills);
+      errors.push(...pluginResult.errors);
+    }
+
+    // Filter bundled skills based on enabled/disabled lists
+    const filteredSkills = skills.filter((skill) => {
+      if (skill.source === 'bundled') {
+        // If explicitly disabled, exclude
+        if (this.disabledBundled.includes(skill.manifest.name)) {
+          this.debug(`Bundled skill disabled by config`, { name: skill.manifest.name });
+          return false;
+        }
+        // If enabledBundled is specified and skill not in list, exclude
+        if (this.enabledBundled.length > 0 && !this.enabledBundled.includes(skill.manifest.name)) {
+          this.debug(`Bundled skill not in enabledBundled list`, { name: skill.manifest.name });
+          return false;
+        }
+      }
+      return true;
+    });
+
     // Check for duplicate skill names (later sources win)
     const seen = new Map<string, DiscoveredSkill>();
-    for (const skill of skills) {
+    for (const skill of filteredSkills) {
       if (seen.has(skill.manifest.name)) {
         this.debug(`Duplicate skill name, later definition wins`, {
           name: skill.manifest.name,
@@ -113,6 +146,62 @@ export class SkillLoader {
     });
 
     return { skills: uniqueSkills, errors };
+  }
+
+  /**
+   * Scan installed plugins from config.
+   * Only loads plugins that are enabled (or have no enabled flag set).
+   */
+  private async scanPlugins(): Promise<SkillDiscoveryResult> {
+    const skills: DiscoveredSkill[] = [];
+    const errors: SkillError[] = [];
+
+    if (!this.plugins) {
+      return { skills, errors };
+    }
+
+    for (const plugin of this.plugins) {
+      // Skip disabled plugins
+      if (plugin.enabled === false) {
+        this.debug(`Plugin disabled, skipping`, { name: plugin.name, url: plugin.url });
+        continue;
+      }
+
+      // Determine skill name from plugin config or extract from URL
+      const skillName = plugin.name ?? this.extractRepoName(plugin.url);
+      const skillDir = join(this.pluginsDir, skillName);
+      const skillMdPath = join(skillDir, 'SKILL.md');
+
+      this.debug(`Loading plugin skill`, { name: skillName, dir: skillDir });
+
+      // Check if skill directory exists
+      if (!(await this.directoryExists(skillDir))) {
+        errors.push({
+          path: skillDir,
+          message: `Plugin directory not found. Run 'agent skill install ${plugin.url}' to install.`,
+          type: 'NOT_FOUND',
+        });
+        continue;
+      }
+
+      // Load skill from directory
+      const result = await this.loadSkill(skillMdPath, skillName, 'plugin');
+      if (result.success) {
+        skills.push(result.skill);
+      } else {
+        errors.push(result.error);
+      }
+    }
+
+    return { skills, errors };
+  }
+
+  /**
+   * Extract repository name from git URL.
+   */
+  private extractRepoName(url: string): string {
+    const match = url.match(/\/([^/]+?)(?:\.git)?$/);
+    return match?.[1] ?? 'unknown-skill';
   }
 
   /**

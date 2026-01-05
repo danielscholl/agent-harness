@@ -292,10 +292,23 @@ export type MemoryConfig = z.infer<typeof MemoryConfigSchema>;
 // -----------------------------------------------------------------------------
 
 /**
+ * Plugin definition for installed skills from git repositories.
+ */
+export const PluginDefinitionSchema = z.object({
+  url: z.url().describe('Git repository URL'),
+  ref: z.string().optional().describe('Branch/tag/commit to checkout'),
+  name: z.string().optional().describe('Override skill name (defaults to repo name)'),
+  enabled: z.boolean().default(true).describe('Whether the plugin is enabled'),
+  installedAt: z.string().optional().describe('ISO timestamp when installed'),
+});
+
+export type PluginDefinition = z.infer<typeof PluginDefinitionSchema>;
+
+/**
  * Skills configuration.
  */
 export const SkillsConfigSchema = z.object({
-  plugins: z.array(z.string()).default([]).describe('Plugin paths or URLs to load'),
+  plugins: z.array(PluginDefinitionSchema).default([]).describe('Installed plugin skills'),
   disabledBundled: z.array(z.string()).default([]).describe('Bundled skills to disable'),
   enabledBundled: z
     .array(z.string())

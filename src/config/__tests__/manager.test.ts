@@ -605,7 +605,9 @@ describe('ConfigManager', () => {
 
     it('should include skills when plugins are configured', async () => {
       const config = getDefaultConfig();
-      config.skills.plugins = ['plugin-a'];
+      config.skills.plugins = [
+        { url: 'https://github.com/user/plugin-a', name: 'plugin-a', enabled: true },
+      ];
 
       await manager.save(config);
 

@@ -1,12 +1,19 @@
 /**
  * Skill management command handlers.
- * Provides /skill list, /skill info, /skill validate subcommands.
+ * Provides /skill show, /skill install, /skill manage subcommands.
  */
 
 import type { CommandHandler, CommandResult } from './types.js';
 import { SkillLoader } from '../../skills/loader.js';
-import { parseSkillMd } from '../../skills/parser.js';
-import { readFile } from 'node:fs/promises';
+import {
+  installSkill,
+  updateSkill,
+  removeSkill,
+  listInstalledPlugins,
+  getPluginsDir,
+} from '../../skills/installer.js';
+import { ConfigManager, loadConfig } from '../../config/manager.js';
+import type { AppConfig, PluginDefinition } from '../../config/schema.js';
 
 /**
  * Main skill command handler.
@@ -17,14 +24,14 @@ export const skillHandler: CommandHandler = async (args, context): Promise<Comma
   const subArgs = rest.join(' ');
 
   switch (subcommand?.toLowerCase()) {
-    case 'list':
+    case 'show':
     case undefined:
     case '':
-      return skillListHandler(subArgs, context);
-    case 'info':
-      return skillInfoHandler(subArgs, context);
-    case 'validate':
-      return skillValidateHandler(subArgs, context);
+      return skillShowHandler(subArgs, context);
+    case 'install':
+      return skillInstallHandler(subArgs, context);
+    case 'manage':
+      return skillManageHandler(subArgs, context);
     default:
       context.onOutput(`Unknown subcommand: ${subcommand ?? ''}`, 'warning');
       context.onOutput('Run "agent skill --help" for usage.', 'info');
@@ -33,13 +40,24 @@ export const skillHandler: CommandHandler = async (args, context): Promise<Comma
 };
 
 /**
- * Handler for /skill list command.
- * Shows all discovered skills with their sources.
+ * Handler for /skill show command.
+ * Shows all discovered skills grouped by source with enabled/disabled status.
  */
-export const skillListHandler: CommandHandler = async (_args, context): Promise<CommandResult> => {
-  // Pass config's userDir to SkillLoader if specified
-  const userDir = context.config?.skills.userDir;
-  const loaderOptions = userDir !== undefined ? { userDir } : {};
+export const skillShowHandler: CommandHandler = async (_args, context): Promise<CommandResult> => {
+  // Load config for filtering options
+  const configResult = await loadConfig();
+  const config = configResult.success ? (configResult.result as AppConfig) : null;
+
+  // Build loader options from config
+  const loaderOptions = config
+    ? {
+        userDir: config.skills.userDir,
+        plugins: config.skills.plugins,
+        disabledBundled: config.skills.disabledBundled,
+        enabledBundled: config.skills.enabledBundled,
+      }
+    : {};
+
   const loader = new SkillLoader(loaderOptions);
   const { skills, errors } = await loader.discover();
 
@@ -47,44 +65,77 @@ export const skillListHandler: CommandHandler = async (_args, context): Promise<
     context.onOutput('No skills found.', 'info');
     context.onOutput('\nSkills are loaded from:', 'info');
     context.onOutput('  - Bundled skills (included with the agent)', 'info');
-    const userSkillsPath = userDir ?? '~/.agent/skills/';
+    const userSkillsPath = config?.skills.userDir ?? '~/.agent/skills/';
     context.onOutput(`  - User skills (${userSkillsPath})`, 'info');
     context.onOutput('  - Project skills (./.agent/skills/)', 'info');
+    context.onOutput('  - Plugin skills (installed via git)', 'info');
+    context.onOutput('\nUse "agent skill install <url>" to install a plugin.', 'info');
     return { success: true, data: { skills: [], errors: [] } };
   }
 
-  context.onOutput(`\nDiscovered Skills (${String(skills.length)})`, 'success');
-  context.onOutput('══════════════════════════════', 'info');
+  context.onOutput('\nSkill Management', 'success');
+  context.onOutput('═══════════════════════════════════════', 'info');
 
   // Group by source
   const bundled = skills.filter((s) => s.source === 'bundled');
+  const plugins = skills.filter((s) => s.source === 'plugin');
   const user = skills.filter((s) => s.source === 'user');
   const project = skills.filter((s) => s.source === 'project');
+
+  // Get disabled bundled skills for status display
+  const disabledBundled = config?.skills.disabledBundled ?? [];
 
   if (bundled.length > 0) {
     context.onOutput('\n[Bundled Skills]', 'info');
     for (const skill of bundled) {
-      context.onOutput(`  ${skill.manifest.name}`, 'success');
+      const isDisabled = disabledBundled.includes(skill.manifest.name);
+      const status = isDisabled ? '  ' : '\u2713 ';
+      const statusText = isDisabled ? '(disabled)' : '(enabled)';
       const desc = skill.manifest.description;
-      context.onOutput(`    ${desc.length > 80 ? desc.slice(0, 77) + '...' : desc}`, 'info');
+      const truncatedDesc = desc.length > 60 ? desc.slice(0, 57) + '...' : desc;
+      context.onOutput(`  ${status}${skill.manifest.name}`, isDisabled ? 'warning' : 'success');
+      context.onOutput(`      ${truncatedDesc} ${statusText}`, 'info');
+    }
+  }
+
+  if (plugins.length > 0) {
+    context.onOutput('\n[Plugin Skills]', 'info');
+    for (const skill of plugins) {
+      // Find plugin config to check enabled state
+      const pluginConfig = config?.skills.plugins.find(
+        (p) =>
+          p.name === skill.manifest.name ||
+          p.url.includes(skill.manifest.name) ||
+          skill.directory.includes(p.name ?? '')
+      );
+      const isDisabled = pluginConfig?.enabled === false;
+      const status = isDisabled ? '  ' : '\u2713 ';
+      const statusText = isDisabled ? '(disabled)' : '(enabled)';
+      const desc = skill.manifest.description;
+      const truncatedDesc = desc.length > 60 ? desc.slice(0, 57) + '...' : desc;
+      context.onOutput(`  ${status}${skill.manifest.name}`, isDisabled ? 'warning' : 'success');
+      context.onOutput(`      ${truncatedDesc} ${statusText}`, 'info');
+      context.onOutput(`      ${skill.directory}`, 'info');
     }
   }
 
   if (user.length > 0) {
     context.onOutput('\n[User Skills]', 'info');
     for (const skill of user) {
-      context.onOutput(`  ${skill.manifest.name}`, 'success');
       const desc = skill.manifest.description;
-      context.onOutput(`    ${desc.length > 80 ? desc.slice(0, 77) + '...' : desc}`, 'info');
+      const truncatedDesc = desc.length > 60 ? desc.slice(0, 57) + '...' : desc;
+      context.onOutput(`  \u2713 ${skill.manifest.name}`, 'success');
+      context.onOutput(`      ${truncatedDesc}`, 'info');
     }
   }
 
   if (project.length > 0) {
     context.onOutput('\n[Project Skills]', 'info');
     for (const skill of project) {
-      context.onOutput(`  ${skill.manifest.name}`, 'success');
       const desc = skill.manifest.description;
-      context.onOutput(`    ${desc.length > 80 ? desc.slice(0, 77) + '...' : desc}`, 'info');
+      const truncatedDesc = desc.length > 60 ? desc.slice(0, 57) + '...' : desc;
+      context.onOutput(`  \u2713 ${skill.manifest.name}`, 'success');
+      context.onOutput(`      ${truncatedDesc}`, 'info');
     }
   }
 
@@ -95,124 +146,292 @@ export const skillListHandler: CommandHandler = async (_args, context): Promise<
     }
   }
 
-  context.onOutput('\nUse /skill info <name> for details', 'info');
+  context.onOutput("\nUse 'agent skill manage' to enable/disable skills", 'info');
 
   return { success: true, data: { skills, errors } };
 };
 
 /**
- * Handler for /skill info command.
- * Displays detailed information about a specific skill.
+ * Handler for /skill install command.
+ * Installs a plugin skill from a git repository.
  */
-export const skillInfoHandler: CommandHandler = async (args, context): Promise<CommandResult> => {
-  const skillName = args.trim();
-
-  if (!skillName) {
-    context.onOutput('Usage: /skill info <name>', 'info');
-    return { success: false, message: 'Skill name required' };
-  }
-
-  // Pass config's userDir to SkillLoader if specified
-  const userDir = context.config?.skills.userDir;
-  const loaderOptions = userDir !== undefined ? { userDir } : {};
-  const loader = new SkillLoader(loaderOptions);
-  const { skills } = await loader.discover();
-
-  const skill = skills.find((s) => s.manifest.name === skillName);
-
-  if (!skill) {
-    context.onOutput(`Skill not found: ${skillName}`, 'error');
-    context.onOutput('Use /skill list to see available skills', 'info');
-    return { success: false, message: 'Skill not found' };
-  }
-
-  context.onOutput(`\nSkill: ${skill.manifest.name}`, 'success');
-  context.onOutput('══════════════════════════════', 'info');
-  context.onOutput(`\nDescription:\n  ${skill.manifest.description}`, 'info');
-  context.onOutput(`\nSource: ${skill.source}`, 'info');
-  context.onOutput(`Path: ${skill.path}`, 'info');
-
-  if (skill.manifest.license !== undefined && skill.manifest.license !== '') {
-    context.onOutput(`License: ${skill.manifest.license}`, 'info');
-  }
-
-  if (skill.manifest.compatibility !== undefined && skill.manifest.compatibility !== '') {
-    context.onOutput(`Compatibility: ${skill.manifest.compatibility}`, 'info');
-  }
-
-  if (skill.manifest.allowedTools !== undefined && skill.manifest.allowedTools !== '') {
-    context.onOutput(`Allowed Tools: ${skill.manifest.allowedTools}`, 'info');
-  }
-
-  // Read full SKILL.md content for preview
-  try {
-    const content = await readFile(skill.path, 'utf-8');
-    const lines = content.split('\n').slice(0, 30); // First 30 lines
-    context.onOutput('\n─── SKILL.md Preview ───', 'info');
-    for (const line of lines) {
-      context.onOutput(line, 'info');
-    }
-    if (content.split('\n').length > 30) {
-      context.onOutput('... (truncated)', 'info');
-    }
-  } catch {
-    // Ignore read errors
-  }
-
-  return { success: true, data: skill };
-};
-
-/**
- * Handler for /skill validate command.
- * Validates a skill directory or SKILL.md file.
- */
-export const skillValidateHandler: CommandHandler = async (
+export const skillInstallHandler: CommandHandler = async (
   args,
   context
 ): Promise<CommandResult> => {
-  const skillPath = args.trim();
+  const parts = args.trim().split(/\s+/);
+  const url = parts[0] ?? '';
 
-  if (!skillPath) {
-    context.onOutput('Usage: /skill validate <path-to-SKILL.md>', 'info');
-    return { success: false, message: 'Path required' };
-  }
-
-  context.onOutput(`\nValidating: ${skillPath}`, 'info');
-  context.onOutput('─────────────────────────', 'info');
-
-  try {
-    const content = await readFile(skillPath, 'utf-8');
-
-    // Extract directory name for validation
-    const dirMatch = skillPath.match(/([^/\\]+)[/\\]SKILL\.md$/i);
-    const dirName = dirMatch?.[1] ?? 'unknown';
-
-    const result = parseSkillMd(content, dirName);
-
-    if (!result.success) {
-      context.onOutput('\nValidation FAILED', 'error');
-      context.onOutput(`  Error: ${result.error}`, 'error');
-      context.onOutput(`  Type: ${result.type}`, 'info');
-      return { success: false, message: result.error };
-    }
-
-    context.onOutput('\nValidation PASSED', 'success');
-    context.onOutput('\nManifest:', 'info');
-    context.onOutput(`  Name: ${result.content.manifest.name}`, 'info');
-    const desc = result.content.manifest.description;
+  if (url === '') {
     context.onOutput(
-      `  Description: ${desc.length > 60 ? desc.slice(0, 57) + '...' : desc}`,
+      'Usage: agent skill install <git-url> [--name <name>] [--ref <branch>]',
       'info'
     );
+    context.onOutput('\nExamples:', 'info');
+    context.onOutput('  agent skill install https://github.com/user/my-skill', 'info');
+    context.onOutput(
+      '  agent skill install https://github.com/user/my-skill --name custom-name',
+      'info'
+    );
+    context.onOutput('  agent skill install https://github.com/user/my-skill --ref v1.0.0', 'info');
+    return { success: false, message: 'Git URL required' };
+  }
 
-    if (result.content.manifest.license !== undefined && result.content.manifest.license !== '') {
-      context.onOutput(`  License: ${result.content.manifest.license}`, 'info');
+  // Parse optional flags
+  let name: string | undefined;
+  let ref: string | undefined;
+
+  for (let i = 1; i < parts.length; i++) {
+    const nextPart = parts[i + 1] ?? '';
+    if (parts[i] === '--name' && nextPart !== '') {
+      name = nextPart;
+      i++;
+    } else if (parts[i] === '--ref' && nextPart !== '') {
+      ref = nextPart;
+      i++;
+    }
+  }
+
+  context.onOutput(`\nInstalling skill from ${url}...`, 'info');
+
+  // Install the skill
+  const result = await installSkill({ url, ref, name });
+
+  if (!result.success) {
+    context.onOutput(`\nInstallation failed: ${result.error ?? 'Unknown error'}`, 'error');
+    return { success: false, message: result.error };
+  }
+
+  context.onOutput(`\nInstalled: ${result.skillName}`, 'success');
+  context.onOutput(`Location: ${result.path}`, 'info');
+
+  // Update config to track the plugin
+  const configResult = await loadConfig();
+  if (configResult.success) {
+    const config = configResult.result as AppConfig;
+
+    // Check if already in plugins list
+    const existingIndex = config.skills.plugins.findIndex(
+      (p) => p.url === url || p.name === result.skillName
+    );
+
+    const pluginEntry: PluginDefinition = {
+      url,
+      name: result.skillName,
+      enabled: true,
+      installedAt: new Date().toISOString(),
+    };
+
+    if (ref !== undefined) {
+      pluginEntry.ref = ref;
     }
 
-    return { success: true, data: result.content };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Unknown error';
-    context.onOutput(`\nFailed to read file: ${message}`, 'error');
-    return { success: false, message };
+    if (existingIndex >= 0) {
+      // Update existing entry
+      config.skills.plugins[existingIndex] = pluginEntry;
+    } else {
+      // Add new entry
+      config.skills.plugins.push(pluginEntry);
+    }
+
+    // Save updated config
+    const manager = new ConfigManager();
+    const saveResult = await manager.save(config);
+
+    if (saveResult.success) {
+      context.onOutput('Config updated.', 'success');
+    } else {
+      context.onOutput(`Warning: Failed to update config: ${saveResult.message}`, 'warning');
+    }
+  }
+
+  return { success: true, data: result };
+};
+
+/**
+ * Handler for /skill manage command.
+ * Provides interactive skill management (enable/disable/update/remove).
+ */
+export const skillManageHandler: CommandHandler = async (args, context): Promise<CommandResult> => {
+  const parts = args.trim().split(/\s+/);
+  const action = parts[0] ?? '';
+  const skillName = parts[1] ?? '';
+
+  // If no action, show available actions
+  if (action === '') {
+    context.onOutput('\nSkill Management Actions', 'success');
+    context.onOutput('════════════════════════════════════════', 'info');
+    context.onOutput('\nUsage: agent skill manage <action> <skill-name>', 'info');
+    context.onOutput('\nActions:', 'info');
+    context.onOutput('  enable <name>      Enable a disabled skill', 'info');
+    context.onOutput('  disable <name>     Disable a skill (bundled or plugin)', 'info');
+    context.onOutput('  update <name>      Update a plugin skill (git pull)', 'info');
+    context.onOutput('  remove <name>      Remove a plugin skill', 'info');
+    context.onOutput('  list               List installed plugins', 'info');
+    context.onOutput('\nExamples:', 'info');
+    context.onOutput('  agent skill manage disable gh', 'info');
+    context.onOutput('  agent skill manage enable gh', 'info');
+    context.onOutput('  agent skill manage update my-plugin', 'info');
+    context.onOutput('  agent skill manage remove my-plugin', 'info');
+    return { success: true };
+  }
+
+  const configResult = await loadConfig();
+  if (!configResult.success) {
+    context.onOutput(`Failed to load config: ${configResult.message}`, 'error');
+    return { success: false, message: configResult.message };
+  }
+
+  const config = configResult.result as AppConfig;
+  const manager = new ConfigManager();
+
+  switch (action.toLowerCase()) {
+    case 'enable': {
+      if (skillName === '') {
+        context.onOutput('Usage: agent skill manage enable <skill-name>', 'error');
+        return { success: false, message: 'Skill name required' };
+      }
+
+      // Check if it's a disabled bundled skill
+      const bundledIndex = config.skills.disabledBundled.indexOf(skillName);
+      if (bundledIndex >= 0) {
+        config.skills.disabledBundled.splice(bundledIndex, 1);
+        const saveResult = await manager.save(config);
+        if (saveResult.success) {
+          context.onOutput(`Enabled bundled skill: ${skillName}`, 'success');
+          return { success: true };
+        }
+        context.onOutput(`Failed to save config: ${saveResult.message}`, 'error');
+        return { success: false, message: saveResult.message };
+      }
+
+      // Check if it's a disabled plugin
+      const plugin = config.skills.plugins.find((p) => p.name === skillName);
+      if (plugin !== undefined && !plugin.enabled) {
+        plugin.enabled = true;
+        const saveResult = await manager.save(config);
+        if (saveResult.success) {
+          context.onOutput(`Enabled plugin skill: ${skillName}`, 'success');
+          return { success: true };
+        }
+        context.onOutput(`Failed to save config: ${saveResult.message}`, 'error');
+        return { success: false, message: saveResult.message };
+      }
+
+      context.onOutput(`Skill "${skillName}" is not disabled or not found`, 'warning');
+      return { success: false, message: 'Skill not found or not disabled' };
+    }
+
+    case 'disable': {
+      if (skillName === '') {
+        context.onOutput('Usage: agent skill manage disable <skill-name>', 'error');
+        return { success: false, message: 'Skill name required' };
+      }
+
+      // Check if it's a plugin
+      const plugin = config.skills.plugins.find((p) => p.name === skillName);
+      if (plugin !== undefined) {
+        plugin.enabled = false;
+        const saveResult = await manager.save(config);
+        if (saveResult.success) {
+          context.onOutput(`Disabled plugin skill: ${skillName}`, 'success');
+          return { success: true };
+        }
+        context.onOutput(`Failed to save config: ${saveResult.message}`, 'error');
+        return { success: false, message: saveResult.message };
+      }
+
+      // Assume it's a bundled skill
+      if (!config.skills.disabledBundled.includes(skillName)) {
+        config.skills.disabledBundled.push(skillName);
+        const saveResult = await manager.save(config);
+        if (saveResult.success) {
+          context.onOutput(`Disabled bundled skill: ${skillName}`, 'success');
+          return { success: true };
+        }
+        context.onOutput(`Failed to save config: ${saveResult.message}`, 'error');
+        return { success: false, message: saveResult.message };
+      }
+
+      context.onOutput(`Skill "${skillName}" is already disabled`, 'warning');
+      return { success: false, message: 'Skill already disabled' };
+    }
+
+    case 'update': {
+      if (skillName === '') {
+        context.onOutput('Usage: agent skill manage update <skill-name>', 'error');
+        return { success: false, message: 'Skill name required' };
+      }
+
+      context.onOutput(`Updating ${skillName}...`, 'info');
+      const result = await updateSkill(skillName);
+
+      if (!result.success) {
+        context.onOutput(`Update failed: ${result.error ?? 'Unknown error'}`, 'error');
+        return { success: false, message: result.error };
+      }
+
+      if (result.updated) {
+        context.onOutput(`Updated: ${skillName}`, 'success');
+      } else {
+        context.onOutput(`${skillName} is already up to date`, 'info');
+      }
+
+      return { success: true, data: result };
+    }
+
+    case 'remove': {
+      if (skillName === '') {
+        context.onOutput('Usage: agent skill manage remove <skill-name>', 'error');
+        return { success: false, message: 'Skill name required' };
+      }
+
+      // Remove from filesystem
+      const removed = await removeSkill(skillName);
+
+      if (!removed) {
+        context.onOutput(`Skill "${skillName}" not found or could not be removed`, 'error');
+        return { success: false, message: 'Skill not found' };
+      }
+
+      // Remove from config
+      const pluginIndex = config.skills.plugins.findIndex((p) => p.name === skillName);
+      if (pluginIndex >= 0) {
+        config.skills.plugins.splice(pluginIndex, 1);
+        await manager.save(config);
+      }
+
+      context.onOutput(`Removed: ${skillName}`, 'success');
+      return { success: true };
+    }
+
+    case 'list': {
+      const installed = await listInstalledPlugins();
+
+      if (installed.length === 0) {
+        context.onOutput('No plugins installed.', 'info');
+        context.onOutput(`\nPlugins directory: ${getPluginsDir()}`, 'info');
+        return { success: true, data: [] };
+      }
+
+      context.onOutput('\nInstalled Plugins', 'success');
+      context.onOutput('═════════════════════════════', 'info');
+
+      for (const name of installed) {
+        const plugin = config.skills.plugins.find((p) => p.name === name);
+        const status = plugin?.enabled === false ? '(disabled)' : '(enabled)';
+        context.onOutput(`  ${name} ${status}`, plugin?.enabled === false ? 'warning' : 'success');
+        if (plugin !== undefined && plugin.url !== '') {
+          context.onOutput(`    ${plugin.url}`, 'info');
+        }
+      }
+
+      return { success: true, data: installed };
+    }
+
+    default:
+      context.onOutput(`Unknown action: ${action}`, 'error');
+      context.onOutput('Valid actions: enable, disable, update, remove, list', 'info');
+      return { success: false, message: 'Unknown action' };
   }
 };
