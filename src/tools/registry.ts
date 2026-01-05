@@ -371,15 +371,14 @@ export namespace ToolRegistry {
       const toolResult = await entry.initialized.execute(args, ctx);
 
       // Determine success: false if metadata contains error field (return-not-throw pattern)
-      const hasMetadataError =
-        'error' in toolResult.metadata && toolResult.metadata.error !== undefined;
+      const metadataHasError = hasMetadataError(toolResult.metadata);
 
       const execResult: ToolExecutionResult<M> = {
         toolId: id,
         result: toolResult as Tool.Result<M>,
         timestamp: startTime,
-        success: !hasMetadataError,
-        error: hasMetadataError ? String(toolResult.metadata.error) : undefined,
+        success: !metadataHasError,
+        error: metadataHasError ? String(toolResult.metadata.error) : undefined,
       };
 
       lastResults.set(id, execResult as ToolExecutionResult);
@@ -522,6 +521,24 @@ export namespace ToolRegistry {
 }
 
 /**
+ * Type guard to check if metadata contains an error field.
+ * Validates that metadata is an object and has a non-empty error property.
+ *
+ * @param metadata - Unknown metadata to validate
+ * @returns true if metadata has error field with truthy value
+ */
+function hasMetadataError(metadata: unknown): metadata is { error: string } {
+  return (
+    typeof metadata === 'object' &&
+    metadata !== null &&
+    'error' in metadata &&
+    metadata.error !== undefined &&
+    metadata.error !== null &&
+    metadata.error !== ''
+  );
+}
+
+/**
  * Generate a unique call ID for tool execution.
  */
 function generateCallId(): string {
@@ -557,15 +574,15 @@ function createLangChainTool(
         const result = await initialized.execute(input, ctx);
 
         // Determine success: false if metadata contains error field (return-not-throw pattern)
-        const hasMetadataError = 'error' in result.metadata && result.metadata.error !== undefined;
+        const metadataHasError = hasMetadataError(result.metadata);
 
         // Store result for retrieval via getLastResult()
         const execResult: ToolExecutionResult = {
           toolId: id,
           result,
           timestamp: Date.now(),
-          success: !hasMetadataError,
-          error: hasMetadataError ? String(result.metadata.error) : undefined,
+          success: !metadataHasError,
+          error: metadataHasError ? String(result.metadata.error) : undefined,
         };
 
         // Store in registry for getLastResult() access

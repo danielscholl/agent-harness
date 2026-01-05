@@ -183,6 +183,34 @@ describe('createCallbacks', () => {
     expect(completeTask).toHaveBeenCalledWith(ctx.spanId, 'read_file', false, 0, 'NOT_FOUND');
   });
 
+  it('handles backward compatibility when executionResult is undefined', () => {
+    const completeTask = jest.fn();
+
+    const callbacks = createCallbacks({
+      setSpinnerMessage: jest.fn(),
+      setIsProcessing: jest.fn(),
+      appendToOutput: jest.fn(),
+      setError: jest.fn(),
+      completeTask,
+    });
+
+    const ctx = createMockSpanContext();
+
+    // Test success case with undefined executionResult (legacy)
+    const successResult: ToolResponse = { success: true, result: { data: 'test' }, message: 'OK' };
+    callbacks.onToolEnd?.(ctx, 'read_file', successResult, undefined);
+    expect(completeTask).toHaveBeenCalledWith(ctx.spanId, 'read_file', true, 0, undefined);
+
+    // Test error case with undefined executionResult (legacy)
+    const errorResult: ToolResponse = {
+      success: false,
+      error: 'IO_ERROR',
+      message: 'File not found',
+    };
+    callbacks.onToolEnd?.(ctx, 'write_file', errorResult, undefined);
+    expect(completeTask).toHaveBeenCalledWith(ctx.spanId, 'write_file', false, 0, 'File not found');
+  });
+
   it('updates token usage on LLM end', () => {
     const updateTokenUsage = jest.fn();
 

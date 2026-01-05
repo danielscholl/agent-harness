@@ -37,6 +37,10 @@ interface WriteMetadata extends Tool.Metadata {
 
 /**
  * Helper to create error result for write tool.
+ *
+ * Note: bytesWritten and existedBefore are set to default values (0 and false)
+ * because this helper is called before file operations complete. These defaults
+ * are acceptable for all error cases since accurate values aren't available yet.
  */
 function createWriteError(
   filePath: string,

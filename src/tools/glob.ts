@@ -40,6 +40,26 @@ interface GlobMetadata extends Tool.Metadata {
 }
 
 /**
+ * Helper to create error result for glob tool.
+ */
+function createGlobError(
+  pattern: string,
+  errorCode: ToolErrorCode,
+  message: string
+): Tool.Result<GlobMetadata> {
+  return {
+    title: `Error: ${pattern}`,
+    metadata: {
+      pattern,
+      fileCount: 0,
+      truncated: false,
+      error: errorCode,
+    },
+    output: `Error: ${message}`,
+  };
+}
+
+/**
  * File info for sorting.
  */
 interface FileInfo {
@@ -149,16 +169,7 @@ export const globTool = Tool.define<
     const resolvedPath = basePath ?? '.';
     const resolved = await resolveWorkspacePathSafe(resolvedPath, undefined, true);
     if (typeof resolved !== 'string') {
-      return {
-        title: `Error: ${pattern}`,
-        metadata: {
-          pattern,
-          fileCount: 0,
-          truncated: false,
-          error: resolved.error,
-        },
-        output: `Error: ${resolved.message}`,
-      };
+      return createGlobError(pattern, resolved.error, resolved.message);
     }
 
     // workspaceRoot could be used for relative path display if needed
@@ -168,16 +179,11 @@ export const globTool = Tool.define<
       // Check path is a directory
       const stats = await fs.stat(resolved);
       if (!stats.isDirectory()) {
-        return {
-          title: `Error: ${pattern}`,
-          metadata: {
-            pattern,
-            fileCount: 0,
-            truncated: false,
-            error: 'VALIDATION_ERROR' as ToolErrorCode,
-          },
-          output: `Error: Path is not a directory: ${resolvedPath}`,
-        };
+        return createGlobError(
+          pattern,
+          'VALIDATION_ERROR',
+          `Path is not a directory: ${resolvedPath}`
+        );
       }
 
       // Find matching files
@@ -211,16 +217,11 @@ export const globTool = Tool.define<
       };
     } catch (error) {
       const mapped = mapSystemErrorToToolError(error);
-      return {
-        title: `Error: ${pattern}`,
-        metadata: {
-          pattern,
-          fileCount: 0,
-          truncated: false,
-          error: mapped.code,
-        },
-        output: `Error searching for ${pattern}: ${mapped.message}`,
-      };
+      return createGlobError(
+        pattern,
+        mapped.code,
+        `Error searching for ${pattern}: ${mapped.message}`
+      );
     }
   },
 });

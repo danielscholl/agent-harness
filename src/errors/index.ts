@@ -89,10 +89,10 @@ export interface AgentErrorResponse {
 
 /**
  * Discriminated union for agent responses.
- * Used internally by error helper functions and callback payloads.
+ * Used by error helper functions and callback payloads.
  *
  * Note: `Agent.run()` returns `Promise<string>`, not `AgentResponse`.
- * Use `onError` callback to receive structured `AgentErrorResponse`.
+ * Use callbacks such as `onError` to receive structured `AgentErrorResponse`.
  *
  * @internal Used by error helpers, not the public API return type
  */

@@ -118,7 +118,11 @@ export const readTool = Tool.define<
         // Check file exists and is a file
         const stats = await fd.stat();
         if (!stats.isFile()) {
-          await fd.close();
+          try {
+            await fd.close();
+          } catch {
+            // Ignore close errors, prioritize returning validation error
+          }
           return createReadError(
             filePath,
             startLine,
@@ -129,7 +133,11 @@ export const readTool = Tool.define<
 
         // Check file size
         if (stats.size > DEFAULT_MAX_READ_BYTES) {
-          await fd.close();
+          try {
+            await fd.close();
+          } catch {
+            // Ignore close errors, prioritize returning validation error
+          }
           return createReadError(
             filePath,
             startLine,
@@ -140,7 +148,11 @@ export const readTool = Tool.define<
 
         // Check for binary
         if (await isBinaryFile(fd)) {
-          await fd.close();
+          try {
+            await fd.close();
+          } catch {
+            // Ignore close errors, prioritize returning validation error
+          }
           return createReadError(
             filePath,
             startLine,

@@ -152,7 +152,8 @@ export function createCallbacks(
       if (!success) {
         // Check executionResult metadata for error code
         if (executionResult !== undefined) {
-          const errorFromMeta = executionResult.result.metadata.error;
+          const meta = executionResult.result.metadata as Record<string, unknown>;
+          const errorFromMeta = 'error' in meta ? meta.error : undefined;
           if (typeof errorFromMeta === 'string' && errorFromMeta.length > 0) {
             error = errorFromMeta;
           }

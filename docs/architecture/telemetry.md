@@ -47,7 +47,7 @@ AgentCallbacks
      ├─► onLLMStart   ──► startLLMSpan(options)
      ├─► onLLMEnd     ──► endLLMSpan(span, { inputTokens, outputTokens })
      ├─► onToolStart  ──► startToolSpan(options)
-     └─► onToolEnd    ──► endToolSpan(span, { success })  // prefers executionResult when available
+     └─► onToolEnd    ──► endToolSpan(span, { success, executionResult? })  // prefers executionResult when available
 ```
 
 **Source of truth:** [`src/telemetry/spans.ts`](../../src/telemetry/spans.ts)

@@ -40,6 +40,9 @@ interface EditMetadata extends Tool.Metadata {
 
 /**
  * Helper to create error result for edit tool.
+ *
+ * Note: replacements, originalSize, and newSize are set to 0 to indicate
+ * that the edit operation never completed successfully.
  */
 function createEditError(
   filePath: string,
@@ -184,13 +187,21 @@ export const editTool = Tool.define<
         // Check file is a file
         const stats = await fd.stat();
         if (!stats.isFile()) {
-          await fd.close();
+          try {
+            await fd.close();
+          } catch {
+            // Ignore close errors - we're already returning an error
+          }
           return createEditError(filePath, 'VALIDATION_ERROR', `Path is not a file: ${filePath}`);
         }
 
         // Check for binary
         if (await isBinaryFile(fd)) {
-          await fd.close();
+          try {
+            await fd.close();
+          } catch {
+            // Ignore close errors - we're already returning an error
+          }
           return createEditError(
             filePath,
             'VALIDATION_ERROR',

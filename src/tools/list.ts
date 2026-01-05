@@ -41,6 +41,26 @@ interface ListMetadata extends Tool.Metadata {
 }
 
 /**
+ * Helper to create error result for list tool.
+ */
+function createListError(
+  path: string,
+  errorCode: ToolErrorCode,
+  message: string
+): Tool.Result<ListMetadata> {
+  return {
+    title: `Error: ${path}`,
+    metadata: {
+      path,
+      entryCount: 0,
+      truncated: false,
+      error: errorCode,
+    },
+    output: `Error: ${message}`,
+  };
+}
+
+/**
  * Directory entry info.
  */
 interface EntryInfo {
@@ -135,16 +155,7 @@ export const listTool = Tool.define<
     // Resolve and validate path (require directory exists)
     const resolved = await resolveWorkspacePathSafe(dirPath, undefined, true);
     if (typeof resolved !== 'string') {
-      return {
-        title: `Error: ${dirPath}`,
-        metadata: {
-          path: dirPath,
-          entryCount: 0,
-          truncated: false,
-          error: resolved.error,
-        },
-        output: `Error: ${resolved.message}`,
-      };
+      return createListError(dirPath, resolved.error, resolved.message);
     }
 
     const workspaceRoot = await getWorkspaceRootReal();
@@ -153,16 +164,7 @@ export const listTool = Tool.define<
       // Check path is a directory
       const stats = await fs.stat(resolved);
       if (!stats.isDirectory()) {
-        return {
-          title: `Error: ${dirPath}`,
-          metadata: {
-            path: dirPath,
-            entryCount: 0,
-            truncated: false,
-            error: 'VALIDATION_ERROR' as ToolErrorCode,
-          },
-          output: `Error: Path is not a directory: ${dirPath}`,
-        };
+        return createListError(dirPath, 'VALIDATION_ERROR', `Path is not a directory: ${dirPath}`);
       }
 
       const entries: EntryInfo[] = [];
@@ -268,16 +270,7 @@ export const listTool = Tool.define<
       };
     } catch (error) {
       const mapped = mapSystemErrorToToolError(error);
-      return {
-        title: `Error: ${dirPath}`,
-        metadata: {
-          path: dirPath,
-          entryCount: 0,
-          truncated: false,
-          error: mapped.code,
-        },
-        output: `Error listing ${dirPath}: ${mapped.message}`,
-      };
+      return createListError(dirPath, mapped.code, `Error listing ${dirPath}: ${mapped.message}`);
     }
   },
 });

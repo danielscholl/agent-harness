@@ -870,20 +870,29 @@ export class Agent {
     const tryParseAction = (text: string): LLMAssistRequest | undefined => {
       try {
         const parsed: unknown = JSON.parse(text);
+
+        // Validate parsed value is a non-null object before accessing properties
         if (typeof parsed !== 'object' || parsed === null) {
           return undefined;
         }
 
         // Strategy A: Check for action: 'LLM_ASSIST_REQUIRED' (task tool format)
+        // Robustly validate the object has 'action' property with expected value
         if (
           'action' in parsed &&
-          (parsed as { action: unknown }).action === 'LLM_ASSIST_REQUIRED'
+          typeof (parsed as Record<string, unknown>).action === 'string' &&
+          (parsed as { action: string }).action === 'LLM_ASSIST_REQUIRED'
         ) {
           return parsed as LLMAssistRequest;
         }
 
         // Strategy B: Check for legacy ToolResponse format { error: 'LLM_ASSIST_REQUIRED' }
-        if ('error' in parsed && (parsed as { error: unknown }).error === 'LLM_ASSIST_REQUIRED') {
+        // Robustly validate the object has 'error' property with expected value
+        if (
+          'error' in parsed &&
+          typeof (parsed as Record<string, unknown>).error === 'string' &&
+          (parsed as { error: string }).error === 'LLM_ASSIST_REQUIRED'
+        ) {
           const legacy = parsed as { error: string; message?: string };
           return {
             action: 'LLM_ASSIST_REQUIRED',
