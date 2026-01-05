@@ -11,9 +11,39 @@ import {
   removeSkill,
   listInstalledPlugins,
   getPluginsDir,
+  extractRepoName,
 } from '../../skills/installer.js';
 import { ConfigManager, loadConfig } from '../../config/manager.js';
 import type { AppConfig, PluginDefinition } from '../../config/schema.js';
+
+/**
+ * Find a plugin by name, supporting both named plugins and legacy string-only plugins.
+ * Legacy plugins (created from string URLs) have no name field, so we derive name from URL.
+ */
+function findPluginByName(
+  plugins: PluginDefinition[],
+  skillName: string
+): { plugin: PluginDefinition; index: number } | undefined {
+  const index = plugins.findIndex((p) => {
+    // Check explicit name first
+    if (p.name === skillName) {
+      return true;
+    }
+    // Fall back to derived name from URL for legacy string-only plugins
+    if (p.name === undefined && extractRepoName(p.url) === skillName) {
+      return true;
+    }
+    return false;
+  });
+
+  if (index >= 0) {
+    const plugin = plugins[index];
+    if (plugin !== undefined) {
+      return { plugin, index };
+    }
+  }
+  return undefined;
+}
 
 /**
  * Main skill command handler.
@@ -303,10 +333,10 @@ export const skillManageHandler: CommandHandler = async (args, context): Promise
         return { success: false, message: saveResult.message };
       }
 
-      // Check if it's a disabled plugin
-      const plugin = config.skills.plugins.find((p) => p.name === skillName);
-      if (plugin !== undefined && !plugin.enabled) {
-        plugin.enabled = true;
+      // Check if it's a disabled plugin (supports legacy string-only plugins)
+      const pluginMatch = findPluginByName(config.skills.plugins, skillName);
+      if (pluginMatch !== undefined && !pluginMatch.plugin.enabled) {
+        pluginMatch.plugin.enabled = true;
         const saveResult = await manager.save(config);
         if (saveResult.success) {
           context.onOutput(`Enabled plugin skill: ${skillName}`, 'success');
@@ -326,10 +356,10 @@ export const skillManageHandler: CommandHandler = async (args, context): Promise
         return { success: false, message: 'Skill name required' };
       }
 
-      // Check if it's a plugin
-      const plugin = config.skills.plugins.find((p) => p.name === skillName);
-      if (plugin !== undefined) {
-        plugin.enabled = false;
+      // Check if it's a plugin (supports legacy string-only plugins)
+      const pluginMatch = findPluginByName(config.skills.plugins, skillName);
+      if (pluginMatch !== undefined) {
+        pluginMatch.plugin.enabled = false;
         const saveResult = await manager.save(config);
         if (saveResult.success) {
           context.onOutput(`Disabled plugin skill: ${skillName}`, 'success');
@@ -395,10 +425,10 @@ export const skillManageHandler: CommandHandler = async (args, context): Promise
         return { success: false, message: 'Skill not found' };
       }
 
-      // Remove from config
-      const pluginIndex = config.skills.plugins.findIndex((p) => p.name === skillName);
-      if (pluginIndex >= 0) {
-        config.skills.plugins.splice(pluginIndex, 1);
+      // Remove from config (supports legacy string-only plugins)
+      const pluginMatch = findPluginByName(config.skills.plugins, skillName);
+      if (pluginMatch !== undefined) {
+        config.skills.plugins.splice(pluginMatch.index, 1);
         await manager.save(config);
       }
 
@@ -419,7 +449,9 @@ export const skillManageHandler: CommandHandler = async (args, context): Promise
       context.onOutput('═════════════════════════════', 'info');
 
       for (const name of installed) {
-        const plugin = config.skills.plugins.find((p) => p.name === name);
+        // Find plugin config (supports legacy string-only plugins)
+        const pluginMatch = findPluginByName(config.skills.plugins, name);
+        const plugin = pluginMatch?.plugin;
         const status = plugin?.enabled === false ? '(disabled)' : '(enabled)';
         context.onOutput(`  ${name} ${status}`, plugin?.enabled === false ? 'warning' : 'success');
         if (plugin !== undefined) {

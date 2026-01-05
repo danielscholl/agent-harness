@@ -141,22 +141,22 @@ export class Agent {
       // Discover and filter skills if enabled
       if (this.includeSkills) {
         // Prepare skill loader options, merging config.skills with explicit options
-        // Design: Only userDir is exposed in config.skills as it's the directory users typically
-        // customize (for personal skills). bundledDir is internal to the package and projectDir
-        // is auto-detected from cwd. Both can still be overridden via skillLoaderOptions for
-        // testing or advanced use cases.
+        // Design: userDir, pluginsDir, plugins, and filtering options come from config.skills.
+        // bundledDir is internal to the package and projectDir is auto-detected from cwd.
+        // Both can still be overridden via skillLoaderOptions for testing or advanced use cases.
         const skillLoaderOptions: SkillLoaderOptions = {
           userDir: this.config.skills.userDir ?? this.skillLoaderOptions?.userDir,
+          pluginsDir: this.config.skills.pluginsDir ?? this.skillLoaderOptions?.pluginsDir,
+          plugins: this.config.skills.plugins,
+          disabledBundled: this.config.skills.disabledBundled,
+          enabledBundled: this.config.skills.enabledBundled,
           bundledDir: this.skillLoaderOptions?.bundledDir,
           projectDir: this.skillLoaderOptions?.projectDir,
           onDebug: this.skillLoaderOptions?.onDebug ?? this.callbacks?.onDebug,
         };
 
-        // Discover all skills
-        const { skills } = await loadSkillsContext(skillLoaderOptions);
-
-        // Apply config.skills filtering (disabledBundled/enabledBundled)
-        const filteredSkills = this.filterSkillsByConfig(skills);
+        // Discover all skills (loader handles filtering based on disabled/enabled config)
+        const { skills: filteredSkills } = await loadSkillsContext(skillLoaderOptions);
 
         // Generate token-limited XML from filtered skills using SkillContextProvider
         // This applies the tier-1 token cap (~1000 tokens) to prevent context bloat
@@ -170,8 +170,7 @@ export class Agent {
         this.discoveredSkills = filteredSkills;
 
         this.callbacks?.onDebug?.('Agent initialized with skills', {
-          discoveredCount: skills.length,
-          filteredCount: filteredSkills.length,
+          skillCount: filteredSkills.length,
           skillNames: filteredSkills.map((s) => s.manifest.name),
         });
       } else {
@@ -243,38 +242,6 @@ export class Agent {
     if (this.abortController) {
       this.abortController.abort();
     }
-  }
-
-  /**
-   * Filter discovered skills based on config.skills settings.
-   * - disabledBundled: Skills to exclude
-   * - enabledBundled: If non-empty, only include these bundled skills
-   */
-  private filterSkillsByConfig(skills: DiscoveredSkill[]): DiscoveredSkill[] {
-    const { disabledBundled, enabledBundled } = this.config.skills;
-
-    return skills.filter((skill) => {
-      // Only apply filtering to bundled skills
-      if (skill.source !== 'bundled') {
-        return true;
-      }
-
-      // Check if explicitly disabled
-      if (disabledBundled.includes(skill.manifest.name)) {
-        this.callbacks?.onDebug?.('Skill disabled by config', { name: skill.manifest.name });
-        return false;
-      }
-
-      // If enabledBundled is specified, only allow those skills
-      if (enabledBundled.length > 0 && !enabledBundled.includes(skill.manifest.name)) {
-        this.callbacks?.onDebug?.('Skill not in enabledBundled list', {
-          name: skill.manifest.name,
-        });
-        return false;
-      }
-
-      return true;
-    });
   }
 
   /**

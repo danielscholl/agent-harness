@@ -143,8 +143,9 @@ export class SkillLoader {
         return skill.disabled !== true;
       });
 
-    // Check for duplicate skill names (project > user > plugin > bundled)
-    // After filtering, skills are processed in source order so later sources override earlier ones
+    // Check for duplicate skill names (plugin > project > user > bundled)
+    // Skills are scanned in order: bundled, user, project, plugins
+    // Later sources override earlier ones, giving plugins highest priority
     const seen = new Map<string, DiscoveredSkill>();
     for (const skill of filteredSkills) {
       if (seen.has(skill.manifest.name)) {

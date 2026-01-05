@@ -60,6 +60,11 @@ jest.unstable_mockModule('../../../skills/installer.js', () => ({
   removeSkill: jest.fn().mockResolvedValue(true),
   listInstalledPlugins: jest.fn().mockResolvedValue(['my-plugin', 'another-plugin']),
   getPluginsDir: jest.fn().mockReturnValue('/home/user/.agent/skills'),
+  extractRepoName: jest.fn().mockImplementation((url: string) => {
+    // Simple extraction for test purposes
+    const match = url.match(/\/([^/]+?)(\.git)?$/);
+    return match?.[1] ?? 'unknown-skill';
+  }),
 }));
 
 // Mock the config manager
