@@ -438,7 +438,8 @@ export class ConfigManager {
       config.skills.plugins.length > 0 ||
       config.skills.disabledBundled.length > 0 ||
       config.skills.enabledBundled.length > 0 ||
-      config.skills.userDir !== undefined
+      config.skills.userDir !== undefined ||
+      config.skills.pluginsDir !== undefined
     ) {
       minimal.skills = this.cleanObject(config.skills) as AppConfig['skills'];
     }

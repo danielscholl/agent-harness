@@ -369,9 +369,13 @@
           "description": "Bundled skills to enable (overrides defaults)",
           "default": []
         },
+        "pluginsDir": {
+          "type": "string",
+          "description": "Directory for installed plugins (default: ~/.agent/plugins)"
+        },
         "userDir": {
           "type": "string",
-          "description": "Directory for user skills"
+          "description": "Directory for user skills (default: ~/.agent/skills)"
         },
         "scriptTimeout": {
           "type": "integer",

@@ -616,6 +616,18 @@ describe('ConfigManager', () => {
       expect(saved.skills).toBeDefined();
     });
 
+    it('should include skills when pluginsDir is configured', async () => {
+      const config = getDefaultConfig();
+      config.skills.pluginsDir = '/custom/plugins';
+
+      await manager.save(config);
+
+      const savedContent = mockFs.getFile('/home/user/.agent/config.yaml');
+      const saved = parseYaml(savedContent ?? '') as Record<string, unknown>;
+      expect(saved.skills).toBeDefined();
+      expect((saved.skills as Record<string, unknown>).pluginsDir).toBe('/custom/plugins');
+    });
+
     it('should include agent section when non-default values exist', async () => {
       const config = getDefaultConfig();
       config.agent.logLevel = 'debug';

@@ -164,9 +164,11 @@ The `getTier1Context()` method generates an `<available_skills>` XML block:
 | Source | Location | Lifecycle |
 |--------|----------|-----------|
 | Bundled | `src/_bundled_skills/` | Shipped with agent |
-| Plugin | `~/.agent/skills/` | Installed via `agent skill install` |
+| Plugin | `~/.agent/plugins/` | Installed via `agent skill install` |
 | User | `~/.agent/skills/` | Manually created by user |
 | Project | `./.agent/skills/` | Project-specific |
+
+**Priority:** When skills have the same name, later sources override earlier ones: `plugin > project > user > bundled`
 
 ---
 
@@ -245,15 +247,18 @@ skills:
       enabled: false
       installedAt: "2024-01-04T15:20:00Z"
 
+  # Custom plugins directory (default: ~/.agent/plugins)
+  pluginsDir: "~/.agent/plugins"
+
+  # Custom user skills directory (default: ~/.agent/skills)
+  userDir: "~/.agent/skills"
+
   # Disable bundled skills by name
   disabledBundled:
     - "gh"
 
   # Only enable specific bundled skills (overrides defaults)
   enabledBundled: []
-
-  # Custom user skills directory
-  userDir: "~/.agent/skills"
 
   # Script execution timeout (planned)
   scriptTimeout: 30000
