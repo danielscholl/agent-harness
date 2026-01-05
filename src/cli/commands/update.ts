@@ -6,8 +6,7 @@
 import type { CommandHandler, CommandResult, CommandContext } from './types.js';
 import { spawn } from 'node:child_process';
 import { dirname, join } from 'node:path';
-import { readFile, access } from 'node:fs/promises';
-import { constants } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 
 /** Git repository URL for updates */
 const GIT_REPO_URL = 'github:danielscholl/agent-base-v2';
@@ -86,14 +85,13 @@ async function getCurrentVersion(): Promise<string> {
 
     for (const pkgPath of possiblePaths) {
       try {
-        await access(pkgPath, constants.R_OK);
         const content = await readFile(pkgPath, 'utf-8');
         const pkg = JSON.parse(content) as { version?: string };
         if (pkg.version !== undefined && pkg.version !== '') {
           return pkg.version;
         }
       } catch {
-        // Try next path
+        // File doesn't exist or isn't readable, try next path
       }
     }
     return 'unknown';
