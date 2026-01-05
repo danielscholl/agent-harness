@@ -402,9 +402,7 @@ describe('config command handlers', () => {
 
         expect(result.success).toBe(true);
         expect(result.message).toBe('Listed providers');
-        expect(context.outputs.some((o) => o.content.includes('Provider Configuration'))).toBe(
-          true
-        );
+        expect(context.outputs.some((o) => o.content.includes('Provider Status'))).toBe(true);
         expect(context.outputs.some((o) => o.content.includes('openai'))).toBe(true);
         expect(context.outputs.some((o) => o.content.includes('✓ default'))).toBe(true);
       });

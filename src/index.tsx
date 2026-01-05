@@ -18,34 +18,23 @@ const cli = meow(
   `
   Usage
     $ agent [options]
-    $ agent config
-    $ agent config [provider|edit]
-    $ agent skill [list|info|validate]
-    $ agent -p <prompt> [options]
+    $ agent <command> [options]
 
   Commands
-    config                 Display current configuration
-      config provider      List providers (or setup if none)
-      config provider <n>  Interactive wizard for provider
-      config provider set <n> k=v ...  Non-interactive config
-      config provider default <n>  Set default provider
-      config provider remove <n>   Remove provider config
-      config edit          Open configuration in text editor
-
-    skill                  Manage agent skills
-      skill list           List available skills
-      skill info <name>    Show skill details
-      skill validate       Validate skill file
+    config        Manage agent configuration
+    skill         Manage agent skills
 
   Options
-    -p, --prompt <text>    Execute single prompt and exit
-    --check                Show configuration and connectivity
-    --tools                Show tool configuration
-    --version              Show version
-    --provider <name>      Override provider (openai|anthropic|azure|...)
-    --model <name>         Override model name
-    --continue             Resume last session
-    --verbose              Show detailed execution
+    -p, --prompt  Execute single prompt and exit
+    --check       Show configuration and connectivity
+    --tools       Show tool configuration
+    --version     Show version
+    --provider    Override provider
+    --model       Override model name
+    --continue    Resume last session
+    --verbose     Show detailed execution
+
+  Run 'agent <command> --help' for command details.
 `,
   {
     importMeta: import.meta,
@@ -80,7 +69,12 @@ if (command === 'config') {
 
 if (command === 'skill') {
   const context = await createCliContext();
-  const subArgs = restArgs.join(' ');
+  const wantsHelp = process.argv.includes('--help') || process.argv.includes('-h');
+  const hasSubcommand = restArgs.length > 0;
+  let subArgs = restArgs.join(' ');
+  if (wantsHelp) {
+    subArgs = hasSubcommand ? subArgs + ' --help' : '--help';
+  }
   const result = await skillHandler(subArgs, context);
   process.exit(result.success ? 0 : 1);
 }

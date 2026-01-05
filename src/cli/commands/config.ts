@@ -22,22 +22,18 @@ function isValidProviderName(name: string): name is ProviderName {
  * Show config command help.
  */
 function showConfigHelp(context: CommandContext): CommandResult {
-  context.onOutput('\nConfiguration Management', 'success');
-  context.onOutput('════════════════════════\n', 'info');
-  context.onOutput('Usage: agent config [command]\n', 'info');
+  context.onOutput('', 'info');
+  context.onOutput('Usage: agent config [command]', 'info');
+  context.onOutput('', 'info');
+  context.onOutput('Manage agent configuration', 'success');
+  context.onOutput('', 'info');
   context.onOutput('Commands:', 'info');
-  context.onOutput('  (none)              Show current configuration', 'info');
-  context.onOutput('  init                Interactive configuration wizard', 'info');
-  context.onOutput('  edit                Open config file in text editor', 'info');
-  context.onOutput('  provider            List all providers with status', 'info');
-  context.onOutput('  provider <name>     Configure a specific provider', 'info');
-  context.onOutput('  provider default <name>  Set default provider', 'info');
-  context.onOutput('\nExamples:', 'info');
-  context.onOutput('  agent config                    # Show current config', 'info');
-  context.onOutput('  agent config provider           # List providers', 'info');
-  context.onOutput('  agent config provider local     # Configure local provider', 'info');
-  context.onOutput('  agent config provider default local  # Set default', 'info');
-  context.onOutput('\nConfiguration file: ~/.agent/config.yaml', 'info');
+  context.onOutput('  (none)           Show current configuration', 'info');
+  context.onOutput('  init             Interactive configuration wizard', 'info');
+  context.onOutput('  edit             Open config file in text editor', 'info');
+  context.onOutput('  provider         Manage provider configurations', 'info');
+  context.onOutput('', 'info');
+  context.onOutput('Run "agent config provider --help" for provider subcommands.', 'info');
   return { success: true, message: 'Showed help' };
 }
 
@@ -460,27 +456,19 @@ export const configProviderHandler: CommandHandler = async (
 
   // Help for provider subcommand
   if (action === 'help' || action === '--help' || action === '-h') {
-    context.onOutput('\nProvider Configuration', 'success');
-    context.onOutput('══════════════════════\n', 'info');
-    context.onOutput('Usage: agent config provider [command]\n', 'info');
+    context.onOutput('', 'info');
+    context.onOutput('Usage: agent config provider [command]', 'info');
+    context.onOutput('', 'info');
+    context.onOutput('Manage provider configurations', 'success');
+    context.onOutput('', 'info');
     context.onOutput('Commands:', 'info');
-    context.onOutput('  (none)              List providers (or setup wizard if none)', 'info');
+    context.onOutput('  (none)              List providers (or setup wizard)', 'info');
     context.onOutput('  <name>              Interactive wizard for provider', 'info');
-    context.onOutput('  set <name> k=v ...  Non-interactive: set provider config', 'info');
+    context.onOutput('  set <name> k=v      Non-interactive configuration', 'info');
     context.onOutput('  default <name>      Set default provider', 'info');
     context.onOutput('  remove <name>       Remove provider configuration', 'info');
-    context.onOutput('\nProviders: ' + PROVIDER_NAMES.join(', '), 'info');
-    context.onOutput('\nExamples (interactive - for humans):', 'info');
-    context.onOutput('  agent config provider              # List or setup', 'info');
-    context.onOutput('  agent config provider local        # Wizard for local', 'info');
-    context.onOutput('\nExamples (non-interactive - for AI/scripts):', 'info');
-    context.onOutput(
-      '  agent config provider set local baseUrl=http://localhost:11434/v1 model=qwen3:latest',
-      'info'
-    );
-    context.onOutput('  agent config provider set openai apiKey=sk-xxx model=gpt-4o', 'info');
-    context.onOutput('  agent config provider default local', 'info');
-    context.onOutput('  agent config provider remove openai', 'info');
+    context.onOutput('', 'info');
+    context.onOutput('Providers: ' + PROVIDER_NAMES.join(', '), 'info');
     return { success: true, message: 'Showed provider help' };
   }
 
@@ -497,9 +485,11 @@ export const configProviderHandler: CommandHandler = async (
         return { success: false, message: 'No prompt handler available' };
       }
 
-      context.onOutput('\nProvider Setup', 'success');
-      context.onOutput('══════════════\n', 'info');
-      context.onOutput('No providers configured. Select one to set up:\n', 'info');
+      context.onOutput('', 'info');
+      context.onOutput('Provider Setup', 'success');
+      context.onOutput('', 'info');
+      context.onOutput('No providers configured. Select one to set up:', 'info');
+      context.onOutput('', 'info');
 
       // Show numbered list of providers
       for (let i = 0; i < providerWizards.length; i++) {
@@ -567,14 +557,14 @@ export const configProviderHandler: CommandHandler = async (
     }
 
     // Providers exist - show status list
-    context.onOutput('\nProvider Configuration', 'success');
-    context.onOutput('══════════════════════\n', 'info');
+    context.onOutput('', 'info');
+    context.onOutput('Provider Status', 'success');
+    context.onOutput('', 'info');
 
     const effectiveDefault = configuredProviders.includes(fileConfig.providers.default)
       ? fileConfig.providers.default
       : configuredProviders[0];
 
-    context.onOutput('Available providers:', 'info');
     for (const wizard of providerWizards) {
       const isConfigured = configuredProviders.includes(wizard.name as ProviderName);
       const isDefault = effectiveDefault === wizard.name;
@@ -587,11 +577,8 @@ export const configProviderHandler: CommandHandler = async (
       );
     }
 
-    context.onOutput('\nCommands:', 'info');
-    context.onOutput('  config provider <name>              Interactive wizard', 'info');
-    context.onOutput('  config provider set <name> k=v ...  Non-interactive set', 'info');
-    context.onOutput('  config provider default <name>      Set default', 'info');
-    context.onOutput('  config provider remove <name>       Remove provider', 'info');
+    context.onOutput('', 'info');
+    context.onOutput('Run "agent config provider --help" for commands.', 'info');
 
     return { success: true, message: 'Listed providers' };
   }
