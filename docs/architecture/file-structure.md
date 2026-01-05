@@ -100,7 +100,7 @@ src/
 │   └── index.ts              # AgentErrorCode, AgentResponse
 │
 ├── prompts/
-│   └── system.md             # Default system prompt
+│   └── base.md               # Default system prompt
 │
 └── _bundled_skills/          # Shipped with agent
     └── .gitkeep

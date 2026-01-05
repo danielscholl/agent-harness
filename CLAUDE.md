@@ -166,7 +166,7 @@ System prompts use a three-tier loading system with placeholder substitution:
 
 1. **Config override**: `config.agent.systemPromptFile`
 2. **User default**: `~/.agent/system.md`
-3. **Package default**: Bundled `src/prompts/system.md`
+3. **Package default**: Bundled `src/prompts/base.md`
 
 See [`docs/guides/prompts.md`](docs/guides/prompts.md) for customization and placeholders.
 
