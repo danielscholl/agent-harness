@@ -156,6 +156,61 @@ function getProviderSecret(
 }
 
 /**
+ * Foundry Local status information.
+ */
+interface FoundryLocalStatus {
+  sdkInstalled: boolean;
+  serviceRunning: boolean;
+  error?: string;
+}
+
+/**
+ * Check if Foundry Local SDK is installed and service is running.
+ * Used to validate foundry provider in local mode.
+ */
+async function checkFoundryLocalStatus(): Promise<FoundryLocalStatus> {
+  // Try to dynamically import foundry-local-sdk to check if it's installed
+  try {
+    const { FoundryLocalManager } = await import('foundry-local-sdk');
+    const manager = new FoundryLocalManager();
+
+    // Check if service is running
+    const isRunning = await manager.isServiceRunning();
+
+    return {
+      sdkInstalled: true,
+      serviceRunning: isRunning,
+      error: isRunning ? undefined : 'Foundry Local service not running',
+    };
+  } catch (error) {
+    // SDK not installed or import failed
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+    // Check if it's a "module not found" error using error code (more reliable than string matching)
+    const errorCode = (error as NodeJS.ErrnoException).code;
+    const isModuleNotFound =
+      errorCode === 'ERR_MODULE_NOT_FOUND' ||
+      errorCode === 'MODULE_NOT_FOUND' ||
+      errorMessage.includes('Cannot find') ||
+      errorMessage.includes('not found');
+
+    if (isModuleNotFound) {
+      return {
+        sdkInstalled: false,
+        serviceRunning: false,
+        error: 'foundry-local-sdk not installed',
+      };
+    }
+
+    return {
+      sdkInstalled: true,
+      serviceRunning: false,
+      error: errorMessage,
+    };
+  }
+}
+
+/**
  * Get Docker Model Runner models via HTTP API.
  * Queries http://localhost:12434/engines/llama.cpp/v1/models
  * Returns empty array if Model Runner isn't running or no models available.
@@ -384,8 +439,13 @@ function buildDockerSection(dockerStatus: DockerStatus): HealthSection {
  *
  * @param config - Full config with env vars merged (for display values like API keys)
  * @param fileConfig - Config from files only (to determine which providers are explicitly configured)
+ * @param foundryLocalStatus - Status of Foundry Local SDK and service (for validation)
  */
-function buildProvidersSection(config: AppConfig, fileConfig: AppConfig): HealthSection {
+function buildProvidersSection(
+  config: AppConfig,
+  fileConfig: AppConfig,
+  foundryLocalStatus?: FoundryLocalStatus
+): HealthSection {
   const defaultProvider = config.providers.default;
   const items: SectionItem[] = [];
 
@@ -407,17 +467,30 @@ function buildProvidersSection(config: AppConfig, fileConfig: AppConfig): Health
 
     // Build masked secret display - special handling for local providers
     let maskedSecret = '';
+    let status: ItemStatus;
+
     if (providerName === 'local') {
       maskedSecret = ''; // Local provider shows no secret info
+      status = 'ok';
     } else if (isFoundryLocal) {
-      maskedSecret = ' · Local SDK'; // Foundry local mode uses foundry-local-sdk
+      // Foundry local mode - validate SDK and service status
+      if (foundryLocalStatus === undefined) {
+        maskedSecret = ' · Local SDK (unchecked)';
+        status = 'warning';
+      } else if (!foundryLocalStatus.sdkInstalled) {
+        maskedSecret = ' · SDK not installed';
+        status = 'error';
+      } else if (!foundryLocalStatus.serviceRunning) {
+        maskedSecret = ' · Service not running';
+        status = 'warning';
+      } else {
+        maskedSecret = ' · Local SDK';
+        status = 'ok';
+      }
     } else {
       maskedSecret = ` · ${maskSecret(secret)}`;
+      status = hasSecret ? 'ok' : 'warning';
     }
-
-    // Determine status: ok if has credentials or doesn't need them (local, foundry local mode)
-    const status: ItemStatus =
-      hasSecret || providerName === 'local' || isFoundryLocal ? 'ok' : 'warning';
 
     items.push({
       label: `${displayName} (${modelName})`,
@@ -477,13 +550,20 @@ export function HealthCheck(): React.ReactElement {
       // Get Docker status
       const dockerStatus = await getDockerStatus();
 
+      // Check Foundry Local status if that provider is configured in local mode
+      let foundryLocalStatus: FoundryLocalStatus | undefined;
+      const foundryConfig = fileConfig.providers.foundry;
+      if (foundryConfig !== undefined && foundryConfig.mode === 'local') {
+        foundryLocalStatus = await checkFoundryLocalStatus();
+      }
+
       // Build all sections
       const allSections: HealthSection[] = [
         buildSystemSection(config),
         buildAgentSection(config),
         buildMemorySection(config),
         buildDockerSection(dockerStatus),
-        buildProvidersSection(config, fileConfig),
+        buildProvidersSection(config, fileConfig, foundryLocalStatus),
       ];
 
       setSections(allSections);

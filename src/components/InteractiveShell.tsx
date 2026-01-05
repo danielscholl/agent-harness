@@ -21,6 +21,7 @@ import { MessageHistory, SessionManager, resolveModelName } from '../utils/index
 import type { StoredMessage, SessionTokenUsage, SessionMetadata } from '../utils/index.js';
 import { SessionSelector } from './SessionSelector.js';
 import { resumeHandler } from '../cli/commands/session.js';
+import { checkForUpdatesWithCache, type VersionCheckResult } from '../cli/commands/update.js';
 import { Header } from './Header.js';
 import { Spinner } from './Spinner.js';
 import { ErrorDisplay } from './ErrorDisplay.js';
@@ -180,6 +181,8 @@ interface ShellState {
   lastExecutionPhases: ExecutionPhase[];
   /** Phase tracking state */
   phaseState: PhaseState;
+  /** Version check result for update banner */
+  versionCheck: VersionCheckResult | null;
 }
 
 /**
@@ -234,6 +237,7 @@ export function InteractiveShell({
       phaseStartTimes: [],
       phaseMessageCounts: [],
     },
+    versionCheck: null,
   });
 
   // Load config on mount and handle session resume
@@ -371,6 +375,17 @@ export function InteractiveShell({
           config,
           configLoaded: true,
         }));
+
+        // Check for updates in background (non-blocking)
+        checkForUpdatesWithCache()
+          .then((versionResult) => {
+            if (versionResult !== null) {
+              setState((s) => ({ ...s, versionCheck: versionResult }));
+            }
+          })
+          .catch(() => {
+            // Silently ignore version check failures
+          });
       } else {
         setState((s) => ({
           ...s,
@@ -1437,6 +1452,21 @@ export function InteractiveShell({
   return (
     <Box flexDirection="column" padding={1}>
       <Header version={VERSION} model={model} provider={provider} cwd={process.cwd()} />
+
+      {/* Update available banner */}
+      {state.versionCheck?.updateAvailable === true && (
+        <Box marginBottom={1}>
+          <Text>
+            <Text color="yellow">
+              Update available: {state.versionCheck.currentVersion} -&gt;{' '}
+              {state.versionCheck.latestVersion}
+            </Text>
+            <Text dimColor> • Run </Text>
+            <Text color="cyan">agent update</Text>
+            <Text dimColor> to upgrade</Text>
+          </Text>
+        </Box>
+      )}
 
       {/* Message history with completion status before assistant responses */}
       {state.messages.map((msg, index) => {

@@ -35,45 +35,33 @@ You mentioned "Alice."
 Goodbye!
 ```
 
-## Prerequisites
+## LLM Providers
 
-### Required
-
-- [Bun](https://bun.sh/) 1.3.4+
-
-### LLM Providers
-
-**Local (Ollama/Docker)**
-Requires [Ollama](https://ollama.ai/) or [Docker Desktop](https://www.docker.com/products/docker-desktop/) for local model serving.
-
-**Hosted Providers**
-
-| Provider | Auth Method |
-|----------|-------------|
-| GitHub Models | GitHub CLI (`gh auth login`) |
-| OpenAI | API Key |
-| Anthropic | API Key |
-| Google Gemini | API Key |
-| Azure OpenAI | Azure CLI (`az login`) |
-| Azure AI Foundry | Azure CLI (`az login`) |
+| Provider | Type | Auth Method |
+|----------|------|-------------|
+| Ollama | Local | None |
+| Docker | Local | None |
+| GitHub Models | Cloud | GitHub CLI (`gh auth login`) |
+| OpenAI | Cloud | API Key |
+| Anthropic | Cloud | API Key |
+| Google Gemini | Cloud | API Key |
+| Azure OpenAI | Cloud | Azure CLI (`az login`) |
+| Azure AI Foundry | Both | Azure CLI (`az login`) |
 
 ## Installation
 
-```bash
-# macOS / Linux / WSL
-curl -fsSL https://raw.githubusercontent.com/danielscholl/agent-base-v2/main/install.sh | bash
+**macOS / Linux / WSL**
 
-# Windows PowerShell
-irm https://raw.githubusercontent.com/danielscholl/agent-base-v2/main/install.ps1 | iex
-```
+    curl -fsSL https://raw.githubusercontent.com/danielscholl/agent-base-v2/main/install.sh | bash
+
+**Windows PowerShell**
+
+    irm https://raw.githubusercontent.com/danielscholl/agent-base-v2/main/install.ps1 | iex
 
 
 ## Quick Start
 
 ```bash
-# Initialize configuration (first run)
-agent config init
-
 # Start interactive mode
 agent
 
@@ -84,7 +72,7 @@ agent --help
 ## Upgrade and Uninstall
 
 ```bash
-# Or use built-in update (source installs only)
+# built-in update
 agent update
 ```
 
