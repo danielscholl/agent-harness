@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.2](https://github.com/danielscholl/agent-base-v2/compare/agent-base-v2-v0.2.1...agent-base-v2-v0.2.2) (2026-01-05)
+
+
+### Features
+
+* **installer:** add hybrid installation with pre-built binaries ([b0bfa6f](https://github.com/danielscholl/agent-base-v2/commit/b0bfa6fb3409a95ff4f8af9662d7929933be5525))
+* **installer:** add hybrid installer with binary-first fallback ([508a9b5](https://github.com/danielscholl/agent-base-v2/commit/508a9b5e24af6f63c1cb6de1d848647076e5e971))
+* **installer:** implement hybrid source/binary packaging ([636fd96](https://github.com/danielscholl/agent-base-v2/commit/636fd9686b5201ab1b5a5da459c2b786960693fc))
+
+
+### Bug Fixes
+
+* **config:** exclude scripts from typecheck and eslint ([778aa24](https://github.com/danielscholl/agent-base-v2/commit/778aa2492b771e20d6d9932c23f4606d4ac3c002))
+* **install:** address remaining review findings ([5d37c53](https://github.com/danielscholl/agent-base-v2/commit/5d37c53fd5a9722bc587b313bb4615395886cf4b))
+* **install:** copy assets alongside agent.exe on Windows ([0df3433](https://github.com/danielscholl/agent-base-v2/commit/0df343369056d2bfa7f6a3709ba8cf5f8e909fcf))
+* **review:** address PR review comments from Copilot ([a748dd1](https://github.com/danielscholl/agent-base-v2/commit/a748dd127a50d22283aceac6082c8d1cc8ec8000))
+
 ## [0.2.1](https://github.com/danielscholl/agent-base-v2/compare/agent-base-v2-v0.2.0...agent-base-v2-v0.2.1) (2026-01-05)
 
 
