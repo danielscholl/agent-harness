@@ -37,6 +37,7 @@ function getBundledDir(): string {
 
 const DEFAULT_BUNDLED_DIR = getBundledDir();
 const DEFAULT_USER_DIR = join(homedir(), '.agent', 'skills');
+const DEFAULT_PLUGINS_DIR = join(homedir(), '.agent', 'plugins');
 const DEFAULT_PROJECT_DIR = join(process.cwd(), '.agent', 'skills');
 
 /**
@@ -50,16 +51,18 @@ export class SkillLoader {
   private readonly plugins: SkillLoaderOptions['plugins'];
   private readonly disabledBundled: string[];
   private readonly enabledBundled: string[];
+  private readonly includeDisabled: boolean;
   private readonly onDebug?: (msg: string, data?: unknown) => void;
 
   constructor(options: SkillLoaderOptions = {}) {
     this.bundledDir = options.bundledDir ?? DEFAULT_BUNDLED_DIR;
     this.userDir = options.userDir ?? DEFAULT_USER_DIR;
     this.projectDir = options.projectDir ?? DEFAULT_PROJECT_DIR;
-    this.pluginsDir = options.pluginsDir ?? DEFAULT_USER_DIR;
+    this.pluginsDir = options.pluginsDir ?? DEFAULT_PLUGINS_DIR;
     this.plugins = options.plugins;
     this.disabledBundled = options.disabledBundled ?? [];
     this.enabledBundled = options.enabledBundled ?? [];
+    this.includeDisabled = options.includeDisabled ?? false;
     this.onDebug = options.onDebug;
   }
 
@@ -108,22 +111,36 @@ export class SkillLoader {
       errors.push(...pluginResult.errors);
     }
 
-    // Filter bundled skills based on enabled/disabled lists
-    const filteredSkills = skills.filter((skill) => {
-      if (skill.source === 'bundled') {
-        // If explicitly disabled, exclude
-        if (this.disabledBundled.includes(skill.manifest.name)) {
-          this.debug(`Bundled skill disabled by config`, { name: skill.manifest.name });
-          return false;
+    // Mark and optionally filter bundled skills based on enabled/disabled lists
+    const filteredSkills = skills
+      .map((skill) => {
+        if (skill.source === 'bundled') {
+          // Check if explicitly disabled
+          if (this.disabledBundled.includes(skill.manifest.name)) {
+            this.debug(`Bundled skill disabled by config`, { name: skill.manifest.name });
+            return { ...skill, disabled: true };
+          }
+          // Check if enabledBundled is specified and skill not in list
+          if (
+            this.enabledBundled.length > 0 &&
+            !this.enabledBundled.includes(skill.manifest.name)
+          ) {
+            this.debug(`Bundled skill not in enabledBundled list`, { name: skill.manifest.name });
+            return { ...skill, disabled: true };
+          }
         }
-        // If enabledBundled is specified and skill not in list, exclude
-        if (this.enabledBundled.length > 0 && !this.enabledBundled.includes(skill.manifest.name)) {
-          this.debug(`Bundled skill not in enabledBundled list`, { name: skill.manifest.name });
-          return false;
+        // Mark disabled plugins
+        if (skill.source === 'plugin' && skill.disabled === true) {
+          return skill;
         }
-      }
-      return true;
-    });
+        return { ...skill, disabled: false };
+      })
+      .filter((skill) => {
+        // If includeDisabled is true, keep all skills
+        if (this.includeDisabled) return true;
+        // Otherwise, filter out disabled skills
+        return skill.disabled !== true;
+      });
 
     // Check for duplicate skill names (later sources win)
     const seen = new Map<string, DiscoveredSkill>();
@@ -150,7 +167,7 @@ export class SkillLoader {
 
   /**
    * Scan installed plugins from config.
-   * Only loads plugins that are enabled (or have no enabled flag set).
+   * Loads plugins and marks disabled ones appropriately.
    */
   private async scanPlugins(): Promise<SkillDiscoveryResult> {
     const skills: DiscoveredSkill[] = [];
@@ -161,8 +178,10 @@ export class SkillLoader {
     }
 
     for (const plugin of this.plugins) {
-      // Skip disabled plugins
-      if (plugin.enabled === false) {
+      const isDisabled = plugin.enabled === false;
+
+      // Skip disabled plugins unless includeDisabled is true
+      if (isDisabled && !this.includeDisabled) {
         this.debug(`Plugin disabled, skipping`, { name: plugin.name, url: plugin.url });
         continue;
       }
@@ -172,7 +191,7 @@ export class SkillLoader {
       const skillDir = join(this.pluginsDir, skillName);
       const skillMdPath = join(skillDir, 'SKILL.md');
 
-      this.debug(`Loading plugin skill`, { name: skillName, dir: skillDir });
+      this.debug(`Loading plugin skill`, { name: skillName, dir: skillDir, disabled: isDisabled });
 
       // Check if skill directory exists
       if (!(await this.directoryExists(skillDir))) {
@@ -187,7 +206,8 @@ export class SkillLoader {
       // Load skill from directory
       const result = await this.loadSkill(skillMdPath, skillName, 'plugin');
       if (result.success) {
-        skills.push(result.skill);
+        // Mark disabled status
+        skills.push({ ...result.skill, disabled: isDisabled });
       } else {
         errors.push(result.error);
       }

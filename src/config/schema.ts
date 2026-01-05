@@ -305,10 +305,20 @@ export const PluginDefinitionSchema = z.object({
 export type PluginDefinition = z.infer<typeof PluginDefinitionSchema>;
 
 /**
+ * Transform legacy string URL to PluginDefinition.
+ * Supports backward compatibility with old configs that used string arrays.
+ */
+const PluginItemSchema = z.union([
+  PluginDefinitionSchema,
+  z.string().transform((url): PluginDefinition => ({ url, enabled: true })),
+]);
+
+/**
  * Skills configuration.
  */
 export const SkillsConfigSchema = z.object({
-  plugins: z.array(PluginDefinitionSchema).default([]).describe('Installed plugin skills'),
+  plugins: z.array(PluginItemSchema).default([]).describe('Installed plugin skills'),
+  pluginsDir: z.string().optional().describe('Directory for installed plugins'),
   disabledBundled: z.array(z.string()).default([]).describe('Bundled skills to disable'),
   enabledBundled: z
     .array(z.string())

@@ -4,13 +4,13 @@
 
 import { jest, describe, it, expect, beforeEach } from '@jest/globals';
 
-// Mock child_process
-const mockExecAsync = jest.fn();
+// Mock execFile with promisify
+const mockExecFileAsync = jest.fn();
 jest.unstable_mockModule('node:child_process', () => ({
-  exec: jest.fn(),
+  execFile: jest.fn(),
 }));
 jest.unstable_mockModule('node:util', () => ({
-  promisify: jest.fn(() => mockExecAsync),
+  promisify: jest.fn(() => mockExecFileAsync),
 }));
 
 // Mock fs/promises
@@ -19,6 +19,7 @@ const mockRm = jest.fn();
 const mockAccess = jest.fn();
 const mockReaddir = jest.fn();
 const mockReadFile = jest.fn();
+const mockRename = jest.fn();
 
 jest.unstable_mockModule('node:fs/promises', () => ({
   mkdir: mockMkdir,
@@ -26,6 +27,7 @@ jest.unstable_mockModule('node:fs/promises', () => ({
   access: mockAccess,
   readdir: mockReaddir,
   readFile: mockReadFile,
+  rename: mockRename,
 }));
 
 // Mock os
@@ -47,6 +49,7 @@ describe('installer', () => {
     mockRm.mockResolvedValue(undefined);
     mockAccess.mockRejectedValue(new Error('Not found')); // Default: file doesn't exist
     mockReaddir.mockResolvedValue([]);
+    mockRename.mockResolvedValue(undefined);
     mockReadFile.mockResolvedValue('---\nname: test-skill\ndescription: Test\n---\n# Body');
     // Set up default parser mock result
     mockParseSkillMd.mockReturnValue({
@@ -64,7 +67,7 @@ describe('installer', () => {
   describe('getPluginsDir', () => {
     it('returns default plugins directory', async () => {
       const { getPluginsDir } = await import('../installer.js');
-      expect(getPluginsDir()).toBe('/home/user/.agent/skills');
+      expect(getPluginsDir()).toBe('/home/user/.agent/plugins');
     });
 
     it('returns custom base directory when provided', async () => {
@@ -92,12 +95,12 @@ describe('installer', () => {
 
   describe('installSkill', () => {
     it('clones repository and validates SKILL.md', async () => {
-      mockExecAsync.mockResolvedValue({ stdout: '', stderr: '' });
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' });
       // The installer checks: 1) target dir exists, 2) SKILL.md exists after clone
       // We need to reject first (dir doesn't exist) then resolve (SKILL.md exists)
       mockAccess
-        .mockRejectedValueOnce(new Error('Not found')) // Target dir doesn't exist (line 103)
-        .mockResolvedValueOnce(undefined); // SKILL.md exists (line 124)
+        .mockRejectedValueOnce(new Error('Not found')) // Target dir doesn't exist
+        .mockResolvedValueOnce(undefined); // SKILL.md exists
 
       const { installSkill } = await import('../installer.js');
       const result = await installSkill({
@@ -107,10 +110,33 @@ describe('installer', () => {
       expect(result.success).toBe(true);
       expect(result.skillName).toBe('test-skill');
       expect(mockMkdir).toHaveBeenCalled();
-      expect(mockExecAsync).toHaveBeenCalledWith(
-        expect.stringContaining('git clone --depth 1'),
+      // execFile is called with array arguments, not a string
+      expect(mockExecFileAsync).toHaveBeenCalledWith(
+        'git',
+        expect.arrayContaining(['clone', '--depth', '1']),
         expect.any(Object)
       );
+    });
+
+    it('returns error for invalid git URL', async () => {
+      const { installSkill } = await import('../installer.js');
+      const result = await installSkill({
+        url: 'invalid-url',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid git URL format');
+    });
+
+    it('returns error for invalid ref format', async () => {
+      const { installSkill } = await import('../installer.js');
+      const result = await installSkill({
+        url: 'https://github.com/user/test-skill',
+        ref: 'invalid;command',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid ref format');
     });
 
     it('returns error if skill already exists', async () => {
@@ -126,7 +152,7 @@ describe('installer', () => {
     });
 
     it('supports --ref flag for specific branch/tag', async () => {
-      mockExecAsync.mockResolvedValue({ stdout: '', stderr: '' });
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' });
       mockAccess.mockRejectedValueOnce(new Error('Not found')).mockResolvedValueOnce(undefined);
 
       const { installSkill } = await import('../installer.js');
@@ -135,14 +161,39 @@ describe('installer', () => {
         ref: 'v1.0.0',
       });
 
-      expect(mockExecAsync).toHaveBeenCalledWith(
-        expect.stringContaining('--branch "v1.0.0"'),
+      // execFile uses array args with --branch flag
+      expect(mockExecFileAsync).toHaveBeenCalledWith(
+        'git',
+        expect.arrayContaining(['--branch', 'v1.0.0']),
         expect.any(Object)
       );
     });
 
+    it('supports commit SHA refs with fetch and checkout', async () => {
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' });
+      mockAccess.mockRejectedValueOnce(new Error('Not found')).mockResolvedValueOnce(undefined);
+
+      const { installSkill } = await import('../installer.js');
+      await installSkill({
+        url: 'https://github.com/user/test-skill',
+        ref: 'abc1234', // Short commit SHA
+      });
+
+      // For commit SHAs, should call fetch then checkout
+      expect(mockExecFileAsync).toHaveBeenCalledWith(
+        'git',
+        expect.arrayContaining(['fetch', '--depth', '1', 'origin', 'abc1234']),
+        expect.objectContaining({ cwd: expect.stringContaining('test-skill') })
+      );
+      expect(mockExecFileAsync).toHaveBeenCalledWith(
+        'git',
+        expect.arrayContaining(['checkout', 'abc1234']),
+        expect.objectContaining({ cwd: expect.stringContaining('test-skill') })
+      );
+    });
+
     it('rolls back if SKILL.md is missing', async () => {
-      mockExecAsync.mockResolvedValue({ stdout: '', stderr: '' });
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' });
       mockAccess
         .mockRejectedValueOnce(new Error('Not found')) // Target dir doesn't exist
         .mockRejectedValueOnce(new Error('Not found')); // SKILL.md doesn't exist
@@ -165,7 +216,7 @@ describe('installer', () => {
         type: 'VALIDATION_ERROR',
       });
 
-      mockExecAsync.mockResolvedValue({ stdout: '', stderr: '' });
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' });
       mockAccess.mockRejectedValueOnce(new Error('Not found')).mockResolvedValueOnce(undefined);
 
       const { installSkill } = await import('../installer.js');
@@ -178,8 +229,37 @@ describe('installer', () => {
       expect(mockRm).toHaveBeenCalled();
     });
 
+    it('renames directory if manifest name differs from repo name', async () => {
+      // Manifest has different name than repo
+      mockParseSkillMd.mockReturnValue({
+        success: true,
+        content: {
+          manifest: {
+            name: 'actual-skill-name',
+            description: 'A test skill',
+          },
+          body: '# Test Skill',
+        },
+      });
+
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' });
+      mockAccess
+        .mockRejectedValueOnce(new Error('Not found')) // Target dir doesn't exist
+        .mockResolvedValueOnce(undefined) // SKILL.md exists
+        .mockRejectedValueOnce(new Error('Not found')); // New target dir doesn't exist
+
+      const { installSkill } = await import('../installer.js');
+      const result = await installSkill({
+        url: 'https://github.com/user/test-skill',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.skillName).toBe('actual-skill-name');
+      expect(mockRename).toHaveBeenCalled();
+    });
+
     it('handles git clone failure', async () => {
-      mockExecAsync.mockRejectedValue(new Error('Git clone failed'));
+      mockExecFileAsync.mockRejectedValue(new Error('Git clone failed'));
       mockAccess.mockRejectedValueOnce(new Error('Not found'));
 
       const { installSkill } = await import('../installer.js');
@@ -195,7 +275,8 @@ describe('installer', () => {
   describe('updateSkill', () => {
     it('pulls latest changes for installed skill', async () => {
       mockAccess.mockResolvedValue(undefined); // Dir and .git exist
-      mockExecAsync
+      mockExecFileAsync
+        .mockResolvedValueOnce({ stdout: 'refs/heads/main\n', stderr: '' }) // symbolic-ref
         .mockResolvedValueOnce({ stdout: 'abc123\n', stderr: '' }) // Before hash
         .mockResolvedValueOnce({ stdout: '', stderr: '' }) // git pull
         .mockResolvedValueOnce({ stdout: 'def456\n', stderr: '' }); // After hash
@@ -209,7 +290,8 @@ describe('installer', () => {
 
     it('reports when already up to date', async () => {
       mockAccess.mockResolvedValue(undefined);
-      mockExecAsync
+      mockExecFileAsync
+        .mockResolvedValueOnce({ stdout: 'refs/heads/main\n', stderr: '' }) // symbolic-ref
         .mockResolvedValueOnce({ stdout: 'abc123\n', stderr: '' })
         .mockResolvedValueOnce({ stdout: '', stderr: '' })
         .mockResolvedValueOnce({ stdout: 'abc123\n', stderr: '' }); // Same hash
@@ -219,6 +301,19 @@ describe('installer', () => {
 
       expect(result.success).toBe(true);
       expect(result.updated).toBe(false);
+    });
+
+    it('handles detached HEAD (pinned ref)', async () => {
+      mockAccess.mockResolvedValue(undefined);
+      // symbolic-ref fails when detached
+      mockExecFileAsync.mockRejectedValueOnce(new Error('not a symbolic ref'));
+
+      const { updateSkill } = await import('../installer.js');
+      const result = await updateSkill('test-skill');
+
+      expect(result.success).toBe(true);
+      expect(result.updated).toBe(false);
+      expect(result.error).toContain('pinned to a specific ref');
     });
 
     it('returns error if skill not found', async () => {
@@ -289,11 +384,15 @@ describe('installer', () => {
       expect(result).toEqual([]);
     });
 
-    it('lists plugins with SKILL.md files', async () => {
+    it('lists plugins with .git and SKILL.md files', async () => {
+      // Now requires both .git and SKILL.md to exist
       mockAccess
         .mockResolvedValueOnce(undefined) // Plugins dir exists
+        .mockResolvedValueOnce(undefined) // plugin-a/.git exists
         .mockResolvedValueOnce(undefined) // plugin-a/SKILL.md exists
+        .mockResolvedValueOnce(undefined) // plugin-b/.git exists
         .mockRejectedValueOnce(new Error('Not found')) // plugin-b/SKILL.md doesn't exist
+        .mockResolvedValueOnce(undefined) // plugin-c/.git exists
         .mockResolvedValueOnce(undefined); // plugin-c/SKILL.md exists
 
       mockReaddir.mockResolvedValue([
@@ -307,6 +406,25 @@ describe('installer', () => {
       const result = await listInstalledPlugins();
 
       expect(result).toEqual(['plugin-a', 'plugin-c']);
+    });
+
+    it('only includes git-tracked plugins', async () => {
+      // plugin-a has .git, plugin-b doesn't
+      mockAccess
+        .mockResolvedValueOnce(undefined) // Plugins dir exists
+        .mockResolvedValueOnce(undefined) // plugin-a/.git exists
+        .mockResolvedValueOnce(undefined) // plugin-a/SKILL.md exists
+        .mockRejectedValueOnce(new Error('Not found')); // plugin-b/.git doesn't exist
+
+      mockReaddir.mockResolvedValue([
+        { name: 'plugin-a', isDirectory: () => true },
+        { name: 'plugin-b', isDirectory: () => true },
+      ]);
+
+      const { listInstalledPlugins } = await import('../installer.js');
+      const result = await listInstalledPlugins();
+
+      expect(result).toEqual(['plugin-a']);
     });
 
     it('returns sorted list', async () => {

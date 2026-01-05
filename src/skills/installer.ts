@@ -3,15 +3,15 @@
  * Handles git clone, update, and removal of plugin skills.
  */
 
-import { exec } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { mkdir, rm, access, readdir } from 'node:fs/promises';
+import { mkdir, rm, access, readdir, rename } from 'node:fs/promises';
 import { parseSkillMd } from './parser.js';
 import { readFile } from 'node:fs/promises';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 /**
  * Options for installing a skill from git.
@@ -23,7 +23,7 @@ export interface InstallOptions {
   ref?: string;
   /** Override skill name (defaults to repo name) */
   name?: string;
-  /** Base directory for plugins (defaults to ~/.agent/skills) */
+  /** Base directory for plugins (defaults to ~/.agent/plugins) */
   baseDir?: string;
 }
 
@@ -57,9 +57,10 @@ export interface UpdateResult {
 
 /**
  * Get the default plugins directory.
+ * Plugins are stored separately from user skills for clear semantics.
  */
 export function getPluginsDir(baseDir?: string): string {
-  return baseDir ?? join(homedir(), '.agent', 'skills');
+  return baseDir ?? join(homedir(), '.agent', 'plugins');
 }
 
 /**
@@ -75,15 +76,31 @@ export function extractRepoName(url: string): string {
 }
 
 /**
- * Check if a directory exists.
+ * Check if a path exists.
  */
-async function dirExists(path: string): Promise<boolean> {
+async function pathExists(path: string): Promise<boolean> {
   try {
     await access(path);
     return true;
   } catch {
     return false;
   }
+}
+
+/**
+ * Validate URL to prevent shell injection.
+ */
+function isValidGitUrl(url: string): boolean {
+  // Only allow https:// or git@ URLs
+  return /^(https:\/\/|git@)[\w.-]+/.test(url);
+}
+
+/**
+ * Validate ref to prevent shell injection.
+ */
+function isValidRef(ref: string): boolean {
+  // Allow alphanumeric, dots, dashes, underscores, slashes (for branch names)
+  return /^[\w./-]+$/.test(ref);
 }
 
 /**
@@ -98,9 +115,28 @@ export async function installSkill(options: InstallOptions): Promise<InstallResu
   const repoName = name ?? extractRepoName(url);
   const targetDir = join(baseDir, repoName);
 
+  // Validate inputs to prevent shell injection
+  if (!isValidGitUrl(url)) {
+    return {
+      success: false,
+      skillName: repoName,
+      path: targetDir,
+      error: `Invalid git URL format. Must start with https:// or git@`,
+    };
+  }
+
+  if (ref !== undefined && ref !== '' && !isValidRef(ref)) {
+    return {
+      success: false,
+      skillName: repoName,
+      path: targetDir,
+      error: `Invalid ref format. Only alphanumeric, dots, dashes, underscores, and slashes allowed.`,
+    };
+  }
+
   try {
     // Check if already installed
-    if (await dirExists(targetDir)) {
+    if (await pathExists(targetDir)) {
       return {
         success: false,
         skillName: repoName,
@@ -112,17 +148,33 @@ export async function installSkill(options: InstallOptions): Promise<InstallResu
     // Ensure base directory exists
     await mkdir(baseDir, { recursive: true });
 
-    // Clone repository
-    const cloneCmd =
-      ref !== undefined && ref !== ''
-        ? `git clone --depth 1 --branch "${ref}" "${url}" "${targetDir}"`
-        : `git clone --depth 1 "${url}" "${targetDir}"`;
+    // Clone repository using execFile to avoid shell injection
+    const cloneArgs = ['clone', '--depth', '1'];
+    if (ref !== undefined && ref !== '') {
+      // For tags and branches, use --branch
+      // For commit SHAs, we'll checkout after clone
+      const isCommitSha = /^[a-f0-9]{7,40}$/i.test(ref);
+      if (!isCommitSha) {
+        cloneArgs.push('--branch', ref);
+      }
+    }
+    cloneArgs.push(url, targetDir);
 
-    await execAsync(cloneCmd, { timeout: 60000 });
+    await execFileAsync('git', cloneArgs, { timeout: 60000 });
+
+    // If ref is a commit SHA, checkout after clone
+    if (ref !== undefined && ref !== '' && /^[a-f0-9]{7,40}$/i.test(ref)) {
+      // Need to fetch the specific commit first (shallow clone may not have it)
+      await execFileAsync('git', ['fetch', '--depth', '1', 'origin', ref], {
+        cwd: targetDir,
+        timeout: 60000,
+      });
+      await execFileAsync('git', ['checkout', ref], { cwd: targetDir });
+    }
 
     // Validate SKILL.md exists
     const skillMdPath = join(targetDir, 'SKILL.md');
-    if (!(await dirExists(skillMdPath))) {
+    if (!(await pathExists(skillMdPath))) {
       // Rollback: remove cloned directory
       await rm(targetDir, { recursive: true, force: true });
       return {
@@ -133,9 +185,9 @@ export async function installSkill(options: InstallOptions): Promise<InstallResu
       };
     }
 
-    // Validate SKILL.md content
+    // Validate SKILL.md content (skip name match - we'll rename if needed)
     const content = await readFile(skillMdPath, 'utf-8');
-    const parseResult = parseSkillMd(content, repoName);
+    const parseResult = parseSkillMd(content, repoName, { skipNameValidation: true });
 
     if (!parseResult.success) {
       // Rollback: remove cloned directory
@@ -151,10 +203,10 @@ export async function installSkill(options: InstallOptions): Promise<InstallResu
     // Use the name from the manifest
     const actualName = parseResult.content.manifest.name;
 
-    // If manifest name differs from directory, rename
+    // If manifest name differs from directory name, rename the directory
     if (actualName !== repoName) {
       const newTargetDir = join(baseDir, actualName);
-      if (await dirExists(newTargetDir)) {
+      if (await pathExists(newTargetDir)) {
         // Rollback: remove cloned directory
         await rm(targetDir, { recursive: true, force: true });
         return {
@@ -164,8 +216,8 @@ export async function installSkill(options: InstallOptions): Promise<InstallResu
           error: `Skill "${actualName}" already exists. Choose a different name with --name option.`,
         };
       }
-      // Rename directory to match skill name
-      await execAsync(`mv "${targetDir}" "${newTargetDir}"`);
+      // Use fs.rename instead of shell mv for portability
+      await rename(targetDir, newTargetDir);
       return {
         success: true,
         skillName: actualName,
@@ -209,7 +261,7 @@ export async function updateSkill(skillName: string, baseDir?: string): Promise<
 
   try {
     // Check if skill exists
-    if (!(await dirExists(targetDir))) {
+    if (!(await pathExists(targetDir))) {
       return {
         success: false,
         skillName,
@@ -220,7 +272,7 @@ export async function updateSkill(skillName: string, baseDir?: string): Promise<
 
     // Check if it's a git repository
     const gitDir = join(targetDir, '.git');
-    if (!(await dirExists(gitDir))) {
+    if (!(await pathExists(gitDir))) {
       return {
         success: false,
         skillName,
@@ -229,14 +281,33 @@ export async function updateSkill(skillName: string, baseDir?: string): Promise<
       };
     }
 
+    // Check if we're on a detached HEAD (tag/commit install)
+    const { stdout: headRef } = await execFileAsync('git', ['symbolic-ref', '-q', 'HEAD'], {
+      cwd: targetDir,
+    }).catch(() => ({ stdout: '' }));
+
+    if (headRef.trim() === '') {
+      // Detached HEAD - can't pull, but can fetch and show if outdated
+      return {
+        success: true,
+        skillName,
+        updated: false,
+        error: `Skill "${skillName}" is pinned to a specific ref. Remove and reinstall to update.`,
+      };
+    }
+
     // Get current HEAD before pull
-    const { stdout: beforeHash } = await execAsync('git rev-parse HEAD', { cwd: targetDir });
+    const { stdout: beforeHash } = await execFileAsync('git', ['rev-parse', 'HEAD'], {
+      cwd: targetDir,
+    });
 
     // Pull latest changes
-    await execAsync('git pull --ff-only', { cwd: targetDir, timeout: 60000 });
+    await execFileAsync('git', ['pull', '--ff-only'], { cwd: targetDir, timeout: 60000 });
 
     // Get HEAD after pull
-    const { stdout: afterHash } = await execAsync('git rev-parse HEAD', { cwd: targetDir });
+    const { stdout: afterHash } = await execFileAsync('git', ['rev-parse', 'HEAD'], {
+      cwd: targetDir,
+    });
 
     const updated = beforeHash.trim() !== afterHash.trim();
 
@@ -269,7 +340,7 @@ export async function removeSkill(skillName: string, baseDir?: string): Promise<
 
   try {
     // Check if skill exists
-    if (!(await dirExists(targetDir))) {
+    if (!(await pathExists(targetDir))) {
       return false;
     }
 
@@ -282,7 +353,7 @@ export async function removeSkill(skillName: string, baseDir?: string): Promise<
 }
 
 /**
- * List installed plugin skills.
+ * List installed plugin skills (git-tracked only).
  *
  * @param baseDir - Base directory for plugins
  * @returns Array of installed skill names
@@ -291,7 +362,7 @@ export async function listInstalledPlugins(baseDir?: string): Promise<string[]> 
   const pluginsDir = getPluginsDir(baseDir);
 
   try {
-    if (!(await dirExists(pluginsDir))) {
+    if (!(await pathExists(pluginsDir))) {
       return [];
     }
 
@@ -300,9 +371,10 @@ export async function listInstalledPlugins(baseDir?: string): Promise<string[]> 
 
     for (const entry of entries) {
       if (entry.isDirectory()) {
-        // Check if it has a SKILL.md
+        // Must be a git repo with SKILL.md to be a plugin
+        const gitPath = join(pluginsDir, entry.name, '.git');
         const skillMdPath = join(pluginsDir, entry.name, 'SKILL.md');
-        if (await dirExists(skillMdPath)) {
+        if ((await pathExists(gitPath)) && (await pathExists(skillMdPath))) {
           plugins.push(entry.name);
         }
       }

@@ -25,6 +25,7 @@ export const skillHandler: CommandHandler = async (args, context): Promise<Comma
 
   switch (subcommand?.toLowerCase()) {
     case 'show':
+    case 'list': // Alias for backward compatibility
     case undefined:
     case '':
       return skillShowHandler(subArgs, context);
@@ -48,15 +49,17 @@ export const skillShowHandler: CommandHandler = async (_args, context): Promise<
   const configResult = await loadConfig();
   const config = configResult.success ? (configResult.result as AppConfig) : null;
 
-  // Build loader options from config
+  // Build loader options from config - include disabled for display
   const loaderOptions = config
     ? {
         userDir: config.skills.userDir,
+        pluginsDir: config.skills.pluginsDir,
         plugins: config.skills.plugins,
         disabledBundled: config.skills.disabledBundled,
         enabledBundled: config.skills.enabledBundled,
+        includeDisabled: true, // Include disabled skills for management UI
       }
-    : {};
+    : { includeDisabled: true };
 
   const loader = new SkillLoader(loaderOptions);
   const { skills, errors } = await loader.discover();
@@ -82,13 +85,11 @@ export const skillShowHandler: CommandHandler = async (_args, context): Promise<
   const user = skills.filter((s) => s.source === 'user');
   const project = skills.filter((s) => s.source === 'project');
 
-  // Get disabled bundled skills for status display
-  const disabledBundled = config?.skills.disabledBundled ?? [];
-
   if (bundled.length > 0) {
     context.onOutput('\n[Bundled Skills]', 'info');
     for (const skill of bundled) {
-      const isDisabled = disabledBundled.includes(skill.manifest.name);
+      // Use the disabled flag from the skill object
+      const isDisabled = skill.disabled === true;
       const status = isDisabled ? '  ' : '\u2713 ';
       const statusText = isDisabled ? '(disabled)' : '(enabled)';
       const desc = skill.manifest.description;
@@ -101,14 +102,8 @@ export const skillShowHandler: CommandHandler = async (_args, context): Promise<
   if (plugins.length > 0) {
     context.onOutput('\n[Plugin Skills]', 'info');
     for (const skill of plugins) {
-      // Find plugin config to check enabled state
-      const pluginConfig = config?.skills.plugins.find(
-        (p) =>
-          p.name === skill.manifest.name ||
-          p.url.includes(skill.manifest.name) ||
-          skill.directory.includes(p.name ?? '')
-      );
-      const isDisabled = pluginConfig?.enabled === false;
+      // Use the disabled flag from the skill object
+      const isDisabled = skill.disabled === true;
       const status = isDisabled ? '  ' : '\u2713 ';
       const statusText = isDisabled ? '(disabled)' : '(enabled)';
       const desc = skill.manifest.description;
@@ -194,8 +189,13 @@ export const skillInstallHandler: CommandHandler = async (
 
   context.onOutput(`\nInstalling skill from ${url}...`, 'info');
 
+  // Get config to determine plugins directory
+  const configResult = await loadConfig();
+  const config = configResult.success ? (configResult.result as AppConfig) : null;
+  const pluginsDir = config?.skills.pluginsDir;
+
   // Install the skill
-  const result = await installSkill({ url, ref, name });
+  const result = await installSkill({ url, ref, name, baseDir: pluginsDir });
 
   if (!result.success) {
     context.onOutput(`\nInstallation failed: ${result.error ?? 'Unknown error'}`, 'error');
@@ -206,10 +206,7 @@ export const skillInstallHandler: CommandHandler = async (
   context.onOutput(`Location: ${result.path}`, 'info');
 
   // Update config to track the plugin
-  const configResult = await loadConfig();
-  if (configResult.success) {
-    const config = configResult.result as AppConfig;
-
+  if (configResult.success && config) {
     // Check if already in plugins list
     const existingIndex = config.skills.plugins.findIndex(
       (p) => p.url === url || p.name === result.skillName
@@ -284,6 +281,7 @@ export const skillManageHandler: CommandHandler = async (args, context): Promise
 
   const config = configResult.result as AppConfig;
   const manager = new ConfigManager();
+  const pluginsDir = config.skills.pluginsDir;
 
   switch (action.toLowerCase()) {
     case 'enable': {
@@ -364,7 +362,7 @@ export const skillManageHandler: CommandHandler = async (args, context): Promise
       }
 
       context.onOutput(`Updating ${skillName}...`, 'info');
-      const result = await updateSkill(skillName);
+      const result = await updateSkill(skillName, pluginsDir);
 
       if (!result.success) {
         context.onOutput(`Update failed: ${result.error ?? 'Unknown error'}`, 'error');
@@ -373,6 +371,9 @@ export const skillManageHandler: CommandHandler = async (args, context): Promise
 
       if (result.updated) {
         context.onOutput(`Updated: ${skillName}`, 'success');
+      } else if (result.error !== undefined) {
+        // Pinned ref case
+        context.onOutput(result.error, 'info');
       } else {
         context.onOutput(`${skillName} is already up to date`, 'info');
       }
@@ -387,7 +388,7 @@ export const skillManageHandler: CommandHandler = async (args, context): Promise
       }
 
       // Remove from filesystem
-      const removed = await removeSkill(skillName);
+      const removed = await removeSkill(skillName, pluginsDir);
 
       if (!removed) {
         context.onOutput(`Skill "${skillName}" not found or could not be removed`, 'error');
@@ -406,11 +407,11 @@ export const skillManageHandler: CommandHandler = async (args, context): Promise
     }
 
     case 'list': {
-      const installed = await listInstalledPlugins();
+      const installed = await listInstalledPlugins(pluginsDir);
 
       if (installed.length === 0) {
         context.onOutput('No plugins installed.', 'info');
-        context.onOutput(`\nPlugins directory: ${getPluginsDir()}`, 'info');
+        context.onOutput(`\nPlugins directory: ${getPluginsDir(pluginsDir)}`, 'info');
         return { success: true, data: [] };
       }
 

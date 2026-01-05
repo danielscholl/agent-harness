@@ -14,12 +14,13 @@ const mockStat = jest.fn<() => Promise<{ isDirectory: () => boolean }>>();
 const mockRealpath = jest.fn<(path: string) => Promise<string>>();
 const mockMkdir = jest.fn<() => Promise<void>>();
 const mockRm = jest.fn<() => Promise<void>>();
+const mockRename = jest.fn<() => Promise<void>>();
 
 // Mock fs/promises BEFORE any imports that use it
-// Note: mockReaddir, mockStat, mockRealpath, mockMkdir, mockRm are required because the skills
-// module imports from node:fs/promises, and Jest's module mocking requires all exports to be
-// present. These tests focus on prompt loading which doesn't exercise these functions directly -
-// they return empty/failing results which is the expected behavior for the prompt tests.
+// Note: mockReaddir, mockStat, mockRealpath, mockMkdir, mockRm, mockRename are required because
+// the skills module imports from node:fs/promises, and Jest's module mocking requires all exports
+// to be present. These tests focus on prompt loading which doesn't exercise these functions
+// directly - they return empty/failing results which is the expected behavior for the prompt tests.
 jest.unstable_mockModule('node:fs/promises', () => ({
   readFile: mockReadFile,
   access: mockAccess,
@@ -28,6 +29,7 @@ jest.unstable_mockModule('node:fs/promises', () => ({
   realpath: mockRealpath,
   mkdir: mockMkdir,
   rm: mockRm,
+  rename: mockRename,
   constants: { R_OK: 4 },
 }));
 
