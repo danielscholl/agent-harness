@@ -137,7 +137,7 @@ telemetry:
   otlpEndpoint: http://localhost:4318
 ```
 
-See [docs/architecture.md](docs/architecture.md) for complete configuration options.
+See [docs/architecture/configuration.md](docs/architecture/configuration.md) for complete configuration options.
 
 ## Usage
 
@@ -155,23 +155,6 @@ bun run test
 bun run build
 ```
 
-### Observability
-
-Monitor your agent's performance with OpenTelemetry:
-
-```bash
-# Traces are exported to configured OTLP endpoint
-# Follows GenAI semantic conventions for LLM spans
-```
-
-See [docs/architecture.md](docs/architecture.md) for telemetry setup.
-
-## Skills
-
-Skills are lightweight extensions that add domain-specific capabilities to an agent without increasing the core footprint. They're automatically discovered at runtime and load only minimal metadata by default, with additional tools activated on demand to keep token usage low.
-
-See [docs/architecture.md](docs/architecture.md#skills-architecture) for skill development details.
-
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code quality guidelines, and contribution workflow.
@@ -179,8 +162,3 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code quality guide
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-- TypeScript rewrite of [agent-base](https://github.com/danielscholl/agent-base)
-- Built with [LangChain.js](https://js.langchain.com/) and [Ink](https://github.com/vadimdemedes/ink)

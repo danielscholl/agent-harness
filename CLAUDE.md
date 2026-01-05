@@ -1,10 +1,6 @@
 # Project Constitution
 
-This file provides governance and guidance for AI coding assistants building the TypeScript agent framework.
-
-**Reference Documents:**
-- `docs/plans/typescript-rewrite.md` - Architecture plan and phase breakdown
-- `docs/plans/typescript-rewrite-features.md` - Ordered feature list (42 MVP features)
+This file provides governance and guidance for AI coding assistants working on the TypeScript agent framework.
 
 ---
 
@@ -85,7 +81,7 @@ All LLM calls and external API calls include fallback handling. If summarization
 - **Runtime**: Bun 1.x (users must have Bun installed)
 - We chose Bun-only runtime for native TypeScript execution without transpilation
 
-**Version Authority**: `package.json` is the source of truth for exact versions. This table records intended technologies; the package manifest may specify newer compatible versions. See `docs/plans/version-upgrade-plan.md` for detailed version analysis.
+**Version Authority**: `package.json` is the source of truth for exact versions.
 
 ---
 
@@ -120,7 +116,7 @@ Note: Only the Agent Layer invokes the Model Layer. Tools and Utils never call L
 | Skill Loader | Progressive disclosure discovery | `skills/loader.ts` |
 | Telemetry Spans | GenAI semantic conventions | `telemetry/spans.ts` |
 
-- **Architecture**: [`docs/architecture.md`](docs/architecture.md) - Component relationships, interfaces
+- **Architecture**: [`docs/architecture/`](docs/architecture/README.md) - Component relationships, interfaces
 
 ---
 
@@ -180,7 +176,7 @@ See [`docs/guides/prompts.md`](docs/guides/prompts.md) for customization and pla
 
 Skills use SKILL.md manifests with YAML front matter for metadata and markdown instructions. Skills inject documentation and tools based on trigger matching (progressive disclosure).
 
-See [`docs/architecture.md`](docs/architecture.md#skills-architecture) for manifest format, trigger matching, and skill sources.
+See [`docs/architecture/skills.md`](docs/architecture/skills.md) for manifest format, trigger matching, and skill sources.
 
 ---
 
@@ -261,9 +257,6 @@ We are porting `agent-base` (Python/Microsoft Agent Framework) to TypeScript. Ke
 | pytest | Jest |
 | Rich + Typer | React 19 + Ink 6 |
 | PEP 723 scripts | Bun subprocess |
-
-### Feature Implementation Order
-Follow the phase-ordered features in `docs/plans/typescript-rewrite-features.md`. Each feature should be implementable independently after its dependencies are complete.
 
 ---
 

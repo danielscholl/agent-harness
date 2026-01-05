@@ -187,4 +187,3 @@ Version manager files added:
 ### References
 
 - [Bun v1.3.4 Release Notes](https://bun.sh/blog/bun-v1.3.4)
-- Feature spec: `docs/specs/version-upgrade-node-bun.md`
