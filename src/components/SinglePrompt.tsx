@@ -312,11 +312,10 @@ export function SinglePrompt({
         enableSensitiveData: config.telemetry.enableSensitiveData,
       });
 
-      // Create agent with ToolRegistry
+      // Create agent (tools loaded from ToolRegistry)
       const agent = new Agent({
         config,
         callbacks,
-        useToolRegistry: true,
       });
 
       try {

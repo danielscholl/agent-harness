@@ -36,6 +36,7 @@ import type {
   ToolSpanEndOptions,
   AgentSpanOptions,
 } from './types.js';
+import type { ToolExecutionResult } from '../tools/index.js';
 
 // -----------------------------------------------------------------------------
 // Constants
@@ -405,7 +406,8 @@ export interface TracingCallbacksInput {
   onToolEnd?: (
     ctx: CallbackSpanContext,
     toolName: string,
-    result: { success: boolean; error?: string; result?: unknown }
+    result: { success: boolean; error?: string; result?: unknown },
+    executionResult?: ToolExecutionResult
   ) => void;
 }
 
@@ -569,7 +571,7 @@ export function createTracingCallbacks(
       baseCallbacks?.onToolStart?.(ctx, toolName, args);
     },
 
-    onToolEnd: (ctx, toolName, result) => {
+    onToolEnd: (ctx, toolName, result, executionResult) => {
       const spanKey = getSpanKey(ctx);
       const span = state.toolSpans.get(spanKey);
 
@@ -579,16 +581,20 @@ export function createTracingCallbacks(
           span.setAttribute(ATTR_GEN_AI_TOOL_CALL_RESULT, JSON.stringify(result.result));
         }
 
+        // Prefer executionResult when available (includes metadata.error detection)
+        const success = executionResult?.success ?? result.success;
+        const errorCode = executionResult?.error ?? result.error;
+
         // Set status based on success
-        if (result.success) {
+        if (success) {
           span.setStatus({ code: SpanStatusCode.OK });
         } else {
-          if (result.error !== undefined) {
-            span.setAttribute(ATTR_ERROR_TYPE, result.error);
+          if (errorCode !== undefined) {
+            span.setAttribute(ATTR_ERROR_TYPE, errorCode);
           }
           span.setStatus({
             code: SpanStatusCode.ERROR,
-            message: result.error ?? 'Tool execution failed',
+            message: errorCode ?? 'Tool execution failed',
           });
         }
 
@@ -596,8 +602,8 @@ export function createTracingCallbacks(
         state.toolSpans.delete(spanKey);
       }
 
-      // Call base callback
-      baseCallbacks?.onToolEnd?.(ctx, toolName, result);
+      // Call base callback (pass executionResult for extended signature)
+      baseCallbacks?.onToolEnd?.(ctx, toolName, result, executionResult);
     },
   };
 

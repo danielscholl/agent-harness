@@ -52,6 +52,21 @@ jest.unstable_mockModule('../../model/llm.js', () => {
   };
 });
 
+// Create mock for ToolRegistry
+const mockToolRegistryTools = jest.fn<() => Promise<StructuredToolInterface[]>>();
+const mockToolRegistryGetLastResult = jest.fn<() => undefined>();
+
+// Mock tools module with ToolRegistry
+jest.unstable_mockModule('../../tools/index.js', () => ({
+  Tool: {
+    define: jest.fn(),
+  },
+  ToolRegistry: {
+    tools: mockToolRegistryTools,
+    getLastResult: mockToolRegistryGetLastResult,
+  },
+}));
+
 // Import after all mocks are set up
 const { Agent } = await import('../agent.js');
 
@@ -111,6 +126,10 @@ describe('Agent', () => {
     mockGetModelName.mockReturnValue('gpt-4o');
     mockGetProviderName.mockReturnValue('openai');
 
+    // Default: no tools from registry
+    mockToolRegistryTools.mockResolvedValue([]);
+    mockToolRegistryGetLastResult.mockReturnValue(undefined);
+
     mockInvoke.mockResolvedValue({
       success: true,
       result: {
@@ -141,16 +160,6 @@ describe('Agent', () => {
 
     it('accepts optional callbacks', () => {
       const agent = new Agent({ config, callbacks });
-      expect(agent).toBeInstanceOf(Agent);
-    });
-
-    it('accepts optional tools', () => {
-      const mockTool = {
-        name: 'test-tool',
-        description: 'A test tool',
-        invoke: jest.fn(),
-      };
-      const agent = new Agent({ config, tools: [mockTool as never] });
       expect(agent).toBeInstanceOf(Agent);
     });
 
@@ -449,10 +458,12 @@ describe('Agent', () => {
         message: 'Model retrieved',
       });
 
+      // Configure ToolRegistry to return the mock tool
+      mockToolRegistryTools.mockResolvedValue([mockTool as unknown as StructuredToolInterface]);
+
       const agent = new Agent({
         config,
         callbacks,
-        tools: [mockTool as unknown as StructuredToolInterface],
       });
 
       const result = await agent.run('Say hello to World');
@@ -499,10 +510,12 @@ describe('Agent', () => {
         message: 'Model retrieved',
       });
 
+      // Configure ToolRegistry to return the existing tool
+      mockToolRegistryTools.mockResolvedValue([existingTool as unknown as StructuredToolInterface]);
+
       const agent = new Agent({
         config,
         callbacks,
-        tools: [existingTool as unknown as StructuredToolInterface], // Provide a tool so tool binding happens
       });
 
       await agent.run('Use the nonexistent tool');
@@ -561,10 +574,12 @@ describe('Agent', () => {
         message: 'Model retrieved',
       });
 
+      // Configure ToolRegistry to return the failing tool
+      mockToolRegistryTools.mockResolvedValue([failingTool as unknown as StructuredToolInterface]);
+
       const agent = new Agent({
         config,
         callbacks,
-        tools: [failingTool as unknown as StructuredToolInterface],
       });
 
       await agent.run('Use the failing tool');
@@ -576,6 +591,180 @@ describe('Agent', () => {
           success: false,
           error: 'UNKNOWN',
           message: 'Tool execution failed',
+        }),
+        undefined // executionResult from registry
+      );
+    });
+
+    it('detects LLM_ASSIST_REQUIRED in tool output and logs via onDebug', async () => {
+      // Tool that returns LLM_ASSIST_REQUIRED
+      const assistTool = {
+        name: 'delegate_task',
+        description: 'Delegate a task',
+        invoke: jest.fn<(args: Record<string, unknown>) => Promise<string>>().mockResolvedValue(
+          JSON.stringify({
+            action: 'LLM_ASSIST_REQUIRED',
+            taskType: 'subagent_delegation',
+            sessionID: 'test-session',
+            subagentType: 'research',
+            description: 'Research topic',
+            prompt: 'Find information about X',
+            message: 'Agent layer should spawn subagent',
+          })
+        ),
+      };
+
+      // Mock model to return tool call then final answer
+      let callCount = 0;
+      const mockModelWithAssist = {
+        invoke: jest.fn<(messages: unknown) => Promise<AIMessage>>().mockImplementation(() => {
+          callCount++;
+          if (callCount === 1) {
+            return Promise.resolve(
+              new AIMessage({
+                content: '',
+                tool_calls: [{ id: 'call_1', name: 'delegate_task', args: {} }],
+              })
+            );
+          }
+          return Promise.resolve(new AIMessage({ content: 'Task delegated successfully' }));
+        }),
+        bindTools: jest.fn<(tools: StructuredToolInterface[]) => unknown>().mockReturnThis(),
+      };
+
+      mockGetModel.mockReturnValue({
+        success: true,
+        result: mockModelWithAssist as unknown as BaseChatModel,
+        message: 'Model retrieved',
+      });
+
+      // Configure ToolRegistry to return the assist tool
+      mockToolRegistryTools.mockResolvedValue([assistTool as unknown as StructuredToolInterface]);
+
+      const onDebug = jest.fn();
+      const agent = new Agent({
+        config,
+        callbacks: { ...callbacks, onDebug },
+      });
+
+      await agent.run('Delegate a research task');
+
+      // Verify onDebug was called with LLM_ASSIST_REQUIRED detection
+      expect(onDebug).toHaveBeenCalledWith(
+        'LLM_ASSIST_REQUIRED detected',
+        expect.objectContaining({
+          action: 'LLM_ASSIST_REQUIRED',
+          taskType: 'subagent_delegation',
+        })
+      );
+    });
+
+    it('detects LLM_ASSIST_REQUIRED in ToolRegistry format (title\\n\\noutput)', async () => {
+      // Tool that returns ToolRegistry format: "title\n\nJSON"
+      const assistTool = {
+        name: 'delegate_task',
+        description: 'Delegate a task',
+        invoke: jest.fn<(args: Record<string, unknown>) => Promise<string>>().mockResolvedValue(
+          `Task delegated: research\n\n${JSON.stringify({
+            action: 'LLM_ASSIST_REQUIRED',
+            taskType: 'subagent_delegation',
+          })}`
+        ),
+      };
+
+      let callCount = 0;
+      const mockModelWithAssist = {
+        invoke: jest.fn<(messages: unknown) => Promise<AIMessage>>().mockImplementation(() => {
+          callCount++;
+          if (callCount === 1) {
+            return Promise.resolve(
+              new AIMessage({
+                content: '',
+                tool_calls: [{ id: 'call_1', name: 'delegate_task', args: {} }],
+              })
+            );
+          }
+          return Promise.resolve(new AIMessage({ content: 'Done' }));
+        }),
+        bindTools: jest.fn<(tools: StructuredToolInterface[]) => unknown>().mockReturnThis(),
+      };
+
+      mockGetModel.mockReturnValue({
+        success: true,
+        result: mockModelWithAssist as unknown as BaseChatModel,
+        message: 'Model retrieved',
+      });
+
+      // Configure ToolRegistry to return the assist tool
+      mockToolRegistryTools.mockResolvedValue([assistTool as unknown as StructuredToolInterface]);
+
+      const onDebug = jest.fn();
+      const agent = new Agent({
+        config,
+        callbacks: { ...callbacks, onDebug },
+      });
+
+      await agent.run('Delegate task');
+
+      expect(onDebug).toHaveBeenCalledWith(
+        'LLM_ASSIST_REQUIRED detected',
+        expect.objectContaining({ action: 'LLM_ASSIST_REQUIRED' })
+      );
+    });
+
+    it('detects LLM_ASSIST_REQUIRED in legacy ToolResponse format', async () => {
+      // Tool that returns legacy ToolResponse with error: 'LLM_ASSIST_REQUIRED'
+      const assistTool = {
+        name: 'legacy_tool',
+        description: 'Legacy tool',
+        invoke: jest.fn<(args: Record<string, unknown>) => Promise<string>>().mockResolvedValue(
+          JSON.stringify({
+            success: false,
+            error: 'LLM_ASSIST_REQUIRED',
+            message: 'Need LLM help with this',
+          })
+        ),
+      };
+
+      let callCount = 0;
+      const mockModelWithAssist = {
+        invoke: jest.fn<(messages: unknown) => Promise<AIMessage>>().mockImplementation(() => {
+          callCount++;
+          if (callCount === 1) {
+            return Promise.resolve(
+              new AIMessage({
+                content: '',
+                tool_calls: [{ id: 'call_1', name: 'legacy_tool', args: {} }],
+              })
+            );
+          }
+          return Promise.resolve(new AIMessage({ content: 'Done' }));
+        }),
+        bindTools: jest.fn<(tools: StructuredToolInterface[]) => unknown>().mockReturnThis(),
+      };
+
+      mockGetModel.mockReturnValue({
+        success: true,
+        result: mockModelWithAssist as unknown as BaseChatModel,
+        message: 'Model retrieved',
+      });
+
+      // Configure ToolRegistry to return the assist tool
+      mockToolRegistryTools.mockResolvedValue([assistTool as unknown as StructuredToolInterface]);
+
+      const onDebug = jest.fn();
+      const agent = new Agent({
+        config,
+        callbacks: { ...callbacks, onDebug },
+      });
+
+      await agent.run('Use legacy tool');
+
+      expect(onDebug).toHaveBeenCalledWith(
+        'LLM_ASSIST_REQUIRED detected',
+        expect.objectContaining({
+          action: 'LLM_ASSIST_REQUIRED',
+          message: 'Need LLM help with this',
         })
       );
     });
@@ -616,10 +805,12 @@ describe('Agent', () => {
           }),
       };
 
+      // Configure ToolRegistry to return the loop tool
+      mockToolRegistryTools.mockResolvedValue([loopTool as unknown as StructuredToolInterface]);
+
       const agent = new Agent({
         config,
         callbacks,
-        tools: [loopTool as unknown as StructuredToolInterface],
         maxIterations: 3,
       });
 
@@ -682,6 +873,9 @@ describe('Agent', () => {
         invoke: jest.fn<(args: Record<string, unknown>) => Promise<ToolResponse>>(),
       } as unknown as StructuredToolInterface;
 
+      // Configure ToolRegistry to return the mock tool
+      mockToolRegistryTools.mockResolvedValue([mockTool]);
+
       // Default: return a model without tools
       mockGetModel.mockReturnValue({
         success: true,
@@ -707,7 +901,6 @@ describe('Agent', () => {
       const agent = new Agent({
         config: foundryConfig,
         callbacks,
-        tools: [mockTool],
       });
 
       await agent.run('Test query');
@@ -748,7 +941,6 @@ describe('Agent', () => {
       const agent = new Agent({
         config: foundryConfig,
         callbacks,
-        tools: [mockTool],
       });
 
       await agent.run('Test query');
@@ -756,7 +948,7 @@ describe('Agent', () => {
       // Verify getModel was called (tool binding happened)
       expect(mockGetModel).toHaveBeenCalled();
 
-      // Verify bindTools was called
+      // Verify bindTools was called with tools from registry
       expect(mockModelWithTools.bindTools).toHaveBeenCalledWith([mockTool]);
 
       // Verify NO debug message about skipping tool binding
@@ -790,7 +982,6 @@ describe('Agent', () => {
       const agent = new Agent({
         config: openaiConfig,
         callbacks,
-        tools: [mockTool],
       });
 
       await agent.run('Test query');
@@ -798,7 +989,7 @@ describe('Agent', () => {
       // Verify getModel was called (tool binding happened)
       expect(mockGetModel).toHaveBeenCalled();
 
-      // Verify bindTools was called
+      // Verify bindTools was called with tools from registry
       expect(mockModelWithTools.bindTools).toHaveBeenCalledWith([mockTool]);
     });
 
@@ -815,7 +1006,6 @@ describe('Agent', () => {
       const agent = new Agent({
         config: configWithDisabled,
         callbacks,
-        tools: [mockTool],
       });
 
       await agent.run('Test query');
@@ -857,7 +1047,6 @@ describe('Agent', () => {
       const agent = new Agent({
         config: configWithEnabled,
         callbacks,
-        tools: [mockTool],
       });
 
       await agent.run('Test query');
@@ -865,7 +1054,7 @@ describe('Agent', () => {
       // Verify getModel was called (tool binding happened)
       expect(mockGetModel).toHaveBeenCalled();
 
-      // Verify bindTools was called
+      // Verify bindTools was called with tools from registry
       expect(mockModelWithTools.bindTools).toHaveBeenCalledWith([mockTool]);
 
       // Verify NO debug message about skipping tool binding
@@ -874,16 +1063,18 @@ describe('Agent', () => {
       );
     });
 
-    it('skips tool binding when no tools provided', async () => {
+    it('skips tool binding when no tools from registry', async () => {
+      // Override to return no tools
+      mockToolRegistryTools.mockResolvedValue([]);
+
       const agent = new Agent({
         config,
         callbacks,
-        tools: [], // No tools
       });
 
       await agent.run('Test query');
 
-      // Verify getModel was NOT called since there are no tools
+      // Verify getModel was NOT called since there are no tools from registry
       expect(mockGetModel).not.toHaveBeenCalled();
     });
   });

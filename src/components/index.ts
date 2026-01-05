@@ -2,7 +2,6 @@
  * Component exports.
  */
 
-export { App } from './App.js';
 export { ErrorDisplay, type ErrorDisplayProps } from './ErrorDisplay.js';
 export { Header, type HeaderProps } from './Header.js';
 export { HealthCheck } from './HealthCheck.js';

@@ -145,9 +145,24 @@ export function createCallbacks(
       state.addActiveTask?.(ctx.spanId, toolName, args);
     },
 
-    onToolEnd: (ctx, toolName, result) => {
-      const success = result.success;
-      const error = !success && 'message' in result ? result.message : undefined;
+    onToolEnd: (ctx, toolName, result, executionResult) => {
+      const success = executionResult?.success ?? result.success;
+      // Prefer error from executionResult result.metadata.error, fallback to result.message
+      let error: string | undefined;
+      if (!success) {
+        // Check executionResult metadata for error code
+        if (executionResult !== undefined) {
+          const meta = executionResult.result.metadata as Record<string, unknown>;
+          const errorFromMeta = 'error' in meta ? meta.error : undefined;
+          if (typeof errorFromMeta === 'string' && errorFromMeta.length > 0) {
+            error = errorFromMeta;
+          }
+        }
+        // Fallback to result.message
+        if (error === undefined && 'message' in result) {
+          error = result.message;
+        }
+      }
       // Duration is calculated in the component from startTime
       state.completeTask?.(ctx.spanId, toolName, success, 0, error);
     },
@@ -366,7 +381,7 @@ export function wrapWithTelemetry(
       callbacks.onToolStart?.(ctx, toolName, args);
     },
 
-    onToolEnd: (ctx, toolName, result) => {
+    onToolEnd: (ctx, toolName, result, executionResult) => {
       const spanKey = getSpanKey(ctx);
       const span = state.toolSpans.get(spanKey);
 
@@ -381,8 +396,8 @@ export function wrapWithTelemetry(
         state.toolSpans.delete(spanKey);
       }
 
-      // Call original callback
-      callbacks.onToolEnd?.(ctx, toolName, result);
+      // Call original callback with executionResult
+      callbacks.onToolEnd?.(ctx, toolName, result, executionResult);
     },
   };
 }

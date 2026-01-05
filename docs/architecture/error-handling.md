@@ -142,14 +142,14 @@ const answer = await agent.run(query);
 Tool Layer                    Agent Layer                   CLI Layer
 ──────────                    ───────────                   ─────────
 
-try/catch internally          Returns AgentResponse         Subscribes to
+try/catch internally          Returns Promise<string>       Subscribes to
        │                      Emits via callbacks           onError callback
        ▼                             │                           │
 Return Tool.Result ─────────►  Handles tool results              │
   (never throw)                      │                           │
                                      ▼                           ▼
                               Emits onError callback ─────► Display error
-                              Returns error message         Reset cleanly
+                              Returns answer string         Reset cleanly
 ```
 
 ---

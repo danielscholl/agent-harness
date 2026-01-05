@@ -14,6 +14,7 @@
 
 import { z } from 'zod';
 import { Tool } from './tool.js';
+import type { ToolErrorCode } from './types.js';
 
 /**
  * Task tool metadata type.
@@ -25,6 +26,8 @@ interface TaskMetadata extends Tool.Metadata {
   subagentType: string;
   /** Task status */
   status: 'pending' | 'running' | 'completed' | 'failed';
+  /** Error code if task failed */
+  error?: ToolErrorCode;
 }
 
 /**
@@ -36,6 +39,27 @@ type SubagentType = (typeof SUBAGENT_TYPES)[number];
 
 function isValidSubagentType(type: string): type is SubagentType {
   return SUBAGENT_TYPES.includes(type as SubagentType);
+}
+
+/**
+ * Helper to create error result for task tool.
+ */
+function createTaskError(
+  sessionID: string,
+  subagentType: string,
+  errorCode: ToolErrorCode,
+  message: string
+): Tool.Result<TaskMetadata> {
+  return {
+    title: `Error: Invalid subagent type`,
+    metadata: {
+      sessionID,
+      subagentType,
+      status: 'failed' as const,
+      error: errorCode,
+    },
+    output: `Error: ${message}`,
+  };
 }
 
 /** Parameters schema for task tool */
@@ -68,7 +92,12 @@ export const taskTool = Tool.define<typeof taskParametersSchema, TaskMetadata>('
 
     // Validate subagent type
     if (!isValidSubagentType(subagentType)) {
-      throw new Error(`Unknown subagent type '${subagentType}'. Available: ${availableTypes}`);
+      return createTaskError(
+        sessionId ?? ctx.sessionID,
+        subagentType,
+        'VALIDATION_ERROR',
+        `Unknown subagent type '${subagentType}'. Available: ${availableTypes}`
+      );
     }
 
     // Stream progress

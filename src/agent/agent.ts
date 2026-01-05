@@ -8,7 +8,7 @@
 
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from '@langchain/core/messages';
 import type { BaseMessage, AIMessageChunk } from '@langchain/core/messages';
-import type { StructuredToolInterface } from '@langchain/core/tools';
+import type { StructuredToolInterface } from '@langchain/core/tools'; // Used for resolvedTools typing
 import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import type { Runnable } from '@langchain/core/runnables';
 import type { AppConfig } from '../config/schema.js';
@@ -18,7 +18,7 @@ import type { AgentOptions, Message, SpanContext } from './types.js';
 import type { AgentCallbacks } from './callbacks.js';
 import type { AgentErrorCode, AgentErrorResponse, ProviderErrorMetadata } from '../errors/index.js';
 import type { DiscoveredSkill, SkillLoaderOptions } from '../skills/types.js';
-import type { ToolPermission, ToolExecutionResult } from '../tools/index.js';
+import type { ToolPermission } from '../tools/index.js';
 import { Tool, ToolRegistry } from '../tools/index.js';
 import { LLMClient } from '../model/llm.js';
 import { assembleSystemPrompt, loadSkillsContext } from './prompts.js';
@@ -41,6 +41,7 @@ interface ToolCall {
 
 /**
  * Core agent that orchestrates LLM calls, tool execution, and answer generation.
+ * Tools are automatically loaded from the ToolRegistry.
  *
  * @example
  * ```typescript
@@ -50,7 +51,6 @@ interface ToolCall {
  *     onLLMStart: (ctx, model) => console.log(`Calling ${model}...`),
  *     onToolStart: (ctx, name) => console.log(`Running ${name}...`),
  *   },
- *   tools: [readTool, writeTool],
  * });
  *
  * const answer = await agent.run('Read the contents of README.md');
@@ -65,14 +65,11 @@ interface ToolCall {
 export class Agent {
   private readonly config: AppConfig;
   private readonly callbacks?: AgentCallbacks;
-  private readonly legacyTools: StructuredToolInterface[];
   private readonly llmClient: LLMClient;
   private readonly maxIterations: number;
   private readonly includeSkills: boolean;
   private readonly skillLoaderOptions?: SkillLoaderOptions;
-  private readonly useToolRegistry: boolean;
   private readonly enabledPermissions: Set<ToolPermission>;
-  private readonly onToolResult?: (result: ToolExecutionResult) => void;
   private systemPrompt: string = '';
   private initialized: boolean = false;
   private discoveredSkills: DiscoveredSkill[] = [];
@@ -84,15 +81,12 @@ export class Agent {
   constructor(options: AgentOptions) {
     this.config = options.config;
     this.callbacks = options.callbacks;
-    this.legacyTools = options.tools ?? [];
     this.maxIterations = options.maxIterations ?? DEFAULT_MAX_ITERATIONS;
     this.includeSkills = options.includeSkills !== false; // Default: true
     this.skillLoaderOptions = options.skillLoaderOptions;
-    this.useToolRegistry = options.useToolRegistry === true; // Default: false for backward compatibility
     this.enabledPermissions =
       options.enabledPermissions ??
       new Set<ToolPermission>(['read', 'write', 'execute', 'network']);
-    this.onToolResult = options.onToolResult;
 
     // Create LLMClient from config
     this.llmClient = new LLMClient({ config: this.config });
@@ -102,9 +96,6 @@ export class Agent {
     if (options.systemPrompt !== undefined && options.systemPrompt !== '') {
       this.systemPrompt = options.systemPrompt;
     }
-
-    // Note: onToolResult is passed to ToolRegistry.tools() in resolveTools()
-    // for per-agent callback isolation when useToolRegistry is true
   }
 
   /**
@@ -182,39 +173,23 @@ export class Agent {
   }
 
   /**
-   * Resolve tools from ToolRegistry and combine with legacy tools.
+   * Resolve tools from ToolRegistry.
    */
   private async resolveTools(): Promise<void> {
-    if (this.useToolRegistry) {
-      // Get tools from registry with proper context creation and per-agent callback
-      const registryTools = await ToolRegistry.tools({
-        enabledPermissions: this.enabledPermissions,
-        initCtx: {
-          workingDir: process.cwd(),
-          onDebug: this.callbacks?.onDebug,
-        },
-        createContext: (toolId, callId) => this.createToolContext(toolId, callId),
-        onToolResult: this.onToolResult,
-      });
+    // Get tools from registry with proper context creation
+    this.resolvedTools = await ToolRegistry.tools({
+      enabledPermissions: this.enabledPermissions,
+      initCtx: {
+        workingDir: process.cwd(),
+        onDebug: this.callbacks?.onDebug,
+      },
+      createContext: (toolId, callId) => this.createToolContext(toolId, callId),
+    });
 
-      // Combine registry tools with any legacy tools
-      this.resolvedTools = [...registryTools, ...this.legacyTools];
-
-      this.callbacks?.onDebug?.('Resolved tools from registry', {
-        registryCount: registryTools.length,
-        legacyCount: this.legacyTools.length,
-        totalCount: this.resolvedTools.length,
-        toolNames: this.resolvedTools.map((t) => t.name),
-      });
-    } else {
-      // Legacy mode: only use injected tools
-      this.resolvedTools = this.legacyTools;
-
-      this.callbacks?.onDebug?.('Using legacy tools only', {
-        count: this.resolvedTools.length,
-        toolNames: this.resolvedTools.map((t) => t.name),
-      });
-    }
+    this.callbacks?.onDebug?.('Resolved tools from registry', {
+      count: this.resolvedTools.length,
+      toolNames: this.resolvedTools.map((t) => t.name),
+    });
   }
 
   /**
@@ -479,8 +454,11 @@ export class Agent {
         callbackResult = toolResponse;
       }
 
-      // Emit tool end callback
-      this.callbacks?.onToolEnd?.(ctx, toolCall.name, callbackResult);
+      // Get execution result from registry
+      const executionResult = ToolRegistry.getLastResult(toolCall.name);
+
+      // Emit tool end callback with execution result
+      this.callbacks?.onToolEnd?.(ctx, toolCall.name, callbackResult, executionResult);
 
       return { name: toolCall.name, id: toolCall.id, content };
     } catch (error) {
@@ -490,7 +468,10 @@ export class Agent {
         message: error instanceof Error ? error.message : 'Unknown error',
       };
 
-      this.callbacks?.onToolEnd?.(ctx, toolCall.name, errorResult);
+      // Get execution result from registry (may have error info)
+      const executionResult = ToolRegistry.getLastResult(toolCall.name);
+
+      this.callbacks?.onToolEnd?.(ctx, toolCall.name, errorResult, executionResult);
 
       return { name: toolCall.name, id: toolCall.id, content: JSON.stringify(errorResult) };
     }
@@ -515,9 +496,13 @@ export class Agent {
   /**
    * Run the agent with a query and return the final answer.
    *
+   * Returns a plain string - either the LLM's answer or an error message prefixed with "Error:".
+   * For structured error handling, subscribe to the `onError` callback which receives
+   * `AgentErrorResponse` with error codes and metadata.
+   *
    * @param query - User's input query
    * @param history - Optional conversation history
-   * @returns Final answer string
+   * @returns Final answer string (or error message string prefixed with "Error:")
    */
   async run(query: string, history?: Message[]): Promise<string> {
     // Ensure initialized
@@ -641,6 +626,14 @@ export class Agent {
         for (const toolCall of toolCalls) {
           const toolCtx = createChildSpanContext(rootCtx);
           const toolResult = await this.executeTool(toolCall, toolCtx);
+
+          // Check for LLM_ASSIST_REQUIRED signal from tools that need LLM help
+          const assistRequest = this.parseLLMAssistRequest(toolResult.content);
+          if (assistRequest !== undefined) {
+            this.callbacks?.onDebug?.('LLM_ASSIST_REQUIRED detected', assistRequest);
+            // Note: Full subagent spawning is future work - for now, pass through to LLM
+            // The LLM will interpret the request and may provide assistance or guidance
+          }
 
           // Add tool result message (content is already properly formatted)
           const toolMessage = new ToolMessage({
@@ -865,4 +858,83 @@ export class Agent {
 
     return 'UNKNOWN';
   }
+
+  /**
+   * Parse LLM assist request from tool output content.
+   * Tool outputs may contain a structured request for LLM assistance.
+   *
+   * @returns Parsed request if content contains LLM_ASSIST_REQUIRED action, undefined otherwise
+   */
+  private parseLLMAssistRequest(content: string): LLMAssistRequest | undefined {
+    // Try multiple parsing strategies for different content formats
+    const tryParseAction = (text: string): LLMAssistRequest | undefined => {
+      try {
+        const parsed: unknown = JSON.parse(text);
+
+        // Validate parsed value is a non-null object before accessing properties
+        if (typeof parsed !== 'object' || parsed === null) {
+          return undefined;
+        }
+
+        // Strategy A: Check for action: 'LLM_ASSIST_REQUIRED' (task tool format)
+        // Robustly validate the object has 'action' property with expected value
+        if (
+          'action' in parsed &&
+          typeof (parsed as Record<string, unknown>).action === 'string' &&
+          (parsed as { action: string }).action === 'LLM_ASSIST_REQUIRED'
+        ) {
+          return parsed as LLMAssistRequest;
+        }
+
+        // Strategy B: Check for legacy ToolResponse format { error: 'LLM_ASSIST_REQUIRED' }
+        // Robustly validate the object has 'error' property with expected value
+        if (
+          'error' in parsed &&
+          typeof (parsed as Record<string, unknown>).error === 'string' &&
+          (parsed as { error: string }).error === 'LLM_ASSIST_REQUIRED'
+        ) {
+          const legacy = parsed as { error: string; message?: string };
+          return {
+            action: 'LLM_ASSIST_REQUIRED',
+            message: legacy.message,
+          };
+        }
+      } catch {
+        // Not valid JSON
+      }
+      return undefined;
+    };
+
+    // Strategy 1: Try parsing full content (legacy tools return plain JSON)
+    const fromFull = tryParseAction(content);
+    if (fromFull !== undefined) {
+      return fromFull;
+    }
+
+    // Strategy 2: Try parsing after title separator (ToolRegistry format: "title\n\noutput")
+    const separatorIndex = content.indexOf('\n\n');
+    if (separatorIndex !== -1) {
+      const outputPart = content.slice(separatorIndex + 2);
+      const fromOutput = tryParseAction(outputPart);
+      if (fromOutput !== undefined) {
+        return fromOutput;
+      }
+    }
+
+    return undefined;
+  }
+}
+
+/**
+ * LLM assist request structure emitted by tools that need LLM help.
+ * Used by task delegation tool to signal subagent spawning.
+ */
+interface LLMAssistRequest {
+  action: 'LLM_ASSIST_REQUIRED';
+  taskType?: string;
+  sessionID?: string;
+  subagentType?: string;
+  description?: string;
+  prompt?: string;
+  message?: string;
 }
