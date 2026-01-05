@@ -1458,7 +1458,7 @@ export function InteractiveShell({
         <Box marginBottom={1}>
           <Text>
             <Text color="yellow">
-              Update available: {state.versionCheck.currentVersion} →{' '}
+              Update available: {state.versionCheck.currentVersion} -&gt;{' '}
               {state.versionCheck.latestVersion}
             </Text>
             <Text dimColor> • Run </Text>

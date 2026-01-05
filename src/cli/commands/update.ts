@@ -194,12 +194,21 @@ async function fetchLatestRelease(): Promise<GitHubRelease | null> {
   }, 10000);
 
   try {
+    // Build headers with optional GitHub token for higher rate limits
+    const headers: Record<string, string> = {
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'agent-base-v2-updater',
+    };
+
+    // Support GITHUB_TOKEN for authenticated requests (5000 req/hr vs 60 unauthenticated)
+    const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN;
+    if (token !== undefined && token !== '') {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
     const response = await fetch(RELEASES_API_URL, {
       signal: controller.signal,
-      headers: {
-        Accept: 'application/vnd.github+json',
-        'User-Agent': 'agent-base-v2-updater',
-      },
+      headers,
     });
 
     if (!response.ok) {
@@ -558,7 +567,14 @@ async function updateShellBinary(
     const extractDir = join(INSTALL_DIR, 'bin');
     await mkdir(extractDir, { recursive: true });
 
-    const tarResult = await runCommand('tar', ['-xzf', archivePath, '-C', extractDir]);
+    // Use --no-absolute-names to prevent path traversal attacks from malicious archives
+    const tarResult = await runCommand('tar', [
+      '-xzf',
+      archivePath,
+      '-C',
+      extractDir,
+      '--no-absolute-names',
+    ]);
     if (!tarResult.success) {
       throw new Error(`Extraction failed: ${tarResult.output}`);
     }
