@@ -15,16 +15,27 @@ jest.unstable_mockModule('node:child_process', () => ({
 const mockReadFile = jest.fn();
 const mockWriteFile = jest.fn();
 const mockMkdir = jest.fn();
+const mockUnlink = jest.fn();
 jest.unstable_mockModule('node:fs/promises', () => ({
   readFile: mockReadFile,
   writeFile: mockWriteFile,
   mkdir: mockMkdir,
+  unlink: mockUnlink,
 }));
 
 // Mock fs for realpathSync
 const mockRealpathSync = jest.fn();
 jest.unstable_mockModule('node:fs', () => ({
   realpathSync: mockRealpathSync,
+}));
+
+// Mock crypto module for randomUUID
+jest.unstable_mockModule('node:crypto', () => ({
+  createHash: jest.fn(() => ({
+    update: jest.fn().mockReturnThis(),
+    digest: jest.fn(() => 'mockhash'),
+  })),
+  randomUUID: jest.fn(() => 'test-uuid-1234'),
 }));
 
 // Mock VERSION constant - needs to be a separate variable that can be changed
@@ -83,6 +94,7 @@ describe('update command handler', () => {
     // Default mocks for write operations
     mockWriteFile.mockResolvedValue(undefined);
     mockMkdir.mockResolvedValue(undefined);
+    mockUnlink.mockResolvedValue(undefined);
     // Default mock for fetch - returns GitHub API response with latest version
     mockFetch.mockResolvedValue({
       ok: true,

@@ -186,8 +186,15 @@ async function checkFoundryLocalStatus(): Promise<FoundryLocalStatus> {
     // SDK not installed or import failed
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
-    // Check if it's a "module not found" error
-    if (errorMessage.includes('Cannot find') || errorMessage.includes('not found')) {
+    // Check if it's a "module not found" error using error code (more reliable than string matching)
+    const errorCode = (error as NodeJS.ErrnoException).code;
+    const isModuleNotFound =
+      errorCode === 'ERR_MODULE_NOT_FOUND' ||
+      errorCode === 'MODULE_NOT_FOUND' ||
+      errorMessage.includes('Cannot find') ||
+      errorMessage.includes('not found');
+
+    if (isModuleNotFound) {
       return {
         sdkInstalled: false,
         serviceRunning: false,

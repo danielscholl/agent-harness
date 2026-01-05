@@ -1456,13 +1456,15 @@ export function InteractiveShell({
       {/* Update available banner */}
       {state.versionCheck?.updateAvailable === true && (
         <Box marginBottom={1}>
-          <Text color="yellow">
-            Update available: {state.versionCheck.currentVersion} →{' '}
-            {state.versionCheck.latestVersion}
+          <Text>
+            <Text color="yellow">
+              Update available: {state.versionCheck.currentVersion} →{' '}
+              {state.versionCheck.latestVersion}
+            </Text>
+            <Text dimColor> • Run </Text>
+            <Text color="cyan">agent update</Text>
+            <Text dimColor> to upgrade</Text>
           </Text>
-          <Text dimColor> • Run </Text>
-          <Text color="cyan">agent update</Text>
-          <Text dimColor> to upgrade</Text>
         </Box>
       )}
 

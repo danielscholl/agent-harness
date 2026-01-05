@@ -7,10 +7,10 @@
 import type { CommandHandler, CommandResult } from './types.js';
 import { spawn } from 'node:child_process';
 import { dirname, join } from 'node:path';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, unlink } from 'node:fs/promises';
 import { realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { VERSION } from '../version.js';
 
 /** GitHub repository info */
@@ -184,21 +184,19 @@ function getCurrentVersion(): string {
  * Fetch latest release info from GitHub API.
  */
 async function fetchLatestRelease(): Promise<GitHubRelease | null> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => {
-      controller.abort();
-    }, 10000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, 10000);
 
+  try {
     const response = await fetch(RELEASES_API_URL, {
       signal: controller.signal,
       headers: {
-        Accept: 'application/vnd.github.v3+json',
+        Accept: 'application/vnd.github+json',
         'User-Agent': 'agent-base-v2-updater',
       },
     });
-
-    clearTimeout(timeout);
 
     if (!response.ok) {
       return null;
@@ -207,6 +205,8 @@ async function fetchLatestRelease(): Promise<GitHubRelease | null> {
     return (await response.json()) as GitHubRelease;
   } catch {
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -301,10 +301,14 @@ export async function checkForUpdatesWithCache(
     const cached = await loadVersionCache();
     if (cached !== null && Date.now() - cached.checkedAt < CACHE_TTL_MS) {
       // Update currentVersion in case it changed (e.g., after update)
+      // Return a new object to avoid mutating cached data
       const currentVersion = getCurrentVersion();
       if (currentVersion !== 'unknown') {
-        cached.currentVersion = currentVersion;
-        cached.updateAvailable = compareSemver(currentVersion, cached.latestVersion) < 0;
+        return {
+          ...cached,
+          currentVersion,
+          updateAvailable: compareSemver(currentVersion, cached.latestVersion) < 0,
+        };
       }
       return cached;
     }
@@ -416,7 +420,8 @@ async function updateShellBinary(
 
     const arrayBuffer = await response.arrayBuffer();
     const downloadedData = Buffer.from(arrayBuffer);
-    const tmpDir = join(INSTALL_DIR, `tmp.${String(Date.now())}`);
+    // Use UUID for unique temp directory to avoid collisions
+    const tmpDir = join(INSTALL_DIR, `tmp.${randomUUID()}`);
     const archivePath = join(tmpDir, archiveName);
 
     // Verify checksum if available
@@ -635,6 +640,9 @@ export const updateHandler: CommandHandler = async (args, context): Promise<Comm
       if (!success) {
         context.onOutput('Binary update failed, trying source build...', 'warning');
         success = await updateShellSource(context);
+        if (!success) {
+          context.onOutput('Source build update also failed.', 'error');
+        }
       }
       break;
     }
@@ -651,11 +659,11 @@ export const updateHandler: CommandHandler = async (args, context): Promise<Comm
   context.onOutput('', 'info');
 
   if (success) {
-    // Clear version cache so next check reflects new version
+    // Delete version cache so next check reflects new version
     try {
-      await writeFile(getVersionCacheFile(), '{}');
+      await unlink(getVersionCacheFile());
     } catch {
-      // Ignore
+      // Ignore if file doesn't exist
     }
 
     context.onOutput('Update successful!', 'success');
