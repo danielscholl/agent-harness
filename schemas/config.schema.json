@@ -1,0 +1,411 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/danielscholl-agents/agent-base-v2/main/schemas/config.schema.json",
+  "title": "Agent Configuration",
+  "description": "Configuration schema for the agent framework",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "description": "Configuration schema version",
+      "default": "1.0"
+    },
+    "providers": {
+      "type": "object",
+      "description": "LLM provider configurations",
+      "properties": {
+        "default": {
+          "type": "string",
+          "enum": ["local", "openai", "anthropic", "azure", "foundry", "gemini", "github"],
+          "description": "Default provider to use",
+          "default": "openai"
+        },
+        "local": {
+          "type": "object",
+          "description": "Local LLM provider (e.g., Ollama)",
+          "properties": {
+            "baseUrl": {
+              "type": "string",
+              "format": "uri",
+              "description": "Base URL for local LLM server",
+              "default": "http://localhost:11434/v1"
+            },
+            "model": {
+              "type": "string",
+              "description": "Model name to use",
+              "default": "qwen3:latest"
+            },
+            "supportsFunctionCalling": {
+              "type": "boolean",
+              "description": "Whether the model supports function calling"
+            }
+          }
+        },
+        "openai": {
+          "type": "object",
+          "description": "OpenAI provider",
+          "properties": {
+            "apiKey": {
+              "type": "string",
+              "description": "OpenAI API key"
+            },
+            "model": {
+              "type": "string",
+              "description": "Model name to use",
+              "default": "gpt-4o-mini"
+            },
+            "baseUrl": {
+              "type": "string",
+              "format": "uri",
+              "description": "Custom base URL for OpenAI-compatible APIs"
+            },
+            "supportsFunctionCalling": {
+              "type": "boolean",
+              "description": "Whether the model supports function calling"
+            }
+          }
+        },
+        "anthropic": {
+          "type": "object",
+          "description": "Anthropic provider",
+          "properties": {
+            "apiKey": {
+              "type": "string",
+              "description": "Anthropic API key"
+            },
+            "model": {
+              "type": "string",
+              "description": "Model name to use",
+              "default": "claude-sonnet-4-20250514"
+            },
+            "supportsFunctionCalling": {
+              "type": "boolean",
+              "description": "Whether the model supports function calling"
+            }
+          }
+        },
+        "azure": {
+          "type": "object",
+          "description": "Azure OpenAI provider",
+          "properties": {
+            "endpoint": {
+              "type": "string",
+              "format": "uri",
+              "description": "Azure OpenAI endpoint URL"
+            },
+            "deployment": {
+              "type": "string",
+              "description": "Deployment name"
+            },
+            "apiVersion": {
+              "type": "string",
+              "description": "API version",
+              "default": "2024-08-01-preview"
+            },
+            "apiKey": {
+              "type": "string",
+              "description": "Azure OpenAI API key"
+            },
+            "supportsFunctionCalling": {
+              "type": "boolean",
+              "description": "Whether the model supports function calling"
+            }
+          }
+        },
+        "foundry": {
+          "type": "object",
+          "description": "Azure AI Foundry provider",
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["local", "cloud"],
+              "description": "Foundry mode: 'local' for on-device models, 'cloud' for Azure-managed",
+              "default": "local"
+            },
+            "projectEndpoint": {
+              "type": "string",
+              "format": "uri",
+              "description": "[Cloud] Azure AI Foundry project endpoint"
+            },
+            "modelDeployment": {
+              "type": "string",
+              "description": "[Cloud] Model deployment name"
+            },
+            "apiKey": {
+              "type": "string",
+              "description": "[Cloud] Azure API key"
+            },
+            "modelAlias": {
+              "type": "string",
+              "description": "[Local] Model alias for foundry-local-sdk",
+              "default": "qwen2.5-coder-14b"
+            },
+            "temperature": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 2,
+              "description": "Temperature for generation"
+            },
+            "supportsFunctionCalling": {
+              "type": "boolean",
+              "description": "Whether the model supports function calling"
+            }
+          }
+        },
+        "gemini": {
+          "type": "object",
+          "description": "Google Gemini provider",
+          "properties": {
+            "apiKey": {
+              "type": "string",
+              "description": "Gemini API key"
+            },
+            "model": {
+              "type": "string",
+              "description": "Model name to use",
+              "default": "gemini-2.0-flash"
+            },
+            "useVertexai": {
+              "type": "boolean",
+              "description": "Use Vertex AI instead of Gemini API",
+              "default": false
+            },
+            "projectId": {
+              "type": "string",
+              "description": "Google Cloud project ID for Vertex AI"
+            },
+            "location": {
+              "type": "string",
+              "description": "Google Cloud location for Vertex AI",
+              "default": "us-central1"
+            },
+            "supportsFunctionCalling": {
+              "type": "boolean",
+              "description": "Whether the model supports function calling"
+            }
+          }
+        },
+        "github": {
+          "type": "object",
+          "description": "GitHub Models provider",
+          "properties": {
+            "token": {
+              "type": "string",
+              "description": "GitHub token"
+            },
+            "model": {
+              "type": "string",
+              "description": "Model name to use",
+              "default": "gpt-4o"
+            },
+            "endpoint": {
+              "type": "string",
+              "format": "uri",
+              "description": "GitHub Models endpoint",
+              "default": "https://models.inference.ai.azure.com"
+            },
+            "org": {
+              "type": "string",
+              "description": "GitHub organization"
+            },
+            "supportsFunctionCalling": {
+              "type": "boolean",
+              "description": "Whether the model supports function calling"
+            }
+          }
+        }
+      }
+    },
+    "agent": {
+      "type": "object",
+      "description": "Agent behavior configuration",
+      "properties": {
+        "dataDir": {
+          "type": "string",
+          "description": "Directory for agent data storage",
+          "default": "~/.agent"
+        },
+        "logLevel": {
+          "type": "string",
+          "enum": ["debug", "info", "warn", "error"],
+          "description": "Logging level",
+          "default": "info"
+        },
+        "systemPromptFile": {
+          "type": "string",
+          "description": "Path to custom system prompt file"
+        },
+        "workspaceRoot": {
+          "type": "string",
+          "description": "Root directory for workspace operations"
+        },
+        "filesystemWritesEnabled": {
+          "type": "boolean",
+          "description": "Allow filesystem write operations",
+          "default": true
+        }
+      }
+    },
+    "telemetry": {
+      "type": "object",
+      "description": "Telemetry configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable telemetry collection",
+          "default": false
+        },
+        "enableSensitiveData": {
+          "type": "boolean",
+          "description": "Include sensitive data in telemetry",
+          "default": false
+        },
+        "otlpEndpoint": {
+          "type": "string",
+          "format": "uri",
+          "description": "OpenTelemetry Protocol endpoint"
+        },
+        "applicationinsightsConnectionString": {
+          "type": "string",
+          "description": "Azure Application Insights connection string"
+        }
+      }
+    },
+    "memory": {
+      "type": "object",
+      "description": "Memory configuration",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable memory features",
+          "default": true
+        },
+        "type": {
+          "type": "string",
+          "enum": ["local", "mem0"],
+          "description": "Memory backend type",
+          "default": "local"
+        },
+        "historyLimit": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Max history entries",
+          "default": 100
+        },
+        "mem0": {
+          "type": "object",
+          "description": "Mem0 backend configuration",
+          "properties": {
+            "storagePath": {
+              "type": "string",
+              "description": "Local storage path for Mem0"
+            },
+            "apiKey": {
+              "type": "string",
+              "description": "Mem0 API key"
+            },
+            "orgId": {
+              "type": "string",
+              "description": "Mem0 organization ID"
+            },
+            "userId": {
+              "type": "string",
+              "description": "Mem0 user ID"
+            },
+            "projectId": {
+              "type": "string",
+              "description": "Mem0 project ID"
+            }
+          }
+        }
+      }
+    },
+    "skills": {
+      "type": "object",
+      "description": "Skills configuration",
+      "properties": {
+        "plugins": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Plugin paths or URLs to load",
+          "default": []
+        },
+        "disabledBundled": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Bundled skills to disable",
+          "default": []
+        },
+        "enabledBundled": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Bundled skills to enable (overrides defaults)",
+          "default": []
+        },
+        "userDir": {
+          "type": "string",
+          "description": "Directory for user skills"
+        },
+        "scriptTimeout": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Script execution timeout in milliseconds",
+          "default": 30000
+        }
+      }
+    },
+    "retry": {
+      "type": "object",
+      "description": "Retry configuration for LLM operations",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Enable retry logic",
+          "default": true
+        },
+        "maxRetries": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10,
+          "description": "Maximum retry attempts",
+          "default": 3
+        },
+        "baseDelayMs": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Base delay in milliseconds",
+          "default": 1000
+        },
+        "maxDelayMs": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum delay in milliseconds",
+          "default": 30000
+        },
+        "enableJitter": {
+          "type": "boolean",
+          "description": "Add jitter to prevent thundering herd",
+          "default": true
+        }
+      }
+    },
+    "session": {
+      "type": "object",
+      "description": "Session save/restore configuration",
+      "properties": {
+        "autoSave": {
+          "type": "boolean",
+          "description": "Auto-save session on exit",
+          "default": true
+        },
+        "maxSessions": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum sessions to keep",
+          "default": 10
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

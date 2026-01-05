@@ -63,6 +63,11 @@ describe('isProviderConfigured', () => {
       const result = isProviderConfigured('openai', {});
       expect(result).toBe(false);
     });
+
+    it('should return true when model is set via wizard (API key from env var)', () => {
+      const result = isProviderConfigured('openai', { model: 'gpt-4o' });
+      expect(result).toBe(true);
+    });
   });
 
   describe('anthropic provider', () => {
@@ -74,6 +79,11 @@ describe('isProviderConfigured', () => {
     it('should return false when no apiKey', () => {
       const result = isProviderConfigured('anthropic', {});
       expect(result).toBe(false);
+    });
+
+    it('should return true when model is set via wizard (API key from env var)', () => {
+      const result = isProviderConfigured('anthropic', { model: 'claude-sonnet-4-20250514' });
+      expect(result).toBe(true);
     });
   });
 
@@ -129,6 +139,11 @@ describe('isProviderConfigured', () => {
       const result = isProviderConfigured('gemini', {});
       expect(result).toBe(false);
     });
+
+    it('should return true when model is set via wizard (API key from env var)', () => {
+      const result = isProviderConfigured('gemini', { model: 'gemini-pro' });
+      expect(result).toBe(true);
+    });
   });
 
   describe('github provider', () => {
@@ -140,6 +155,11 @@ describe('isProviderConfigured', () => {
     it('should return false when no token', () => {
       const result = isProviderConfigured('github', {});
       expect(result).toBe(false);
+    });
+
+    it('should return true when model is set via wizard (token from env var)', () => {
+      const result = isProviderConfigured('github', { model: 'gpt-4o' });
+      expect(result).toBe(true);
     });
   });
 

@@ -19,25 +19,6 @@ function isValidProviderName(name: string): name is ProviderName {
 }
 
 /**
- * Show config command help.
- */
-function showConfigHelp(context: CommandContext): CommandResult {
-  context.onOutput('', 'info');
-  context.onOutput('Usage: agent config [command]', 'info');
-  context.onOutput('', 'info');
-  context.onOutput('Manage agent configuration', 'success');
-  context.onOutput('', 'info');
-  context.onOutput('Commands:', 'info');
-  context.onOutput('  (none)           Show current configuration', 'info');
-  context.onOutput('  init             Interactive configuration wizard', 'info');
-  context.onOutput('  edit             Open config file in text editor', 'info');
-  context.onOutput('  provider         Manage provider configurations', 'info');
-  context.onOutput('', 'info');
-  context.onOutput('Run "agent config provider --help" for provider subcommands.', 'info');
-  return { success: true, message: 'Showed help' };
-}
-
-/**
  * Main config command handler.
  * Routes to subcommands based on first argument.
  */
@@ -46,10 +27,8 @@ export const configHandler: CommandHandler = async (args, context): Promise<Comm
   const subArgs = rest.join(' ');
 
   switch (subcommand?.toLowerCase()) {
-    case 'help':
-    case '--help':
-    case '-h':
-      return showConfigHelp(context);
+    case 'show':
+      return configShowHandler(subArgs, context);
     case 'init':
       // Config init is only available from CLI, not as a slash command in interactive mode
       if (context.isInteractive === true) {
@@ -77,12 +56,9 @@ export const configHandler: CommandHandler = async (args, context): Promise<Comm
         };
       }
       return configProviderHandler(subArgs, context);
-    case undefined:
-    case '':
-      return configShowHandler('', context); // Default to show
     default:
       context.onOutput(`Unknown subcommand: ${subcommand ?? ''}`, 'warning');
-      showConfigHelp(context);
+      context.onOutput('Run "agent config --help" for usage.', 'info');
       return { success: false, message: 'Unknown subcommand' };
   }
 };
@@ -101,17 +77,34 @@ function getConfiguredProviders(config: AppConfig): ProviderName[] {
 }
 
 /**
- * Create a table row with proper padding.
+ * ANSI color codes for table output.
+ */
+const ansi = {
+  reset: '\x1b[0m',
+  cyan: '\x1b[36m',
+  yellow: '\x1b[33m',
+};
+
+/**
+ * Create a table row with proper padding and coloring.
  */
 function tableRow(
   setting: string,
   value: string,
   settingWidth: number,
-  valueWidth: number
+  valueWidth: number,
+  isHeader = false
 ): string {
   const paddedSetting = setting.padEnd(settingWidth);
   const paddedValue = value.padEnd(valueWidth);
-  return `│ ${paddedSetting} │ ${paddedValue} │`;
+
+  if (isHeader) {
+    // Header row: cyan text
+    return `│ ${ansi.cyan}${paddedSetting}${ansi.reset} │ ${ansi.cyan}${paddedValue}${ansi.reset} │`;
+  } else {
+    // Data row: yellow setting, white value
+    return `│ ${ansi.yellow}${paddedSetting}${ansi.reset} │ ${paddedValue} │`;
+  }
 }
 
 /**
@@ -252,24 +245,24 @@ export const configShowHandler: CommandHandler = async (_args, context): Promise
   const headerSep = `┡${'━'.repeat(settingWidth + 2)}╇${'━'.repeat(valueWidth + 2)}┩`;
   const bottomBorder = `└${'─'.repeat(settingWidth + 2)}┴${'─'.repeat(valueWidth + 2)}┘`;
 
-  // Output title
-  context.onOutput('', 'info');
-  context.onOutput('                            Agent Configuration', 'success');
+  // Output title (white/default)
+  context.onOutput('');
+  context.onOutput('                            Agent Configuration');
 
-  // Output table
-  context.onOutput(topBorder, 'info');
-  context.onOutput(tableRow('Setting', 'Value', settingWidth, valueWidth), 'info');
-  context.onOutput(headerSep, 'info');
+  // Output table (white borders, colored content)
+  context.onOutput(topBorder);
+  context.onOutput(tableRow('Setting', 'Value', settingWidth, valueWidth, true)); // header row
+  context.onOutput(headerSep);
 
   for (const row of rows) {
-    context.onOutput(tableRow(row.setting, row.value, settingWidth, valueWidth), 'info');
+    context.onOutput(tableRow(row.setting, row.value, settingWidth, valueWidth));
   }
 
-  context.onOutput(bottomBorder, 'info');
+  context.onOutput(bottomBorder);
 
-  // Output config file location
-  context.onOutput('', 'info');
-  context.onOutput(`Configuration file: ~/.agent/config.yaml`, 'info');
+  // Output config file location (white label, yellow path)
+  context.onOutput('');
+  context.onOutput(`Configuration file: ${ansi.yellow}~/.agent/config.yaml${ansi.reset}`);
 
   return { success: true, data: config };
 };
@@ -454,24 +447,6 @@ export const configProviderHandler: CommandHandler = async (
     ? (fileConfigResult.result as AppConfig)
     : config;
 
-  // Help for provider subcommand
-  if (action === 'help' || action === '--help' || action === '-h') {
-    context.onOutput('', 'info');
-    context.onOutput('Usage: agent config provider [command]', 'info');
-    context.onOutput('', 'info');
-    context.onOutput('Manage provider configurations', 'success');
-    context.onOutput('', 'info');
-    context.onOutput('Commands:', 'info');
-    context.onOutput('  (none)              List providers (or setup wizard)', 'info');
-    context.onOutput('  <name>              Interactive wizard for provider', 'info');
-    context.onOutput('  set <name> k=v      Non-interactive configuration', 'info');
-    context.onOutput('  default <name>      Set default provider', 'info');
-    context.onOutput('  remove <name>       Remove provider configuration', 'info');
-    context.onOutput('', 'info');
-    context.onOutput('Providers: ' + PROVIDER_NAMES.join(', '), 'info');
-    return { success: true, message: 'Showed provider help' };
-  }
-
   // No arguments - either show setup wizard (no config) or list status (has config)
   if (action === undefined || action === '') {
     const configuredProviders = getConfiguredProviders(fileConfig);
@@ -485,26 +460,26 @@ export const configProviderHandler: CommandHandler = async (
         return { success: false, message: 'No prompt handler available' };
       }
 
-      context.onOutput('', 'info');
-      context.onOutput('Provider Setup', 'success');
-      context.onOutput('', 'info');
-      context.onOutput('No providers configured. Select one to set up:', 'info');
-      context.onOutput('', 'info');
+      context.onOutput('');
+      context.onOutput(`${ansi.yellow}Agent Configuration Setup${ansi.reset}`);
+      context.onOutput('');
+      context.onOutput('Select LLM Provider:');
 
-      // Show numbered list of providers
+      // Show numbered list of providers (matching osdu-agent format)
       for (let i = 0; i < providerWizards.length; i++) {
         const provider = providerWizards[i];
         if (provider) {
-          context.onOutput(
-            `  ${String(i + 1)}. ${provider.displayName.padEnd(16)} ${provider.description}`,
-            'info'
-          );
+          const num = `${ansi.cyan}${String(i + 1)}.${ansi.reset}`;
+          const name = provider.name.padEnd(10);
+          context.onOutput(`${num} ${name} - ${provider.description}`);
         }
       }
-      context.onOutput('', 'info');
+      context.onOutput('');
 
-      const choice = await context.onPrompt('Select provider (1-7):');
-      const providerIndex = parseInt(choice, 10) - 1;
+      const defaultChoice = `${ansi.cyan}(1)${ansi.reset}`;
+      const choice = await context.onPrompt(`Which provider do you want to use? ${defaultChoice}:`);
+      // Default to 1 if empty
+      const providerIndex = (choice.trim() === '' ? 1 : parseInt(choice, 10)) - 1;
 
       if (isNaN(providerIndex) || providerIndex < 0 || providerIndex >= providerWizards.length) {
         context.onOutput('Invalid selection.', 'error');
@@ -517,7 +492,8 @@ export const configProviderHandler: CommandHandler = async (
       }
 
       // Run the wizard for the selected provider
-      context.onOutput(`\nConfiguring ${selectedProvider.displayName}...`, 'success');
+      context.onOutput('');
+      context.onOutput(`Configuring ${ansi.cyan}${selectedProvider.displayName}${ansi.reset}...`);
       const wizardResult = await selectedProvider.wizard(context);
 
       if (!wizardResult.success) {
@@ -548,11 +524,13 @@ export const configProviderHandler: CommandHandler = async (
         return { success: false, message: saveResult.message };
       }
 
+      context.onOutput('');
       context.onOutput(
-        `\n✓ ${selectedProvider.displayName} configured as default provider`,
-        'success'
+        `${ansi.cyan}✓${ansi.reset} ${selectedProvider.displayName} configured as default provider`
       );
-      context.onOutput(`  Config saved to: ${manager.getUserConfigPath()}`, 'info');
+      context.onOutput(
+        `  Config saved to: ${ansi.yellow}${manager.getUserConfigPath()}${ansi.reset}`
+      );
       return { success: true, message: `${selectedProvider.name} configured` };
     }
 
@@ -805,8 +783,10 @@ export const configProviderHandler: CommandHandler = async (
     return { success: false, message: 'No prompt handler available' };
   }
 
-  context.onOutput(`\nConfiguring ${wizard.displayName}`, 'success');
-  context.onOutput('═'.repeat(30) + '\n', 'info');
+  context.onOutput('');
+  context.onOutput(`Configuring ${ansi.cyan}${wizard.displayName}${ansi.reset}`);
+  context.onOutput('═'.repeat(30));
+  context.onOutput('');
 
   // Run the provider wizard
   const wizardResult = await wizard.wizard(context);
@@ -842,7 +822,8 @@ export const configProviderHandler: CommandHandler = async (
   };
 
   // Save configuration
-  context.onOutput('\nSaving configuration...', 'info');
+  context.onOutput('');
+  context.onOutput('Saving configuration...');
 
   const manager = new ConfigManager();
   const saveResult = await manager.save(newConfig);
@@ -852,12 +833,14 @@ export const configProviderHandler: CommandHandler = async (
     return { success: false, message: saveResult.message };
   }
 
-  context.onOutput('\nConfiguration saved successfully!', 'success');
-  context.onOutput(`  Provider: ${wizard.displayName}`, 'info');
+  context.onOutput('');
+  context.onOutput(`${ansi.cyan}✓${ansi.reset} Configuration saved successfully!`);
+  context.onOutput(`  Provider: ${ansi.cyan}${wizard.displayName}${ansi.reset}`);
   if (setAsDefault) {
-    context.onOutput(`  Set as default: yes`, 'info');
+    context.onOutput(`  Set as default: yes`);
   }
-  context.onOutput('  Location: ~/.agent/config.yaml\n', 'info');
+  context.onOutput(`  Location: ${ansi.yellow}~/.agent/config.yaml${ansi.reset}`);
+  context.onOutput('');
 
   return { success: true, message: `${wizard.displayName} configured successfully` };
 };

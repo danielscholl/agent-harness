@@ -50,15 +50,19 @@ export function isProviderConfigured(
 
   switch (providerName) {
     case 'openai':
-      // OpenAI needs an API key or custom baseUrl
+      // OpenAI needs an API key, custom baseUrl, or model set via wizard (key from env var)
       return (
         (typeof providerConfig.apiKey === 'string' && providerConfig.apiKey !== '') ||
-        (typeof providerConfig.baseUrl === 'string' && providerConfig.baseUrl !== '')
+        (typeof providerConfig.baseUrl === 'string' && providerConfig.baseUrl !== '') ||
+        (typeof providerConfig.model === 'string' && providerConfig.model !== '')
       );
 
     case 'anthropic':
-      // Anthropic needs an API key
-      return typeof providerConfig.apiKey === 'string' && providerConfig.apiKey !== '';
+      // Anthropic needs an API key or model set via wizard (key from env var)
+      return (
+        (typeof providerConfig.apiKey === 'string' && providerConfig.apiKey !== '') ||
+        (typeof providerConfig.model === 'string' && providerConfig.model !== '')
+      );
 
     case 'azure':
       // Azure needs endpoint and deployment
@@ -79,12 +83,18 @@ export function isProviderConfigured(
       );
 
     case 'gemini':
-      // Gemini needs an API key
-      return typeof providerConfig.apiKey === 'string' && providerConfig.apiKey !== '';
+      // Gemini needs an API key or model set via wizard (key from env var)
+      return (
+        (typeof providerConfig.apiKey === 'string' && providerConfig.apiKey !== '') ||
+        (typeof providerConfig.model === 'string' && providerConfig.model !== '')
+      );
 
     case 'github':
-      // GitHub needs a token
-      return typeof providerConfig.token === 'string' && providerConfig.token !== '';
+      // GitHub needs a token or model set via wizard (token from env var)
+      return (
+        (typeof providerConfig.token === 'string' && providerConfig.token !== '') ||
+        (typeof providerConfig.model === 'string' && providerConfig.model !== '')
+      );
 
     case 'local':
       // Local provider is configured if baseUrl is set

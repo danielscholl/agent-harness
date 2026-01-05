@@ -61,42 +61,7 @@ describe('update command handler', () => {
     jest.resetModules();
   });
 
-  describe('updateHandler help', () => {
-    it('shows help with --help flag', async () => {
-      const { updateHandler } = await import('../update.js');
-      const context = createMockContext();
-      const result = await updateHandler('--help', context);
-
-      expect(result.success).toBe(true);
-      expect(result.message).toBe('Showed help');
-      expect(context.outputs.some((o) => o.content.includes('Usage: agent update'))).toBe(true);
-      expect(context.outputs.some((o) => o.content.includes('Check for and install updates'))).toBe(
-        true
-      );
-      expect(context.outputs.some((o) => o.content.includes('--check'))).toBe(true);
-      expect(context.outputs.some((o) => o.content.includes('--force'))).toBe(true);
-    });
-
-    it('shows help with -h flag', async () => {
-      const { updateHandler } = await import('../update.js');
-      const context = createMockContext();
-      const result = await updateHandler('-h', context);
-
-      expect(result.success).toBe(true);
-      expect(result.message).toBe('Showed help');
-      expect(context.outputs.some((o) => o.content.includes('Usage: agent update'))).toBe(true);
-    });
-
-    it('shows help with help argument', async () => {
-      const { updateHandler } = await import('../update.js');
-      const context = createMockContext();
-      const result = await updateHandler('help', context);
-
-      expect(result.success).toBe(true);
-      expect(result.message).toBe('Showed help');
-      expect(context.outputs.some((o) => o.content.includes('Usage: agent update'))).toBe(true);
-    });
-  });
+  // Note: help tests removed - help is now handled by meow in index.tsx before handler is called
 
   describe('detectInstallationType', () => {
     it('detects global installation via .bun/install/global', async () => {
