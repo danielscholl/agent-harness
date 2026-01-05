@@ -164,39 +164,64 @@ export async function initializeWorkspaceRoot(
     try {
       realConfig = await fs.realpath(resolvedConfig);
     } catch {
-      // Path doesn't exist - check if it's logically within env root
-      // Handle macOS temp dir symlinks: /var/folders -> /private/var/folders
-      if (isPathWithin(resolvedConfig, resolvedEnv) || isPathWithin(resolvedConfig, realEnv)) {
-        // Non-existent path is within env root - valid narrowing
-        process.env['AGENT_WORKSPACE_ROOT'] = resolvedConfig;
-        onDebug?.('Workspace root narrowed by config (path does not exist yet)', {
-          envRoot: resolvedEnv,
-          configRoot: resolvedConfig,
-          realEnv,
-        });
-        return { workspaceRoot: resolvedConfig, source: 'config' };
+      // Path doesn't exist - walk parents to find first existing one and check with realpath
+      // This catches symlink escapes via parent directories (e.g., /workspace/link/newroot where link -> /tmp)
+      let checkPath = resolvedConfig;
+      let parentReal: string | null = null;
+
+      while (checkPath !== realEnv && checkPath !== path.dirname(checkPath)) {
+        const parentPath = path.dirname(checkPath);
+        try {
+          parentReal = await fs.realpath(parentPath);
+          // Found an existing parent - verify it's within env root
+          if (!isPathWithin(parentReal, realEnv)) {
+            // Parent symlink escapes env root
+            const warning = `config.agent.workspaceRoot parent (${parentPath} → ${parentReal}) is a symlink that resolves outside AGENT_WORKSPACE_ROOT (${realEnv}). Config ignored for security.`;
+            onDebug?.('Workspace config ignored (parent symlink escape)', {
+              envRoot: resolvedEnv,
+              configRoot: resolvedConfig,
+              parentPath,
+              parentReal,
+              realEnv,
+            });
+            return { workspaceRoot: resolvedEnv, source: 'env', warning };
+          }
+          break; // Parent is safe
+        } catch {
+          // Parent doesn't exist either, keep walking up
+          checkPath = parentPath;
+        }
       }
-      // Non-existent path is outside env root
-      const warning = `config.agent.workspaceRoot (${resolvedConfig}) is outside AGENT_WORKSPACE_ROOT (${resolvedEnv}). Config ignored for security.`;
-      onDebug?.('Workspace config ignored (outside env root)', {
+
+      // All existing parents are within env root - valid narrowing
+      // Pin to real path to prevent later symlink retargeting
+      const effectiveRoot =
+        parentReal !== null
+          ? path.join(parentReal, path.relative(path.dirname(checkPath), resolvedConfig))
+          : resolvedConfig;
+
+      process.env['AGENT_WORKSPACE_ROOT'] = effectiveRoot;
+      onDebug?.('Workspace root narrowed by config (path does not exist yet)', {
         envRoot: resolvedEnv,
         configRoot: resolvedConfig,
+        effectiveRoot,
         realEnv,
       });
-      return { workspaceRoot: resolvedEnv, source: 'env', warning };
+      return { workspaceRoot: effectiveRoot, source: 'config' };
     }
 
     // Config path exists - check if real path is within real env path (symlink-safe)
     if (isPathWithin(realConfig, realEnv)) {
-      // Config narrows the env root - valid, update env var
-      process.env['AGENT_WORKSPACE_ROOT'] = resolvedConfig;
+      // Config narrows the env root - valid
+      // Pin to real path to prevent later symlink retargeting
+      process.env['AGENT_WORKSPACE_ROOT'] = realConfig;
       onDebug?.('Workspace root narrowed by config', {
         envRoot: resolvedEnv,
         configRoot: resolvedConfig,
         realEnv,
         realConfig,
       });
-      return { workspaceRoot: resolvedConfig, source: 'config' };
+      return { workspaceRoot: realConfig, source: 'config' };
     } else {
       // Config resolves outside env root (possibly via symlink) - ignore with warning
       const warning =

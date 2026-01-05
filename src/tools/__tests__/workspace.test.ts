@@ -281,9 +281,11 @@ describe('initializeWorkspaceRoot', () => {
     const result = await initializeWorkspaceRoot(narrowedPath);
 
     expect(result.source).toBe('config');
-    expect(result.workspaceRoot).toBe(narrowedPath);
-    // Should have updated the env var
-    expect(process.env['AGENT_WORKSPACE_ROOT']).toBe(narrowedPath);
+    // Workspace is pinned to real path (handles macOS /var -> /private/var symlinks)
+    // The result should end with 'subdir' and be within the real testDir
+    expect(result.workspaceRoot.endsWith('subdir')).toBe(true);
+    // Env var should be updated to the effective (real) root
+    expect(process.env['AGENT_WORKSPACE_ROOT']).toBe(result.workspaceRoot);
     expect(result.warning).toBeUndefined();
   });
 
@@ -315,6 +317,26 @@ describe('initializeWorkspaceRoot', () => {
     expect(result.workspaceRoot).toBe(testDir);
     expect(result.warning).toContain('symlink');
     expect(result.warning).toContain('ignored');
+    // Env var should remain unchanged
+    expect(process.env['AGENT_WORKSPACE_ROOT']).toBe(testDir);
+  });
+
+  it('detects parent symlink escape with non-existent leaf', async () => {
+    // Create a symlink inside testDir that points outside
+    const symlinkPath = path.join(testDir, 'link-to-outside');
+    await fs.symlink('/tmp', symlinkPath);
+
+    process.env['AGENT_WORKSPACE_ROOT'] = testDir;
+
+    // Config path: testDir/link-to-outside/newroot (leaf doesn't exist)
+    const configPath = path.join(symlinkPath, 'newroot');
+    const result = await initializeWorkspaceRoot(configPath);
+
+    // Should detect parent symlink escape and reject config
+    expect(result.source).toBe('env');
+    expect(result.workspaceRoot).toBe(testDir);
+    expect(result.warning).toContain('symlink');
+    expect(result.warning).toContain('parent');
     // Env var should remain unchanged
     expect(process.env['AGENT_WORKSPACE_ROOT']).toBe(testDir);
   });
