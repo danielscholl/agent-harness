@@ -3,27 +3,10 @@
  * Provides /skill list, /skill info, /skill validate subcommands.
  */
 
-import type { CommandHandler, CommandResult, CommandContext } from './types.js';
+import type { CommandHandler, CommandResult } from './types.js';
 import { SkillLoader } from '../../skills/loader.js';
 import { parseSkillMd } from '../../skills/parser.js';
 import { readFile } from 'node:fs/promises';
-
-/**
- * Show skill command help.
- */
-function showSkillHelp(context: CommandContext): CommandResult {
-  context.onOutput('', 'info');
-  context.onOutput('Usage: agent skill [command]', 'info');
-  context.onOutput('', 'info');
-  context.onOutput('Manage agent skills', 'success');
-  context.onOutput('', 'info');
-  context.onOutput('Commands:', 'info');
-  context.onOutput('  (none)           List all discovered skills', 'info');
-  context.onOutput('  list             List all discovered skills', 'info');
-  context.onOutput('  info <name>      Show detailed skill information', 'info');
-  context.onOutput('  validate <path>  Validate a SKILL.md file', 'info');
-  return { success: true, message: 'Showed help' };
-}
 
 /**
  * Main skill command handler.
@@ -34,10 +17,6 @@ export const skillHandler: CommandHandler = async (args, context): Promise<Comma
   const subArgs = rest.join(' ');
 
   switch (subcommand?.toLowerCase()) {
-    case 'help':
-    case '--help':
-    case '-h':
-      return showSkillHelp(context);
     case 'list':
     case undefined:
     case '':
@@ -48,7 +27,7 @@ export const skillHandler: CommandHandler = async (args, context): Promise<Comma
       return skillValidateHandler(subArgs, context);
     default:
       context.onOutput(`Unknown subcommand: ${subcommand ?? ''}`, 'warning');
-      context.onOutput('Usage: agent skill [list|info <name>|validate <path>]', 'info');
+      context.onOutput('Run "agent skill --help" for usage.', 'info');
       return { success: false, message: 'Unknown subcommand' };
   }
 };

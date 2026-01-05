@@ -17,9 +17,7 @@ import { updateHandler } from './cli/commands/update.js';
 
 const cli = meow(
   `
-  Usage
-    $ agent [options]
-    $ agent <command> [options]
+  Usage: agent [OPTIONS] COMMAND [ARGS]...
 
   Commands
     config        Manage agent configuration
@@ -56,40 +54,103 @@ const cli = meow(
 // Handle subcommands before rendering React
 const [command, ...restArgs] = cli.input;
 
+// Check if --help was passed (root meow consumes it, so check process.argv)
+const wantsHelp = process.argv.includes('--help') || process.argv.includes('-h');
+
 if (command === 'config') {
-  const context = await createCliContext();
-  // Check if --help or -h was passed (meow may have consumed it, check original args)
-  const wantsHelp = process.argv.includes('--help') || process.argv.includes('-h');
-  const hasSubcommand = restArgs.length > 0;
-  let subArgs = restArgs.join(' ');
-  if (wantsHelp) {
-    subArgs = hasSubcommand ? subArgs + ' --help' : '--help';
+  // Check for nested provider subcommand first
+  if (restArgs[0] === 'provider') {
+    // Pass --help to subcommand meow if requested
+    const providerArgv = wantsHelp ? ['--help'] : restArgs.slice(1);
+    meow(
+      `
+  Usage: agent config provider [command]
+
+    Manage provider configurations
+
+  Commands
+    (none)              List providers (or setup wizard)
+    <name>              Interactive wizard for provider
+    set <name> k=v      Non-interactive configuration
+    default <name>      Set default provider
+    remove <name>       Remove provider configuration
+
+  Providers: local, openai, anthropic, azure, foundry, gemini, github
+`,
+      { importMeta: import.meta, argv: providerArgv, description: false }
+    );
+  } else {
+    // Show help if --help requested OR no subcommand provided (like osdu-agent)
+    const configArgv = wantsHelp || restArgs.length === 0 ? ['--help'] : restArgs;
+    meow(
+      `
+  Usage: agent config [command]
+
+    Manage agent configuration
+
+  Commands
+    show             Display current configuration
+    init             Interactive configuration wizard
+    edit             Open config file in text editor
+    provider         Manage provider configurations
+
+  Run 'agent config provider --help' for provider subcommands.
+`,
+      { importMeta: import.meta, argv: configArgv, description: false }
+    );
   }
-  const result = await configHandler(subArgs, context);
+
+  const context = await createCliContext();
+  const result = await configHandler(restArgs.join(' '), context);
   process.exit(result.success ? 0 : 1);
 }
 
 if (command === 'skill') {
+  // Pass --help to subcommand meow if requested
+  const skillArgv = wantsHelp ? ['--help'] : restArgs;
+  meow(
+    `
+  Usage: agent skill [command]
+
+    Manage agent skills
+
+  Commands
+    (none)           List all discovered skills
+    list             List all discovered skills
+    info <name>      Show detailed skill information
+    validate <path>  Validate a SKILL.md file
+`,
+    { importMeta: import.meta, argv: skillArgv, description: false }
+  );
+
   const context = await createCliContext();
-  const wantsHelp = process.argv.includes('--help') || process.argv.includes('-h');
-  const hasSubcommand = restArgs.length > 0;
-  let subArgs = restArgs.join(' ');
-  if (wantsHelp) {
-    subArgs = hasSubcommand ? subArgs + ' --help' : '--help';
-  }
-  const result = await skillHandler(subArgs, context);
+  const result = await skillHandler(restArgs.join(' '), context);
   process.exit(result.success ? 0 : 1);
 }
 
 if (command === 'update') {
+  // Pass --help to subcommand meow if requested
+  const updateArgv = wantsHelp ? ['--help'] : restArgs;
+  meow(
+    `
+  Usage: agent update [options]
+
+    Check for and install updates from GitHub
+
+  Options
+    --check        Check for updates without installing
+    --force        Force reinstall even if up to date
+
+  Examples
+    agent update              Update to latest version
+    agent update --check      Check for updates only
+    agent update --force      Force reinstall
+`,
+    { importMeta: import.meta, argv: updateArgv, description: false }
+  );
+
   const context = await createCliContext();
-  const wantsHelp = process.argv.includes('--help') || process.argv.includes('-h');
-  const hasSubcommand = restArgs.length > 0;
-  let subArgs = restArgs.join(' ');
-  if (wantsHelp) {
-    subArgs = hasSubcommand ? subArgs + ' --help' : '--help';
-  }
-  const result = await updateHandler(subArgs, context);
+  const result = await updateHandler(restArgs.join(' '), context);
   process.exit(result.success ? 0 : 1);
 }
 

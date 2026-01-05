@@ -3,7 +3,7 @@
  * Checks for and installs updates from the git repository.
  */
 
-import type { CommandHandler, CommandResult, CommandContext } from './types.js';
+import type { CommandHandler, CommandResult } from './types.js';
 import { spawn } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { readFile } from 'node:fs/promises';
@@ -120,35 +120,10 @@ async function getCurrentVersion(): Promise<string> {
 }
 
 /**
- * Show update command help.
- */
-function showUpdateHelp(context: CommandContext): CommandResult {
-  context.onOutput('', 'info');
-  context.onOutput('Usage: agent update [options]', 'info');
-  context.onOutput('', 'info');
-  context.onOutput('Check for and install updates from GitHub', 'success');
-  context.onOutput('', 'info');
-  context.onOutput('Options:', 'info');
-  context.onOutput('  --check        Check for updates without installing', 'info');
-  context.onOutput('  --force        Force reinstall even if up to date', 'info');
-  context.onOutput('', 'info');
-  context.onOutput('Examples:', 'info');
-  context.onOutput('  agent update              # Update to latest version', 'info');
-  context.onOutput('  agent update --check      # Check for updates only', 'info');
-  context.onOutput('  agent update --force      # Force reinstall', 'info');
-  return { success: true, message: 'Showed help' };
-}
-
-/**
  * Main update command handler.
  */
 export const updateHandler: CommandHandler = async (args, context): Promise<CommandResult> => {
   const parts = args.trim().split(/\s+/).filter(Boolean);
-
-  // Handle help
-  if (parts.includes('--help') || parts.includes('-h') || parts.includes('help')) {
-    return showUpdateHelp(context);
-  }
 
   const checkOnly = parts.includes('--check');
   const force = parts.includes('--force');

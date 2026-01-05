@@ -143,7 +143,7 @@ describe('config command handlers', () => {
   });
 
   describe('configHandler', () => {
-    it('routes to configShowHandler by default', async () => {
+    it('routes to configShowHandler with show subcommand', async () => {
       const mockConfig = {
         version: '1.0',
         providers: { default: 'openai', openai: { model: 'gpt-4o' } },
@@ -165,10 +165,19 @@ describe('config command handlers', () => {
 
       const { configHandler } = await import('../config.js');
       const context = createMockContext();
-      const result = await configHandler('', context);
+      const result = await configHandler('show', context);
 
       expect(result.success).toBe(true);
       expect(context.outputs.some((o) => o.content.includes('Agent Configuration'))).toBe(true);
+    });
+
+    it('shows error for empty subcommand', async () => {
+      const { configHandler } = await import('../config.js');
+      const context = createMockContext();
+      const result = await configHandler('', context);
+
+      expect(result.success).toBe(false);
+      expect(context.outputs.some((o) => o.content.includes('Unknown subcommand'))).toBe(true);
     });
 
     it('shows error for unknown subcommand', async () => {
