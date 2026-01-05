@@ -15,6 +15,7 @@ import type {
   SkillSource,
 } from './types.js';
 import { parseSkillMd } from './parser.js';
+import { extractRepoName } from './installer.js';
 
 // Default directories
 // Bundled skills location depends on execution context:
@@ -142,7 +143,8 @@ export class SkillLoader {
         return skill.disabled !== true;
       });
 
-    // Check for duplicate skill names (later sources win)
+    // Check for duplicate skill names (project > user > plugin > bundled)
+    // After filtering, skills are processed in source order so later sources override earlier ones
     const seen = new Map<string, DiscoveredSkill>();
     for (const skill of filteredSkills) {
       if (seen.has(skill.manifest.name)) {
@@ -187,7 +189,7 @@ export class SkillLoader {
       }
 
       // Determine skill name from plugin config or extract from URL
-      const skillName = plugin.name ?? this.extractRepoName(plugin.url);
+      const skillName = plugin.name ?? extractRepoName(plugin.url);
       const skillDir = join(this.pluginsDir, skillName);
       const skillMdPath = join(skillDir, 'SKILL.md');
 
@@ -197,7 +199,7 @@ export class SkillLoader {
       if (!(await this.directoryExists(skillDir))) {
         errors.push({
           path: skillDir,
-          message: `Plugin directory not found. Run 'agent skill install ${plugin.url}' to install.`,
+          message: `Plugin directory not found. Run 'agent skill install <url>' to install.`,
           type: 'NOT_FOUND',
         });
         continue;
@@ -214,14 +216,6 @@ export class SkillLoader {
     }
 
     return { skills, errors };
-  }
-
-  /**
-   * Extract repository name from git URL.
-   */
-  private extractRepoName(url: string): string {
-    const match = url.match(/\/([^/]+?)(?:\.git)?$/);
-    return match?.[1] ?? 'unknown-skill';
   }
 
   /**

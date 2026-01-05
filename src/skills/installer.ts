@@ -104,6 +104,20 @@ function isValidRef(ref: string): boolean {
 }
 
 /**
+ * Validate skill name to prevent path traversal attacks.
+ * Skill names must:
+ * - Start with alphanumeric character
+ * - Only contain alphanumeric, hyphens, and underscores
+ * - Be 1-64 characters long
+ * - Not contain path separators (/, \, ..)
+ */
+function isValidSkillName(name: string): boolean {
+  // Only allow alphanumeric, hyphens, and underscores
+  // Must start with alphanumeric, max 64 characters
+  return /^[a-z0-9][a-z0-9-_]{0,63}$/i.test(name);
+}
+
+/**
  * Install a skill plugin from a git repository.
  *
  * @param options - Installation options
@@ -203,6 +217,18 @@ export async function installSkill(options: InstallOptions): Promise<InstallResu
     // Use the name from the manifest
     const actualName = parseResult.content.manifest.name;
 
+    // Validate skill name to prevent path traversal attacks
+    if (!isValidSkillName(actualName)) {
+      // Rollback: remove cloned directory
+      await rm(targetDir, { recursive: true, force: true });
+      return {
+        success: false,
+        skillName: repoName,
+        path: targetDir,
+        error: `Invalid skill name in SKILL.md: "${actualName}". Must start with alphanumeric and contain only alphanumeric, hyphens, and underscores (max 64 chars).`,
+      };
+    }
+
     // If manifest name differs from directory name, rename the directory
     if (actualName !== repoName) {
       const newTargetDir = join(baseDir, actualName);
@@ -256,6 +282,16 @@ export async function installSkill(options: InstallOptions): Promise<InstallResu
  * @returns Update result
  */
 export async function updateSkill(skillName: string, baseDir?: string): Promise<UpdateResult> {
+  // Validate skill name to prevent path traversal attacks
+  if (!isValidSkillName(skillName)) {
+    return {
+      success: false,
+      skillName,
+      updated: false,
+      error: `Invalid skill name: "${skillName}". Must start with alphanumeric and contain only alphanumeric, hyphens, and underscores (max 64 chars).`,
+    };
+  }
+
   const pluginsDir = getPluginsDir(baseDir);
   const targetDir = join(pluginsDir, skillName);
 
@@ -335,6 +371,11 @@ export async function updateSkill(skillName: string, baseDir?: string): Promise<
  * @returns Whether removal succeeded
  */
 export async function removeSkill(skillName: string, baseDir?: string): Promise<boolean> {
+  // Validate skill name to prevent path traversal attacks
+  if (!isValidSkillName(skillName)) {
+    return false;
+  }
+
   const pluginsDir = getPluginsDir(baseDir);
   const targetDir = join(pluginsDir, skillName);
 

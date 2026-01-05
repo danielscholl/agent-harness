@@ -270,6 +270,128 @@ describe('installer', () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain('Failed to install');
     });
+
+    it('rejects path traversal attempts in manifest name', async () => {
+      // Malicious SKILL.md with path traversal in name
+      mockParseSkillMd.mockReturnValue({
+        success: true,
+        content: {
+          manifest: {
+            name: '../../../etc/passwd',
+            description: 'Malicious skill',
+          },
+          body: '# Malicious',
+        },
+      });
+
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' });
+      mockAccess.mockRejectedValueOnce(new Error('Not found')).mockResolvedValueOnce(undefined);
+
+      const { installSkill } = await import('../installer.js');
+      const result = await installSkill({
+        url: 'https://github.com/user/test-skill',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid skill name');
+      expect(mockRm).toHaveBeenCalled(); // Should rollback
+    });
+
+    it('rejects skill names with forward slashes', async () => {
+      mockParseSkillMd.mockReturnValue({
+        success: true,
+        content: {
+          manifest: {
+            name: 'foo/bar',
+            description: 'Invalid skill',
+          },
+          body: '# Test',
+        },
+      });
+
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' });
+      mockAccess.mockRejectedValueOnce(new Error('Not found')).mockResolvedValueOnce(undefined);
+
+      const { installSkill } = await import('../installer.js');
+      const result = await installSkill({
+        url: 'https://github.com/user/test-skill',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid skill name');
+    });
+
+    it('rejects skill names with backslashes', async () => {
+      mockParseSkillMd.mockReturnValue({
+        success: true,
+        content: {
+          manifest: {
+            name: 'foo\\bar',
+            description: 'Invalid skill',
+          },
+          body: '# Test',
+        },
+      });
+
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' });
+      mockAccess.mockRejectedValueOnce(new Error('Not found')).mockResolvedValueOnce(undefined);
+
+      const { installSkill } = await import('../installer.js');
+      const result = await installSkill({
+        url: 'https://github.com/user/test-skill',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid skill name');
+    });
+
+    it('rejects skill names exceeding 64 characters', async () => {
+      mockParseSkillMd.mockReturnValue({
+        success: true,
+        content: {
+          manifest: {
+            name: 'a'.repeat(65),
+            description: 'Too long',
+          },
+          body: '# Test',
+        },
+      });
+
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' });
+      mockAccess.mockRejectedValueOnce(new Error('Not found')).mockResolvedValueOnce(undefined);
+
+      const { installSkill } = await import('../installer.js');
+      const result = await installSkill({
+        url: 'https://github.com/user/test-skill',
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid skill name');
+    });
+
+    it('accepts valid skill names with hyphens and underscores', async () => {
+      mockParseSkillMd.mockReturnValue({
+        success: true,
+        content: {
+          manifest: {
+            name: 'valid-skill_name123',
+            description: 'Valid skill',
+          },
+          body: '# Test',
+        },
+      });
+
+      mockExecFileAsync.mockResolvedValue({ stdout: '', stderr: '' });
+      mockAccess.mockRejectedValueOnce(new Error('Not found')).mockResolvedValueOnce(undefined);
+
+      const { installSkill } = await import('../installer.js');
+      const result = await installSkill({
+        url: 'https://github.com/user/test-skill',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.skillName).toBe('valid-skill_name123');
+    });
   });
 
   describe('updateSkill', () => {
@@ -337,6 +459,23 @@ describe('installer', () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain('not a git repository');
     });
+
+    it('rejects path traversal attempts in skill name', async () => {
+      const { updateSkill } = await import('../installer.js');
+      const result = await updateSkill('../../../etc/passwd');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid skill name');
+      expect(mockAccess).not.toHaveBeenCalled(); // Should not attempt file operations
+    });
+
+    it('rejects skill names with slashes', async () => {
+      const { updateSkill } = await import('../installer.js');
+      const result = await updateSkill('foo/bar');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Invalid skill name');
+    });
   });
 
   describe('removeSkill', () => {
@@ -371,6 +510,22 @@ describe('installer', () => {
       const result = await removeSkill('test-skill');
 
       expect(result).toBe(false);
+    });
+
+    it('rejects path traversal attempts in skill name', async () => {
+      const { removeSkill } = await import('../installer.js');
+      const result = await removeSkill('../../../etc/passwd');
+
+      expect(result).toBe(false);
+      expect(mockAccess).not.toHaveBeenCalled(); // Should not attempt file operations
+    });
+
+    it('rejects skill names with slashes', async () => {
+      const { removeSkill } = await import('../installer.js');
+      const result = await removeSkill('foo/bar');
+
+      expect(result).toBe(false);
+      expect(mockAccess).not.toHaveBeenCalled();
     });
   });
 

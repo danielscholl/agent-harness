@@ -90,7 +90,7 @@ export const skillShowHandler: CommandHandler = async (_args, context): Promise<
     for (const skill of bundled) {
       // Use the disabled flag from the skill object
       const isDisabled = skill.disabled === true;
-      const status = isDisabled ? '  ' : '\u2713 ';
+      const status = isDisabled ? '○ ' : '✓ ';
       const statusText = isDisabled ? '(disabled)' : '(enabled)';
       const desc = skill.manifest.description;
       const truncatedDesc = desc.length > 60 ? desc.slice(0, 57) + '...' : desc;
@@ -104,7 +104,7 @@ export const skillShowHandler: CommandHandler = async (_args, context): Promise<
     for (const skill of plugins) {
       // Use the disabled flag from the skill object
       const isDisabled = skill.disabled === true;
-      const status = isDisabled ? '  ' : '\u2713 ';
+      const status = isDisabled ? '○ ' : '✓ ';
       const statusText = isDisabled ? '(disabled)' : '(enabled)';
       const desc = skill.manifest.description;
       const truncatedDesc = desc.length > 60 ? desc.slice(0, 57) + '...' : desc;
@@ -119,7 +119,7 @@ export const skillShowHandler: CommandHandler = async (_args, context): Promise<
     for (const skill of user) {
       const desc = skill.manifest.description;
       const truncatedDesc = desc.length > 60 ? desc.slice(0, 57) + '...' : desc;
-      context.onOutput(`  \u2713 ${skill.manifest.name}`, 'success');
+      context.onOutput(`  ✓ ${skill.manifest.name}`, 'success');
       context.onOutput(`      ${truncatedDesc}`, 'info');
     }
   }
@@ -129,7 +129,7 @@ export const skillShowHandler: CommandHandler = async (_args, context): Promise<
     for (const skill of project) {
       const desc = skill.manifest.description;
       const truncatedDesc = desc.length > 60 ? desc.slice(0, 57) + '...' : desc;
-      context.onOutput(`  \u2713 ${skill.manifest.name}`, 'success');
+      context.onOutput(`  ✓ ${skill.manifest.name}`, 'success');
       context.onOutput(`      ${truncatedDesc}`, 'info');
     }
   }
@@ -422,7 +422,7 @@ export const skillManageHandler: CommandHandler = async (args, context): Promise
         const plugin = config.skills.plugins.find((p) => p.name === name);
         const status = plugin?.enabled === false ? '(disabled)' : '(enabled)';
         context.onOutput(`  ${name} ${status}`, plugin?.enabled === false ? 'warning' : 'success');
-        if (plugin !== undefined && plugin.url !== '') {
+        if (plugin !== undefined) {
           context.onOutput(`    ${plugin.url}`, 'info');
         }
       }
