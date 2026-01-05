@@ -88,17 +88,17 @@ The context provider implements a 3-tier disclosure model to minimize context wi
 ┌─────────────────────────────────────────────────────────────────┐
 │                    Three-Tier Disclosure                        │
 │                                                                 │
-│  Tier 1: Metadata (~100 tokens/skill)                          │
-│  ├── When: System prompt injection at startup                  │
-│  └── Shows: <available_skills> XML with names + descriptions   │
+│  Tier 1: Metadata (~100 tokens/skill)                           │
+│  ├── When: System prompt injection at startup                   │
+│  └── Shows: <available_skills> XML with names + descriptions    │
 │                                                                 │
-│  Tier 2: Instructions (<5000 tokens)                           │
-│  ├── When: Agent activates a skill                             │
-│  └── Shows: Full SKILL.md content                              │
+│  Tier 2: Instructions (<5000 tokens)                            │
+│  ├── When: Agent activates a skill                              │
+│  └── Shows: Full SKILL.md content                               │
 │                                                                 │
-│  Tier 3: Resources (as needed)                                 │
-│  ├── When: Agent requests specific resource                    │
-│  └── Shows: Content from scripts/, references/, assets/        │
+│  Tier 3: Resources (as needed)                                  │
+│  ├── When: Agent requests specific resource                     │
+│  └── Shows: Content from scripts/, references/, assets/         │
 └─────────────────────────────────────────────────────────────────┘
 ```
 

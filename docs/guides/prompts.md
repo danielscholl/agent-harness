@@ -202,7 +202,7 @@ When skills are enabled, the framework appends skill documentation as XML:
 </available_skills>
 ```
 
-See the [Skills documentation](../architecture.md#skills-architecture) for details.
+See the [Skills documentation](../architecture/skills.md) for details.
 
 ---
 

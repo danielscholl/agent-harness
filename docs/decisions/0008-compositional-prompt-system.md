@@ -128,7 +128,3 @@ Provider layers should be:
 
 - [ADR-0002: LLM Integration with LangChain](0002-llm-integration-langchain.md)
 - [ADR-0001: Skills Execution Model](0001-skills-execution-model.md)
-
-### Implementation Spec
-
-See `docs/specs/feature-compositional-prompt-system.md` for detailed implementation plan.

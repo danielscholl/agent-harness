@@ -343,18 +343,31 @@ session:
 
 ```typescript
 class ConfigManager {
-  // Load merged config from all sources
-  static async load(): Promise<AppConfig>;
+  constructor(options?: ConfigManagerOptions);
 
-  // Save config to file
-  static async save(config: Partial<AppConfig>, location: 'user' | 'project'): Promise<void>;
+  // Load merged config from all sources (env > project > user > defaults)
+  async load(projectPath?: string): Promise<ConfigResponse<AppConfig>>;
+
+  // Save config to file (produces minimal YAML with only non-default values)
+  async save(config: AppConfig, filePath?: string): Promise<ConfigResponse<void>>;
 
   // Get config file paths
-  static getUserConfigPath(): string;
-  static getProjectConfigPath(): string;
+  getUserConfigPath(): string;
+  getProjectConfigPath(projectPath?: string): string;
 
-  // Validate partial config
-  static validate(config: unknown): AppConfig;
+  // Validate config against schema
+  validate(config: unknown): ConfigResponse<AppConfig>;
+
+  // Get default configuration
+  getDefaults(): AppConfig;
+}
+
+// Response wrapper for all operations
+interface ConfigResponse<T> {
+  success: boolean;
+  result?: T;
+  error?: string;
+  message: string;
 }
 ```
 

@@ -3,10 +3,6 @@
 > **Status:** Current
 > This directory contains comprehensive architecture documentation for the TypeScript agent framework.
 
-**Governance:** See [CLAUDE.md](../../CLAUDE.md) for implementation rules.
-**Implementation Guides:** See [guides/](../guides/) for code patterns.
-**Features:** See [plans/typescript-rewrite-features.md](../plans/typescript-rewrite-features.md) for build order.
-
 ---
 
 ## Documentation Map

@@ -386,9 +386,19 @@ export function wrapWithTelemetry(
       const span = state.toolSpans.get(spanKey);
 
       if (span !== undefined) {
+        // Prefer executionResult.result.metadata.error when available (more accurate for tools like bash)
+        // Fall back to result.success for legacy tool format
+        const metadata = executionResult?.result.metadata;
+        const metadataError = metadata !== undefined ? metadata.error : undefined;
+        const hasMetadataError = metadataError !== undefined ? Boolean(metadataError) : false;
+        const isSuccess = hasMetadataError ? false : result.success;
+
+        // Extract error type: use result.error only when result indicates failure
+        const errorType = !result.success ? result.error : undefined;
+
         endToolSpan(span, {
-          success: result.success,
-          errorType: result.success ? undefined : result.error,
+          success: isSuccess,
+          errorType: isSuccess ? undefined : errorType,
           enableSensitiveData,
           // Only access result.result when success is true (type narrowing)
           result: enableSensitiveData && result.success ? result.result : undefined,

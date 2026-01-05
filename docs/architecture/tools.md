@@ -188,45 +188,45 @@ type ToolPermission = 'read' | 'write' | 'execute' | 'network';
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                     Tool Registration                         │
-│                                                               │
+│                     Tool Registration                        │
+│                                                              │
 │  Tool.define('read', { ... })                                │
-│         │                                                     │
-│         ▼                                                     │
+│         │                                                    │
+│         ▼                                                    │
 │  ToolRegistry.register(readTool, { permissions })            │
-│         │                                                     │
-│         ▼                                                     │
+│         │                                                    │
+│         ▼                                                    │
 │  ┌─────────────────────────────────────────────────────────┐ │
-│  │                   ToolRegistry                           │ │
-│  │                                                          │ │
-│  │  Map<id, { info, permissions, initialized?, langchain? }>│ │
+│  │                   ToolRegistry                          │ │
+│  │                                                         │ │
+│  │ Map<id, { info, permissions, initialized?, langchain? }>│ │
 │  └─────────────────────────────────────────────────────────┘ │
 └──────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌──────────────────────────────────────────────────────────────┐
-│                    Tool Initialization                        │
-│                                                               │
+│                    Tool Initialization                       │
+│                                                              │
 │  ToolRegistry.tools({ initCtx, createContext })              │
-│         │                                                     │
-│         ▼                                                     │
+│         │                                                    │
+│         ▼                                                    │
 │  For each tool:                                              │
 │    1. Call info.init(initCtx)                                │
 │    2. Load external description (if configured)              │
 │    3. Create DynamicStructuredTool wrapper                   │
 │    4. Cache for reuse                                        │
-│         │                                                     │
-│         ▼                                                     │
+│         │                                                    │
+│         ▼                                                    │
 │  Return StructuredToolInterface[]                            │
 └──────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌──────────────────────────────────────────────────────────────┐
-│                    Tool Execution                             │
-│                                                               │
+│                    Tool Execution                            │
+│                                                              │
 │  LangChain Agent calls tool.invoke(args)                     │
-│         │                                                     │
-│         ▼                                                     │
+│         │                                                    │
+│         ▼                                                    │
 │  DynamicStructuredTool.func():                               │
 │    1. Create Tool.Context                                    │
 │    2. Call initialized.execute(args, ctx)                    │
