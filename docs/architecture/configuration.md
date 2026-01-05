@@ -51,6 +51,53 @@ Priority from highest to lowest:
 
 ---
 
+## Workspace Root Precedence
+
+The workspace root controls where tools can read/write files. For security (sandbox/container scenarios), precedence follows a "narrow only" rule:
+
+```
+1. AGENT_WORKSPACE_ROOT env var     -> Authoritative hard cap (if set)
+         |
+         v
+2. config.agent.workspaceRoot       -> Applies only if:
+         |                              - env var is unset, OR
+         |                              - config path is WITHIN env var path
+         v
+3. process.cwd()                    -> Fallback if neither is set
+```
+
+### Security Rules
+
+| Env Var | Config | Behavior |
+|---------|--------|----------|
+| Not set | Not set | Use `cwd` |
+| Not set | Set | Use config, set env var for tools |
+| Set | Not set | Use env var (authoritative) |
+| Set | Set (inside env) | Use config (narrowing allowed) |
+| Set | Set (outside env) | **Ignore config**, warn, use env var |
+
+### Example Scenarios
+
+```yaml
+# Config in ~/.agent/config.yaml
+agent:
+  workspaceRoot: /home/user/projects/myapp
+```
+
+**Scenario 1:** Container sets `AGENT_WORKSPACE_ROOT=/sandbox`
+- Config `/home/user/projects/myapp` is outside `/sandbox`
+- Config ignored with warning, workspace = `/sandbox`
+
+**Scenario 2:** Container sets `AGENT_WORKSPACE_ROOT=/home/user/projects`
+- Config `/home/user/projects/myapp` is inside `/home/user/projects`
+- Config applies (narrowing), workspace = `/home/user/projects/myapp`
+
+**Scenario 3:** No env var set
+- Config applies, workspace = `/home/user/projects/myapp`
+- Env var is set for tools to use
+
+---
+
 ## Schema Structure
 
 ```

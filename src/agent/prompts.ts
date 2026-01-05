@@ -89,6 +89,8 @@ export interface PromptOptions {
   model: string;
   /** Current provider name (for {{PROVIDER}} placeholder) */
   provider: string;
+  /** Debug callback for logging */
+  onDebug?: (message: string, data?: Record<string, unknown>) => void;
 }
 
 /**
@@ -267,22 +269,47 @@ export function replacePlaceholders(content: string, values: PlaceholderValues):
 // =============================================================================
 
 /**
- * Load the base prompt from src/prompts/base.md.
- * Falls back to legacy system.md then inline default.
+ * Load the base prompt using three-tier fallback:
+ * 1. config.agent.systemPromptFile (explicit override)
+ * 2. ~/.agent/system.md (user's default)
+ * 3. Package default (src/prompts/base.md or system.md)
  *
  * @param options - Prompt options
  * @returns Base prompt content with placeholders replaced
  */
 export async function loadBasePrompt(options: PromptOptions): Promise<string> {
-  const { config, model, provider } = options;
+  const { config, model, provider, onDebug } = options;
   const promptsDir = getPromptsDir();
 
   let promptContent: string | null = null;
 
-  // Try base.md first (new compositional system)
-  const basePath = join(promptsDir, 'base.md');
-  if (await fileExists(basePath)) {
-    promptContent = await readFile(basePath, 'utf-8');
+  // Tier 1: Explicit config override (config.agent.systemPromptFile)
+  if (config.agent.systemPromptFile !== undefined && config.agent.systemPromptFile !== '') {
+    const configPath = config.agent.systemPromptFile;
+    if (await fileExists(configPath)) {
+      promptContent = await readFile(configPath, 'utf-8');
+    } else {
+      onDebug?.(
+        `Configured system prompt file not found at path "${configPath}". Falling back to default prompts.`,
+        { configPath, fallbackTier: 'user-default' }
+      );
+    }
+  }
+
+  // Tier 2: User's default (~/.agent/system.md)
+  if (promptContent === null) {
+    const userPath = getUserPromptPath();
+    if (await fileExists(userPath)) {
+      promptContent = await readFile(userPath, 'utf-8');
+    }
+  }
+
+  // Tier 3: Package default (try base.md first, then system.md)
+  if (promptContent === null) {
+    const basePath = join(promptsDir, 'base.md');
+    if (await fileExists(basePath)) {
+      promptContent = await readFile(basePath, 'utf-8');
+    }
   }
 
   // Fall back to legacy system.md
@@ -427,7 +454,7 @@ export async function assembleSystemPrompt(options: PromptAssemblyOptions): Prom
   const sections: string[] = [];
 
   // 1. Load base prompt
-  const basePrompt = await loadBasePrompt({ config, model, provider });
+  const basePrompt = await loadBasePrompt({ config, model, provider, onDebug });
   sections.push(basePrompt);
   onDebug?.('Loaded base prompt', { length: basePrompt.length });
 
@@ -486,7 +513,7 @@ export async function assembleSystemPrompt(options: PromptAssemblyOptions): Prom
  * @returns Processed system prompt string
  */
 export async function loadSystemPrompt(options: PromptOptions): Promise<string> {
-  const { config, model, provider } = options;
+  const { config, model, provider, onDebug } = options;
 
   let promptContent: string | null = null;
 
@@ -495,6 +522,11 @@ export async function loadSystemPrompt(options: PromptOptions): Promise<string> 
     const configPath = config.agent.systemPromptFile;
     if (await fileExists(configPath)) {
       promptContent = await readFile(configPath, 'utf-8');
+    } else {
+      onDebug?.(
+        `Configured system prompt file not found at path "${configPath}". Falling back to default prompts.`,
+        { configPath, fallbackTier: 'user-default' }
+      );
     }
   }
 

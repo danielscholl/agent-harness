@@ -13,6 +13,7 @@ import {
   getWorkspaceRoot,
   isFilesystemWritesEnabled,
   mapSystemErrorToToolError,
+  initializeWorkspaceRoot,
 } from '../workspace.js';
 
 // Test directory management
@@ -237,5 +238,140 @@ describe('mapSystemErrorToToolError', () => {
     const error = new Error('ENOENT: no such file or directory');
     const result = mapSystemErrorToToolError(error);
     expect(result.code).toBe('NOT_FOUND');
+  });
+});
+
+describe('initializeWorkspaceRoot', () => {
+  it('uses env var when only env var is set', async () => {
+    process.env['AGENT_WORKSPACE_ROOT'] = testDir;
+
+    const result = await initializeWorkspaceRoot(undefined);
+
+    expect(result.source).toBe('env');
+    expect(result.workspaceRoot).toBe(testDir);
+    expect(result.warning).toBeUndefined();
+  });
+
+  it('uses config when only config is set', async () => {
+    delete process.env['AGENT_WORKSPACE_ROOT'];
+    const configPath = path.join(os.tmpdir(), 'config-workspace');
+
+    const result = await initializeWorkspaceRoot(configPath);
+
+    expect(result.source).toBe('config');
+    expect(result.workspaceRoot).toBe(path.resolve(configPath));
+    // Should have set the env var
+    expect(process.env['AGENT_WORKSPACE_ROOT']).toBe(path.resolve(configPath));
+  });
+
+  it('uses cwd when neither is set', async () => {
+    delete process.env['AGENT_WORKSPACE_ROOT'];
+
+    const result = await initializeWorkspaceRoot(undefined);
+
+    expect(result.source).toBe('cwd');
+    expect(result.workspaceRoot).toBe(process.cwd());
+    expect(result.warning).toBeUndefined();
+  });
+
+  it('allows config to narrow env root (config inside env)', async () => {
+    process.env['AGENT_WORKSPACE_ROOT'] = testDir;
+    const narrowedPath = path.join(testDir, 'subdir');
+
+    const result = await initializeWorkspaceRoot(narrowedPath);
+
+    expect(result.source).toBe('config');
+    // Workspace is pinned to real path (handles macOS /var -> /private/var symlinks)
+    // The result should end with 'subdir' and be within the real testDir
+    expect(result.workspaceRoot.endsWith('subdir')).toBe(true);
+    // Env var should be updated to the effective (real) root
+    expect(process.env['AGENT_WORKSPACE_ROOT']).toBe(result.workspaceRoot);
+    expect(result.warning).toBeUndefined();
+  });
+
+  it('ignores config outside env root with warning', async () => {
+    process.env['AGENT_WORKSPACE_ROOT'] = testDir;
+    const outsidePath = '/etc/outside';
+
+    const result = await initializeWorkspaceRoot(outsidePath);
+
+    expect(result.source).toBe('env');
+    expect(result.workspaceRoot).toBe(testDir);
+    expect(result.warning).toContain('outside');
+    expect(result.warning).toContain('ignored');
+    // Env var should remain unchanged
+    expect(process.env['AGENT_WORKSPACE_ROOT']).toBe(testDir);
+  });
+
+  it('detects symlink escape in config path narrowing', async () => {
+    // Create a symlink inside testDir that points outside
+    const symlinkPath = path.join(testDir, 'escape-link');
+    await fs.symlink('/tmp', symlinkPath);
+
+    process.env['AGENT_WORKSPACE_ROOT'] = testDir;
+
+    const result = await initializeWorkspaceRoot(symlinkPath);
+
+    // Should detect symlink escape and reject config
+    expect(result.source).toBe('env');
+    expect(result.workspaceRoot).toBe(testDir);
+    expect(result.warning).toContain('symlink');
+    expect(result.warning).toContain('ignored');
+    // Env var should remain unchanged
+    expect(process.env['AGENT_WORKSPACE_ROOT']).toBe(testDir);
+  });
+
+  it('detects parent symlink escape with non-existent leaf', async () => {
+    // Create a symlink inside testDir that points outside
+    const symlinkPath = path.join(testDir, 'link-to-outside');
+    await fs.symlink('/tmp', symlinkPath);
+
+    process.env['AGENT_WORKSPACE_ROOT'] = testDir;
+
+    // Config path: testDir/link-to-outside/newroot (leaf doesn't exist)
+    const configPath = path.join(symlinkPath, 'newroot');
+    const result = await initializeWorkspaceRoot(configPath);
+
+    // Should detect parent symlink escape and reject config
+    expect(result.source).toBe('env');
+    expect(result.workspaceRoot).toBe(testDir);
+    expect(result.warning).toContain('symlink');
+    expect(result.warning).toContain('parent');
+    // Env var should remain unchanged
+    expect(process.env['AGENT_WORKSPACE_ROOT']).toBe(testDir);
+  });
+
+  it('expands ~ in config path', async () => {
+    delete process.env['AGENT_WORKSPACE_ROOT'];
+
+    const result = await initializeWorkspaceRoot('~/my-workspace');
+
+    expect(result.source).toBe('config');
+    expect(result.workspaceRoot).toBe(path.join(os.homedir(), 'my-workspace'));
+  });
+
+  it('calls onDebug callback', async () => {
+    delete process.env['AGENT_WORKSPACE_ROOT'];
+    const debugMessages: string[] = [];
+    const onDebug = (msg: string): void => {
+      debugMessages.push(msg);
+    };
+
+    await initializeWorkspaceRoot('/some/path', onDebug);
+
+    expect(debugMessages.length).toBeGreaterThan(0);
+  });
+
+  it('calls onDebug with warning when config ignored', async () => {
+    process.env['AGENT_WORKSPACE_ROOT'] = testDir;
+    const debugMessages: Array<{ msg: string; data?: unknown }> = [];
+    const onDebug = (msg: string, data?: unknown): void => {
+      debugMessages.push({ msg, data });
+    };
+
+    await initializeWorkspaceRoot('/etc/outside', onDebug);
+
+    const warningMsg = debugMessages.find((d) => d.msg.includes('ignored'));
+    expect(warningMsg).toBeDefined();
   });
 });

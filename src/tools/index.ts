@@ -51,6 +51,8 @@ export {
   resolveWorkspacePathSafe,
   isFilesystemWritesEnabled,
   mapSystemErrorToToolError,
+  initializeWorkspaceRoot,
+  type WorkspaceInitResult,
   DEFAULT_MAX_READ_BYTES,
   DEFAULT_MAX_WRITE_BYTES,
   DEFAULT_MAX_ENTRIES,

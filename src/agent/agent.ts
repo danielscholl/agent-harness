@@ -19,10 +19,12 @@ import type { AgentCallbacks } from './callbacks.js';
 import type { AgentErrorCode, AgentErrorResponse, ProviderErrorMetadata } from '../errors/index.js';
 import type { DiscoveredSkill, SkillLoaderOptions } from '../skills/types.js';
 import type { ToolPermission } from '../tools/index.js';
-import { Tool, ToolRegistry } from '../tools/index.js';
+import { Tool, ToolRegistry, initializeWorkspaceRoot } from '../tools/index.js';
 import { LLMClient } from '../model/llm.js';
+import { withRetry, mapErrorToCode, extractRetryAfter } from '../model/index.js';
+import type { ModelResponse } from '../model/types.js';
 import { assembleSystemPrompt, loadSkillsContext } from './prompts.js';
-import { generateAvailableSkillsXml } from '../skills/prompt.js';
+import { createSkillContextProvider } from '../skills/index.js';
 import { createSpanContext, createChildSpanContext } from './callbacks.js';
 import { extractTokenUsage } from '../model/base.js';
 import { errorResponse, mapModelErrorCodeToAgentErrorCode } from '../errors/index.js';
@@ -109,6 +111,20 @@ export class Agent {
     // Message ID is generated per turn in run()/runStream()
     this.sessionId = `session-${String(Date.now())}-${crypto.randomUUID().slice(0, 8)}`;
 
+    // Initialize workspace root from config (respects env var as hard cap)
+    // This ensures tools use the correct workspace before any tool calls
+    const workspaceInit = await initializeWorkspaceRoot(
+      this.config.agent.workspaceRoot,
+      this.callbacks?.onDebug
+    );
+    if (workspaceInit.warning !== undefined) {
+      // Emit warning through debug callback - config was ignored for security
+      this.callbacks?.onDebug?.('Workspace initialization warning', {
+        warning: workspaceInit.warning,
+        effectiveRoot: workspaceInit.workspaceRoot,
+      });
+    }
+
     // Load system prompt if not already provided via constructor
     if (this.systemPrompt === '') {
       // Use compositional prompt assembly with provider layer and environment
@@ -142,8 +158,12 @@ export class Agent {
         // Apply config.skills filtering (disabledBundled/enabledBundled)
         const filteredSkills = this.filterSkillsByConfig(skills);
 
-        // Generate XML from filtered skills only
-        const skillsXml = generateAvailableSkillsXml(filteredSkills);
+        // Generate token-limited XML from filtered skills using SkillContextProvider
+        // This applies the tier-1 token cap (~1000 tokens) to prevent context bloat
+        const skillContextProvider = createSkillContextProvider(filteredSkills, {
+          onDebug: this.callbacks?.onDebug,
+        });
+        const skillsXml = skillContextProvider.getTier1Context();
 
         // Combine base prompt with filtered skills XML
         this.systemPrompt = skillsXml ? `${basePrompt}\n\n${skillsXml}` : basePrompt;
@@ -553,24 +573,64 @@ export class Agent {
 
         if (hasTools) {
           // Use model with tools bound for function calling
-          try {
-            aiMessage = await modelWithTools.invoke(messages);
-            // Extract usage from response metadata if available
-            const responseMetadata = aiMessage.response_metadata as
-              | Record<string, unknown>
-              | undefined;
-            usage = extractTokenUsage(responseMetadata);
-          } catch (error) {
-            const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-            const errorCode = this.mapErrorToAgentErrorCode(error);
+          // Wrap invocation to convert exceptions to ModelResponse for retry compatibility
+          const invokeWithTools = async (): Promise<ModelResponse<AIMessage>> => {
+            try {
+              const result = await modelWithTools.invoke(messages);
+              return { success: true, result, message: 'Tool invocation succeeded' };
+            } catch (error) {
+              const errorCode = mapErrorToCode(error);
+              const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+              const retryAfterMs = extractRetryAfter(error);
+              return {
+                success: false,
+                error: errorCode,
+                message: errorMsg,
+                retryAfterMs,
+              };
+            }
+          };
+
+          // Apply retry logic if enabled (matches LLMClient.invoke behavior)
+          const retryConfig = this.config.retry;
+          let response: ModelResponse<AIMessage>;
+
+          if (retryConfig.enabled) {
+            response = await withRetry(invokeWithTools, {
+              maxRetries: retryConfig.maxRetries,
+              baseDelayMs: retryConfig.baseDelayMs,
+              maxDelayMs: retryConfig.maxDelayMs,
+              enableJitter: retryConfig.enableJitter,
+              onRetry: (ctx) => {
+                this.callbacks?.onDebug?.(
+                  `Retrying tool LLM call (attempt ${String(ctx.attempt)}/${String(ctx.maxRetries)})`,
+                  {
+                    error: ctx.error,
+                    delayMs: ctx.delayMs,
+                  }
+                );
+              },
+            });
+          } else {
+            response = await invokeWithTools();
+          }
+
+          if (!response.success) {
+            const errorCode = mapModelErrorCodeToAgentErrorCode(response.error);
             this.callbacks?.onSpinnerStop?.();
-            this.emitError(rootCtx, errorCode, errorMsg, {
+            this.emitError(rootCtx, errorCode, response.message, {
               provider: this.getProviderName(),
               model: this.getModelName(),
-              originalError: error,
             });
-            return `Error: ${errorMsg}`;
+            return `Error: ${response.message}`;
           }
+
+          aiMessage = response.result;
+          // Extract usage from response metadata if available
+          const responseMetadata = aiMessage.response_metadata as
+            | Record<string, unknown>
+            | undefined;
+          usage = extractTokenUsage(responseMetadata);
         } else {
           // Use LLMClient for simple invocation
           const response = await this.llmClient.invoke(messages);
