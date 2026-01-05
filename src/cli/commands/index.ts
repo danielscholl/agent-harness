@@ -7,7 +7,6 @@ import {
   COMMAND_EXIT,
   COMMAND_HELP,
   COMMAND_CLEAR,
-  COMMAND_TELEMETRY,
   COMMAND_SAVE,
   COMMAND_RESUME,
   matchesCommand,
@@ -58,12 +57,6 @@ export const COMMANDS: CommandDefinition[] = [
     aliases: COMMAND_CLEAR,
     description: 'Clear screen and history',
     handler: clearHandler,
-  },
-  {
-    aliases: COMMAND_TELEMETRY,
-    description: 'Manage telemetry dashboard',
-    handler: telemetryHandler,
-    usage: '/telemetry [start|stop|status|url]',
   },
   {
     aliases: COMMAND_SAVE,

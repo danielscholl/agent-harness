@@ -7,7 +7,6 @@
 export const COMMAND_EXIT = ['exit', 'quit', 'q', '/exit', '/quit'] as const;
 export const COMMAND_HELP = ['help', '?', '/help'] as const;
 export const COMMAND_CLEAR = ['clear', '/clear'] as const;
-export const COMMAND_TELEMETRY = ['/telemetry', '/aspire'] as const;
 export const COMMAND_SAVE = ['/save'] as const;
 export const COMMAND_RESUME = ['/resume'] as const;
 export const COMMAND_CONFIG = ['/config'] as const;

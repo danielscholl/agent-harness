@@ -4,7 +4,7 @@ models: [gpt-4o, gpt-4o-mini, o1, o1-mini]
 note: GitHub Models uses OpenAI and other models
 ---
 
-# GitHub Models Guidelines
+# Provider Guidelines
 
 ## Format Preferences
 

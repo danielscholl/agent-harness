@@ -4,7 +4,7 @@ models: [gpt-4o, gpt-4, gpt-35-turbo]
 note: Azure OpenAI uses same model families as OpenAI
 ---
 
-# Azure OpenAI Guidelines
+# Provider Guidelines
 
 ## Format Preferences
 
