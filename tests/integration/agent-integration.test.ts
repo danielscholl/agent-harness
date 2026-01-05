@@ -66,6 +66,10 @@ jest.unstable_mockModule('../../src/tools/index.js', () => ({
     tools: mockToolRegistryTools,
     getLastResult: mockToolRegistryGetLastResult,
   },
+  initializeWorkspaceRoot: () => ({
+    workspaceRoot: '/test/workspace',
+    source: 'env' as const,
+  }),
 }));
 
 // Import Agent after mocking

@@ -13,6 +13,7 @@ import {
   getWorkspaceRoot,
   isFilesystemWritesEnabled,
   mapSystemErrorToToolError,
+  initializeWorkspaceRoot,
 } from '../workspace.js';
 
 // Test directory management
@@ -237,5 +238,100 @@ describe('mapSystemErrorToToolError', () => {
     const error = new Error('ENOENT: no such file or directory');
     const result = mapSystemErrorToToolError(error);
     expect(result.code).toBe('NOT_FOUND');
+  });
+});
+
+describe('initializeWorkspaceRoot', () => {
+  it('uses env var when only env var is set', () => {
+    process.env['AGENT_WORKSPACE_ROOT'] = testDir;
+
+    const result = initializeWorkspaceRoot(undefined);
+
+    expect(result.source).toBe('env');
+    expect(result.workspaceRoot).toBe(testDir);
+    expect(result.warning).toBeUndefined();
+  });
+
+  it('uses config when only config is set', () => {
+    delete process.env['AGENT_WORKSPACE_ROOT'];
+    const configPath = path.join(os.tmpdir(), 'config-workspace');
+
+    const result = initializeWorkspaceRoot(configPath);
+
+    expect(result.source).toBe('config');
+    expect(result.workspaceRoot).toBe(path.resolve(configPath));
+    // Should have set the env var
+    expect(process.env['AGENT_WORKSPACE_ROOT']).toBe(path.resolve(configPath));
+  });
+
+  it('uses cwd when neither is set', () => {
+    delete process.env['AGENT_WORKSPACE_ROOT'];
+
+    const result = initializeWorkspaceRoot(undefined);
+
+    expect(result.source).toBe('cwd');
+    expect(result.workspaceRoot).toBe(process.cwd());
+    expect(result.warning).toBeUndefined();
+  });
+
+  it('allows config to narrow env root (config inside env)', () => {
+    process.env['AGENT_WORKSPACE_ROOT'] = testDir;
+    const narrowedPath = path.join(testDir, 'subdir');
+
+    const result = initializeWorkspaceRoot(narrowedPath);
+
+    expect(result.source).toBe('config');
+    expect(result.workspaceRoot).toBe(narrowedPath);
+    // Should have updated the env var
+    expect(process.env['AGENT_WORKSPACE_ROOT']).toBe(narrowedPath);
+    expect(result.warning).toBeUndefined();
+  });
+
+  it('ignores config outside env root with warning', () => {
+    process.env['AGENT_WORKSPACE_ROOT'] = testDir;
+    const outsidePath = '/etc/outside';
+
+    const result = initializeWorkspaceRoot(outsidePath);
+
+    expect(result.source).toBe('env');
+    expect(result.workspaceRoot).toBe(testDir);
+    expect(result.warning).toContain('outside');
+    expect(result.warning).toContain('ignored');
+    // Env var should remain unchanged
+    expect(process.env['AGENT_WORKSPACE_ROOT']).toBe(testDir);
+  });
+
+  it('expands ~ in config path', () => {
+    delete process.env['AGENT_WORKSPACE_ROOT'];
+
+    const result = initializeWorkspaceRoot('~/my-workspace');
+
+    expect(result.source).toBe('config');
+    expect(result.workspaceRoot).toBe(path.join(os.homedir(), 'my-workspace'));
+  });
+
+  it('calls onDebug callback', () => {
+    delete process.env['AGENT_WORKSPACE_ROOT'];
+    const debugMessages: string[] = [];
+    const onDebug = (msg: string): void => {
+      debugMessages.push(msg);
+    };
+
+    initializeWorkspaceRoot('/some/path', onDebug);
+
+    expect(debugMessages.length).toBeGreaterThan(0);
+  });
+
+  it('calls onDebug with warning when config ignored', () => {
+    process.env['AGENT_WORKSPACE_ROOT'] = testDir;
+    const debugMessages: Array<{ msg: string; data?: unknown }> = [];
+    const onDebug = (msg: string, data?: unknown): void => {
+      debugMessages.push({ msg, data });
+    };
+
+    initializeWorkspaceRoot('/etc/outside', onDebug);
+
+    const warningMsg = debugMessages.find((d) => d.msg.includes('ignored'));
+    expect(warningMsg).toBeDefined();
   });
 });

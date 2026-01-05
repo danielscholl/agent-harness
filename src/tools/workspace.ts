@@ -51,6 +51,8 @@ export const BINARY_CHECK_SIZE = 8192;
 /**
  * Get workspace root from environment or current directory.
  * Priority: AGENT_WORKSPACE_ROOT env var > process.cwd()
+ *
+ * Note: For startup initialization with config, use initializeWorkspaceRoot() first.
  */
 export function getWorkspaceRoot(): string {
   const envRoot = process.env['AGENT_WORKSPACE_ROOT'];
@@ -60,6 +62,106 @@ export function getWorkspaceRoot(): string {
     return path.resolve(expanded);
   }
   return process.cwd();
+}
+
+/**
+ * Expand a path, resolving ~ to home directory.
+ */
+function expandPath(inputPath: string): string {
+  if (inputPath.startsWith('~')) {
+    return path.join(os.homedir(), inputPath.slice(1));
+  }
+  return inputPath;
+}
+
+/**
+ * Check if a path is within another path (child of or equal to).
+ */
+function isPathWithin(child: string, parent: string): boolean {
+  const resolvedChild = path.resolve(child);
+  const resolvedParent = path.resolve(parent);
+  return resolvedChild === resolvedParent || resolvedChild.startsWith(resolvedParent + path.sep);
+}
+
+/**
+ * Result of workspace root initialization.
+ */
+export interface WorkspaceInitResult {
+  /** The effective workspace root */
+  workspaceRoot: string;
+  /** Source of the workspace root: 'env', 'config', or 'cwd' */
+  source: 'env' | 'config' | 'cwd';
+  /** Warning message if config was ignored */
+  warning?: string;
+}
+
+/**
+ * Initialize workspace root from config, respecting env var as hard cap.
+ *
+ * Precedence rules (for sandbox/container security):
+ * 1. AGENT_WORKSPACE_ROOT env var is the authoritative hard cap
+ * 2. config.agent.workspaceRoot only applies when env var is unset
+ * 3. If both are set, config must be within env root (narrowing only)
+ *    - If config is outside env root, it's ignored with a warning
+ * 4. Falls back to process.cwd() if nothing is set
+ *
+ * Call this at agent startup to ensure workspace is properly configured.
+ *
+ * @param configWorkspaceRoot - The config.agent.workspaceRoot value
+ * @param onDebug - Optional debug callback
+ * @returns The effective workspace root and source
+ */
+export function initializeWorkspaceRoot(
+  configWorkspaceRoot?: string,
+  onDebug?: (msg: string, data?: unknown) => void
+): WorkspaceInitResult {
+  const envRoot = process.env['AGENT_WORKSPACE_ROOT'];
+  const hasEnvRoot = envRoot !== undefined && envRoot !== '';
+  const hasConfigRoot = configWorkspaceRoot !== undefined && configWorkspaceRoot !== '';
+
+  // Case 1: Only env var set - use it (authoritative)
+  if (hasEnvRoot && !hasConfigRoot) {
+    const resolved = path.resolve(expandPath(envRoot));
+    onDebug?.('Workspace root from env var', { workspaceRoot: resolved });
+    return { workspaceRoot: resolved, source: 'env' };
+  }
+
+  // Case 2: Only config set - use it and set env var for tools
+  if (!hasEnvRoot && hasConfigRoot) {
+    const resolved = path.resolve(expandPath(configWorkspaceRoot));
+    process.env['AGENT_WORKSPACE_ROOT'] = resolved;
+    onDebug?.('Workspace root from config (set env var)', { workspaceRoot: resolved });
+    return { workspaceRoot: resolved, source: 'config' };
+  }
+
+  // Case 3: Both set - config must be within env root (narrow only)
+  if (hasEnvRoot && hasConfigRoot) {
+    const resolvedEnv = path.resolve(expandPath(envRoot));
+    const resolvedConfig = path.resolve(expandPath(configWorkspaceRoot));
+
+    if (isPathWithin(resolvedConfig, resolvedEnv)) {
+      // Config narrows the env root - valid, update env var
+      process.env['AGENT_WORKSPACE_ROOT'] = resolvedConfig;
+      onDebug?.('Workspace root narrowed by config', {
+        envRoot: resolvedEnv,
+        configRoot: resolvedConfig,
+      });
+      return { workspaceRoot: resolvedConfig, source: 'config' };
+    } else {
+      // Config is outside env root - ignore with warning
+      const warning = `config.agent.workspaceRoot (${resolvedConfig}) is outside AGENT_WORKSPACE_ROOT (${resolvedEnv}). Config ignored for security.`;
+      onDebug?.('Workspace config ignored (outside env root)', {
+        envRoot: resolvedEnv,
+        configRoot: resolvedConfig,
+      });
+      return { workspaceRoot: resolvedEnv, source: 'env', warning };
+    }
+  }
+
+  // Case 4: Neither set - use cwd
+  const cwd = process.cwd();
+  onDebug?.('Workspace root from cwd', { workspaceRoot: cwd });
+  return { workspaceRoot: cwd, source: 'cwd' };
 }
 
 /**

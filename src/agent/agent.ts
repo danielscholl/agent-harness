@@ -19,7 +19,7 @@ import type { AgentCallbacks } from './callbacks.js';
 import type { AgentErrorCode, AgentErrorResponse, ProviderErrorMetadata } from '../errors/index.js';
 import type { DiscoveredSkill, SkillLoaderOptions } from '../skills/types.js';
 import type { ToolPermission } from '../tools/index.js';
-import { Tool, ToolRegistry } from '../tools/index.js';
+import { Tool, ToolRegistry, initializeWorkspaceRoot } from '../tools/index.js';
 import { LLMClient } from '../model/llm.js';
 import { withRetry, mapErrorToCode, extractRetryAfter } from '../model/index.js';
 import type { ModelResponse } from '../model/types.js';
@@ -110,6 +110,20 @@ export class Agent {
     // Generate session ID (once per agent lifetime)
     // Message ID is generated per turn in run()/runStream()
     this.sessionId = `session-${String(Date.now())}-${crypto.randomUUID().slice(0, 8)}`;
+
+    // Initialize workspace root from config (respects env var as hard cap)
+    // This ensures tools use the correct workspace before any tool calls
+    const workspaceInit = initializeWorkspaceRoot(
+      this.config.agent.workspaceRoot,
+      this.callbacks?.onDebug
+    );
+    if (workspaceInit.warning !== undefined) {
+      // Emit warning through debug callback - config was ignored for security
+      this.callbacks?.onDebug?.('Workspace initialization warning', {
+        warning: workspaceInit.warning,
+        effectiveRoot: workspaceInit.workspaceRoot,
+      });
+    }
 
     // Load system prompt if not already provided via constructor
     if (this.systemPrompt === '') {
