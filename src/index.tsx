@@ -13,6 +13,7 @@ import type { CLIFlags } from './cli/types.js';
 import { createCliContext } from './cli/cli-context.js';
 import { configHandler } from './cli/commands/config.js';
 import { skillHandler } from './cli/commands/skills.js';
+import { updateHandler } from './cli/commands/update.js';
 
 const cli = meow(
   `
@@ -23,6 +24,7 @@ const cli = meow(
   Commands
     config        Manage agent configuration
     skill         Manage agent skills
+    update        Check for and install updates
 
   Options
     -p, --prompt  Execute single prompt and exit
@@ -76,6 +78,17 @@ if (command === 'skill') {
     subArgs = hasSubcommand ? subArgs + ' --help' : '--help';
   }
   const result = await skillHandler(subArgs, context);
+  process.exit(result.success ? 0 : 1);
+}
+
+if (command === 'update') {
+  const context = await createCliContext();
+  const wantsHelp = process.argv.includes('--help') || process.argv.includes('-h');
+  let subArgs = restArgs.join(' ');
+  if (wantsHelp) {
+    subArgs = subArgs ? subArgs + ' --help' : '--help';
+  }
+  const result = await updateHandler(subArgs, context);
   process.exit(result.success ? 0 : 1);
 }
 
