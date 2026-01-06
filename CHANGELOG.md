@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.4](https://github.com/danielscholl/agent-base-v2/compare/v0.3.3...v0.3.4) (2026-01-06)
+
+
+### Bug Fixes
+
+* **cli:** correct exe path selection for bun binaries ([2ae88a0](https://github.com/danielscholl/agent-base-v2/commit/2ae88a028df2a11b43835a715b9701584a1bf236))
+* **cli:** correct installation type detection for compiled Bun binaries ([d757e4c](https://github.com/danielscholl/agent-base-v2/commit/d757e4c187e9a00aa2972f5d36a55804baeecdce))
+
 ## [0.3.3](https://github.com/danielscholl/agent-base-v2/compare/v0.3.2...v0.3.3) (2026-01-06)
 
 
