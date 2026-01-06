@@ -65,12 +65,12 @@ export function isProviderConfigured(
       );
 
     case 'azure':
-      // Azure needs endpoint and deployment
+      // Azure is configured if any Azure-specific fields are set
+      // (endpoint can come from env var AZURE_OPENAI_ENDPOINT)
       return (
-        typeof providerConfig.endpoint === 'string' &&
-        providerConfig.endpoint !== '' &&
-        typeof providerConfig.deployment === 'string' &&
-        providerConfig.deployment !== ''
+        (typeof providerConfig.endpoint === 'string' && providerConfig.endpoint !== '') ||
+        (typeof providerConfig.deployment === 'string' && providerConfig.deployment !== '') ||
+        (typeof providerConfig.apiVersion === 'string' && providerConfig.apiVersion !== '')
       );
 
     case 'foundry':
