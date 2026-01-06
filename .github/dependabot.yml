@@ -22,12 +22,14 @@ updates:
       production-dependencies:
         dependency-type: "production"
         update-types:
+          - "major"
           - "minor"
           - "patch"
       # Group all dev dependencies together
       dev-dependencies:
         dependency-type: "development"
         update-types:
+          - "major"
           - "minor"
           - "patch"
       # Group TypeScript-related packages
@@ -36,6 +38,7 @@ updates:
           - "typescript"
           - "@types/*"
         update-types:
+          - "major"
           - "minor"
           - "patch"
       # Group testing packages
@@ -45,6 +48,7 @@ updates:
           - "@jest/*"
           - "ts-jest"
         update-types:
+          - "major"
           - "minor"
           - "patch"
       # Group LangChain packages
@@ -53,6 +57,7 @@ updates:
           - "@langchain/*"
           - "langchain"
         update-types:
+          - "major"
           - "minor"
           - "patch"
       # Group linting packages
@@ -63,6 +68,7 @@ updates:
           - "@eslint/*"
           - "prettier"
         update-types:
+          - "major"
           - "minor"
           - "patch"
 
@@ -86,5 +92,6 @@ updates:
         patterns:
           - "*"
         update-types:
+          - "major"
           - "minor"
           - "patch"

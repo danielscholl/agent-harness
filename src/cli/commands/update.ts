@@ -520,7 +520,12 @@ const TRUSTED_DOWNLOAD_DOMAINS = [
 function validateDownloadUrl(url: string): string | null {
   try {
     const parsed = new URL(url);
-    if (TRUSTED_DOWNLOAD_DOMAINS.includes(parsed.hostname)) {
+    const hostname = parsed.hostname;
+    const isTrusted = TRUSTED_DOWNLOAD_DOMAINS.some(
+      (domain) => hostname === domain || hostname.endsWith(`.${domain}`)
+    );
+    // Require HTTPS protocol to prevent downgrade attacks
+    if (parsed.protocol === 'https:' && isTrusted) {
       return parsed.href;
     }
     return null;
@@ -642,7 +647,7 @@ async function updateShellBinary(
     context.onOutput('Verifying checksum...', 'info');
     const isValid = verifyChecksum(downloadedData, expectedHash);
     if (!isValid) {
-      throw new Error('Checksum verification failed - download may be corrupted or tampered');
+      throw new Error('Checksum verification failed - download may be corrupted or tampered with');
     }
     context.onOutput('Checksum verified', 'success');
 
