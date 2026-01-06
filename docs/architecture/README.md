@@ -36,7 +36,9 @@ Agent assembles response
 CLI displays answer
 ```
 
-Callbacks flow Agent → CLI (streaming updates, lifecycle events) and Model → Agent (tokens, tool calls).
+**Callbacks:**
+- Agent → CLI: streaming updates, lifecycle events
+- Model → Agent: tokens, tool calls
 
 ### Layer summary
 
@@ -71,7 +73,7 @@ See [System Layers](./layers.md) for the detailed diagram and responsibilities.
 | [Error Handling](./error-handling.md) | Error types, retries, graceful degradation |
 | [Permissions](./permissions.md) | Permission model and scopes |
 | [Sessions](./sessions.md) | Session lifecycle and persistence |
-| [Context Storage](./context-storage.md) | Tool output storage strategy *(planned)* |
+| [Context Storage](./context-storage.md) | Tool output storage strategy (Planned) |
 | [Skills](./skills.md) | Skill manifests and progressive disclosure |
 | [Telemetry](./telemetry.md) | OpenTelemetry integration |
 
@@ -107,9 +109,10 @@ Full principles and rules: [CLAUDE.md](../../CLAUDE.md)
 - Tools must **not** call LLMs directly
 - If a tool needs LLM assistance, return a `Tool.Result` where output contains an `LLMAssistRequest`:
   ```typescript
-  { action: 'LLM_ASSIST_REQUIRED', prompt: '...', message: '...', description?: '...' }
+  { action: 'LLM_ASSIST_REQUIRED', prompt: string, message: string, description?: string }
   ```
-- The Agent detects this in tool output and handles the request
+  See `src/agent/agent.ts` for the authoritative type definition.
+- The Agent detects this in tool output and may fulfill, transform, or reject the request based on policy
 
 **Why this matters:** Centralizing LLM access keeps cost tracking, observability, retry policies, and safety guardrails in one place. It also simplifies testing (mock one layer) and enables consistent rate limiting across all tool executions.
 
