@@ -1,30 +1,75 @@
 # Agent Framework Architecture
 
 > **Status:** Current
-> This directory contains comprehensive architecture documentation for the TypeScript agent framework.
+> Architecture documentation for the TypeScript agent framework (execution model, layering, contracts, and extension points).
 
 ---
 
-## Documentation Map
+## Start here (pick your path)
 
-### Core Architecture
+- **Understand the system quickly** → [System Layers](./layers.md) → [Core Interfaces](./core-interfaces.md)
+- **Add a tool** → [Tools](./tools.md) → [Tool Development Guide](../guides/tools.md)
+- **Add or debug an LLM provider** → [Providers](./providers.md) → [Error Handling](./error-handling.md) → [Telemetry](./telemetry.md)
+- **Debug memory/session behavior** → [Sessions](./sessions.md) → [Configuration](./configuration.md)
+- **Extend the framework** → [Extension Points](./extension-points.md) → [Coding Styles](./styles.md)
+
+---
+
+## System at a glance
+
+### Execution flow
+
+```
+User
+  ↓
+CLI (React/Ink)
+  ↓ callbacks
+Agent (orchestrates loop)
+  ↓              ↓
+Model            Tools
+(LLM calls)      (validated execution)
+  ↓              ↓
+  └──────────────┘
+         ↓
+Agent assembles response
+  ↓
+CLI displays answer
+```
+
+### Layer summary
+
+See [System Layers](./layers.md) for the detailed diagram and responsibilities.
+
+| Layer | Responsibility |
+|-------|----------------|
+| CLI (React/Ink) | Terminal UI, state, user input, command routing |
+| Agent | Orchestration: Query→LLM→Tool→Response loop, callbacks |
+| Tools | Zod validation, `Tool.Result` outputs, permissions |
+| Model | Provider routing, streaming callbacks, retry/backoff |
+| Utils | Config, sessions, message history, context storage (planned) |
+
+---
+
+## Documentation map
+
+### Core architecture (recommended reading order)
 
 | Document | Description |
 |----------|-------------|
-| [System Layers](./layers.md) | **Start here** - Layer diagram and responsibilities |
-| [Core Interfaces](./core-interfaces.md) | Callbacks, Tool Response, Model Response contracts |
+| [System Layers](./layers.md) | **Start here** — layer diagram and responsibilities |
+| [Core Interfaces](./core-interfaces.md) | Callbacks, `Tool.Result`, `ModelResponse` contracts |
 | [Tools](./tools.md) | Tool system architecture and patterns |
 | [Providers](./providers.md) | Multi-provider LLM abstraction deep dive |
 
-### System Components
+### System components
 
 | Document | Description |
 |----------|-------------|
-| [Configuration](./configuration.md) | Config loading, validation, and hierarchy |
-| [Error Handling](./error-handling.md) | Error types, retry strategy, graceful degradation |
+| [Configuration](./configuration.md) | Loading, validation, and hierarchy |
+| [Error Handling](./error-handling.md) | Error types, retries, graceful degradation |
 | [Permissions](./permissions.md) | Permission model and scopes |
 | [Sessions](./sessions.md) | Session lifecycle and persistence |
-| [Context Storage](./context-storage.md) | Tool output storage strategy |
+| [Context Storage](./context-storage.md) | Tool output storage strategy *(planned)* |
 | [Skills](./skills.md) | Skill manifests and progressive disclosure |
 | [Telemetry](./telemetry.md) | OpenTelemetry integration |
 
@@ -38,62 +83,84 @@
 
 ---
 
-## Quick Reference: Layer Summary
-
-See [System Layers](./layers.md) for the detailed diagram.
-
-| Layer | Responsibility |
-|-------|----------------|
-| CLI (React/Ink) | Terminal UI, React state, user input, command routing |
-| Agent | Orchestration, Query→LLM→Tool→Response loop, callbacks |
-| Tools | Zod validation, Tool.Result output, permissions |
-| Model | Provider routing (7 providers), streaming with callbacks, retry with backoff, dual API support |
-| Utils | Configuration, session persistence, message history; context storage planned |
-
----
-
-## Key Design Principles
+## Key design principles
 
 | Principle | Summary |
 |-----------|---------|
 | **Dependency Injection** | All components receive deps via constructor |
-| **Callbacks over Events** | Typed callbacks replace Python's EventBus |
-| **Structured Responses** | Tools return `Tool.Result`, never throw |
-| **Validation at Boundaries** | Zod validates config and tool input |
+| **Callbacks over Events** | Typed callbacks replace EventBus-style patterns |
+| **Structured Results** | Tools return `Tool.Result` (avoid throwing for control flow) |
+| **Validation at Boundaries** | Zod validates config + tool inputs |
 | **Layer Isolation** | Only Agent calls Model; CLI never imports Agent internals |
-| **Graceful Degradation** | Failures logged, agent continues |
+| **Graceful Degradation** | Failures logged; agent continues where safe |
 
-See [CLAUDE.md](../../CLAUDE.md) for the complete list of principles and rules.
-
----
-
-## LLM Access Rules
-
-**Critical:** Only the Agent Layer may invoke the Model Layer.
-
-- Tools must NOT call LLMs directly
-- If a tool needs LLM assistance, return `Tool.Result` with an error message describing what help is needed
-- The Agent Layer interprets and acts on this
+Full principles and rules: [CLAUDE.md](../../CLAUDE.md)
 
 ---
 
-## Document Status Legend
+## LLM access rules (hard constraint)
 
-Each architecture document includes a status banner:
+**Only the Agent layer may invoke the Model layer.**
+
+- Tools must **not** call LLMs directly
+- If a tool needs LLM assistance, return `Tool.Result` with `error: 'LLM_ASSIST_REQUIRED'` and a message describing what help is needed
+- The Agent interprets and acts on this request
+
+**Why this matters:** Centralizing LLM access keeps cost tracking, observability, retry policies, and safety guardrails in one place. It also simplifies testing (mock one layer) and enables consistent rate limiting across all tool executions.
+
+---
+
+## Stability contract
+
+| API / Contract | Stability | Notes |
+|----------------|-----------|-------|
+| `AgentCallbacks` interface | **Stable** | May add optional methods |
+| `Tool.Result` response format | **Stable** | Core contract for tools |
+| `ModelResponse` union | **Stable** | May add new error codes |
+| Tool parameter schemas | **Stable** | Breaking changes versioned |
+| Internal folder structure | Evolving | May reorganize `src/` |
+| Provider factory signatures | Semi-stable | New providers may change patterns |
+
+**Stable** = Breaking changes require major version bump
+**Semi-stable** = May change with minor versions, migration guide provided
+**Evolving** = Internal implementation detail, may change without notice
+
+---
+
+## Document status and source of truth
+
+Each architecture document includes:
+
+- **Status:** Current / Partial Implementation / Planned
+- **Source of truth:** Links to the relevant `src/...` files (code wins over docs)
 
 | Status | Meaning |
 |--------|---------|
 | **Current** | Accurately reflects implemented behavior |
-| **Partial Implementation** | Some features documented are not yet implemented |
+| **Partial Implementation** | Some documented features not yet implemented |
 | **Planned** | Describes future functionality not yet built |
-
-Each document also includes a "Source of truth" callout linking to the actual source files.
 
 ---
 
-## Related Documentation
+## Key decisions (ADR summary)
 
-- [Tool Development Guide](../guides/tools.md) - How to write tools
-- [Testing Guide](../guides/testing.md) - Mock patterns and test strategies
-- [Prompt Customization](../guides/prompts.md) - System prompt loading
-- [Architecture Decisions](../decisions/) - ADRs for key decisions
+Architecture Decision Records live in [`docs/decisions/`](../decisions/). Key decisions:
+
+| ADR | Decision |
+|-----|----------|
+| [0001](../decisions/0001-skills-execution-model.md) | Skills use SKILL.md manifests; bundled in-process, plugins as subprocess |
+| [0002](../decisions/0002-llm-integration-langchain.md) | LangChain.js for multi-provider LLM abstraction |
+| [0003](../decisions/0003-runtime-bun.md) | Bun-only runtime for native TypeScript execution |
+| [0004](../decisions/0004-validation-zod.md) | Zod 4.x for runtime validation and type inference |
+| [0007](../decisions/0007-callbacks-over-eventbus.md) | Typed callbacks replace Python's EventBus pattern |
+
+See the full list for decisions on testing (Jest), terminal UI (React/Ink), and more.
+
+---
+
+## Related documentation
+
+- [Tool Development Guide](../guides/tools.md) — How to write tools
+- [Testing Guide](../guides/testing.md) — Mock patterns and test strategies
+- [Prompt Customization](../guides/prompts.md) — System prompt loading
+- [Architecture Decisions](../decisions/) — All ADRs
