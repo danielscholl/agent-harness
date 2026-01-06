@@ -11,6 +11,7 @@ export const COMMAND_SAVE = ['/save'] as const;
 export const COMMAND_RESUME = ['/resume'] as const;
 export const COMMAND_CONFIG = ['/config'] as const;
 export const COMMAND_SKILL = ['/skill', '/skills'] as const;
+export const COMMAND_TELEMETRY = ['/telemetry'] as const;
 
 /** Shell command prefix */
 export const SHELL_PREFIX = '!' as const;

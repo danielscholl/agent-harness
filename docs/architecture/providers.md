@@ -391,19 +391,19 @@ LLMClient supports callbacks for streaming operations with specific retry semant
 
 ```typescript
 interface LLMCallbacks {
-  onStreamStart?(model: string): void;       // Fires ONCE before any retry attempts
-  onStreamChunk?(chunk: string): void;       // Fires for each chunk on successful attempt
-  onStreamEnd?(response: string, usage?: TokenUsage): void;  // Fires on success
-  onError?(error: ModelErrorResponse): void; // Fires ONCE after all retries exhausted
-  onRetry?(attempt: number, delay: number, error: string): void; // Fires for each retry
+  onStreamStart?: () => void;                           // Fires ONCE before any retry attempts
+  onStreamChunk?: (chunk: string) => void;              // Fires for each chunk on successful attempt
+  onStreamEnd?: (usage?: TokenUsage) => void;           // Fires on success with optional usage
+  onError?: (error: ModelErrorCode, message: string) => void; // Fires ONCE after all retries exhausted
+  onRetry?: (context: RetryContext) => void;            // Fires for each retry with context
 }
 ```
 
 **Retry Semantics:**
-- `onStreamStart` signals operation initiation (not per-attempt)
-- `onRetry` provides visibility into retry attempts with delay and error context
+- `onStreamStart` signals operation initiation (not per-attempt), takes no parameters
+- `onRetry` provides visibility into retry attempts via `RetryContext` object
 - `onStreamChunk`/`onStreamEnd` only fire for the successful attempt
-- `onError` fires once if all retry attempts fail
+- `onError` fires once if all retry attempts fail, with error code and message
 
 ---
 

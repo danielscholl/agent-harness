@@ -200,10 +200,18 @@ class AzureResponsesChatModel extends BaseChatModel {
 
   /**
    * Detect if messages represent a tool continuation pattern.
-   * Returns the previous response ID if found, undefined otherwise.
+   * Returns the index and previous response ID of the LAST AIMessage with tool_calls
+   * that is followed by ToolMessages, or undefined if not a continuation.
+   *
+   * For multi-step tool loops, we need the LAST response_id to continue from,
+   * not the first one, to avoid sending stale outputs.
    */
-  private detectToolContinuation(messages: BaseMessage[]): string | undefined {
-    // Look for an AIMessage with tool_calls and response_id, followed by ToolMessages
+  private detectToolContinuation(
+    messages: BaseMessage[]
+  ): { index: number; responseId: string } | undefined {
+    // Find the LAST AIMessage with tool_calls and response_id that is followed by ToolMessages
+    let lastMatch: { index: number; responseId: string } | undefined;
+
     for (let i = 0; i < messages.length; i++) {
       const msg = messages[i];
       if (msg instanceof AIMessage) {
@@ -219,23 +227,34 @@ class AzureResponsesChatModel extends BaseChatModel {
           // Check if followed by ToolMessages
           const hasToolResults = messages.slice(i + 1).some((m) => m instanceof ToolMessage);
           if (hasToolResults) {
-            return responseId;
+            lastMatch = { index: i, responseId };
           }
         }
       }
     }
-    return undefined;
+    return lastMatch;
   }
 
   /**
    * Extract tool outputs from messages for continuation.
+   * Only extracts ToolMessages that appear after the specified startIndex.
+   *
+   * @param messages - All messages in the conversation
+   * @param startIndex - Index of the AIMessage whose tool outputs we want (extract messages after this)
    */
   private extractToolOutputs(
-    messages: BaseMessage[]
+    messages: BaseMessage[],
+    startIndex: number
   ): Array<{ type: 'function_call_output'; call_id: string; output: string }> {
     const outputs: Array<{ type: 'function_call_output'; call_id: string; output: string }> = [];
 
-    for (const msg of messages) {
+    // Only collect ToolMessages that appear after the startIndex
+    for (let i = startIndex + 1; i < messages.length; i++) {
+      const msg = messages[i];
+      // Stop if we hit another AIMessage (those tool outputs belong to a different response)
+      if (msg instanceof AIMessage) {
+        break;
+      }
       if (msg instanceof ToolMessage) {
         outputs.push({
           type: 'function_call_output',
@@ -341,18 +360,19 @@ class AzureResponsesChatModel extends BaseChatModel {
     _options?: this['ParsedCallOptions'],
     _runManager?: CallbackManagerForLLMRun
   ): Promise<ChatResult> {
-    // Check if this is a tool continuation
-    const previousResponseId = this.detectToolContinuation(messages);
+    // Check if this is a tool continuation (returns last AIMessage with response_id)
+    const continuation = this.detectToolContinuation(messages);
 
     let response;
 
-    if (previousResponseId !== undefined) {
-      // Tool continuation: use previous_response_id with just tool outputs
-      const toolOutputs = this.extractToolOutputs(messages);
+    if (continuation !== undefined) {
+      // Tool continuation: use previous_response_id with only the relevant tool outputs
+      // (those that immediately follow the AIMessage at continuation.index)
+      const toolOutputs = this.extractToolOutputs(messages, continuation.index);
 
       response = await this.client.responses.create({
         model: this.deployment,
-        previous_response_id: previousResponseId,
+        previous_response_id: continuation.responseId,
         input: toolOutputs as unknown as ResponseInput,
       });
     } else {
@@ -471,6 +491,7 @@ function createChatCompletionsClient(
 
 /**
  * Create an Azure Responses API client.
+ * Handles both API key auth (api-key header) and Azure CLI auth (Bearer token).
  */
 function createResponsesApiClient(
   endpoint: string,
@@ -478,13 +499,37 @@ function createResponsesApiClient(
   apiKey: string,
   useAzureCLI: boolean
 ): ModelResponse<BaseChatModel> {
-  const client = new AzureOpenAI({
+  // Azure CLI tokens need azureADTokenProvider (sends Bearer token)
+  // API keys use apiKey (sends api-key header)
+  const clientConfig: {
+    endpoint: string;
+    apiVersion: string;
+    deployment: string;
+    apiKey?: string;
+    azureADTokenProvider?: () => Promise<string>;
+  } = {
     endpoint,
-    apiKey,
     apiVersion: RESPONSES_API_VERSION,
     deployment,
-  });
+  };
 
+  if (useAzureCLI) {
+    // Azure CLI auth: use azureADTokenProvider which sends Bearer token
+    // The token is already obtained, but we wrap it in a provider function
+    // that refreshes it on each call to handle token expiration
+    clientConfig.azureADTokenProvider = () => {
+      const token = getAzureCLIToken();
+      if (token === undefined) {
+        throw new Error('Azure CLI token expired or unavailable');
+      }
+      return Promise.resolve(token);
+    };
+  } else {
+    // API key auth: use apiKey which sends api-key header
+    clientConfig.apiKey = apiKey;
+  }
+
+  const client = new AzureOpenAI(clientConfig);
   const chatModel = new AzureResponsesChatModel(client, deployment);
   const authMethod = useAzureCLI ? 'Azure CLI' : 'API key';
 

@@ -9,6 +9,7 @@ import {
   COMMAND_CLEAR,
   COMMAND_SAVE,
   COMMAND_RESUME,
+  COMMAND_TELEMETRY,
   matchesCommand,
   isShellCommand,
   isSlashCommand,
@@ -69,6 +70,12 @@ export const COMMANDS: CommandDefinition[] = [
     description: 'Resume a saved session',
     handler: resumeHandler,
     usage: '/resume [session-id]',
+  },
+  {
+    aliases: COMMAND_TELEMETRY,
+    description: 'Manage telemetry dashboard',
+    handler: telemetryHandler,
+    usage: '/telemetry [start|stop|status|url]',
   },
 ];
 

@@ -397,20 +397,22 @@ describe('LLMClient', () => {
       expect(client.getProviderMode()).toBeUndefined();
     });
 
-    it('returns undefined when provider config is undefined', () => {
+    it('returns cloud as default when provider config is undefined', () => {
       config.providers.default = 'foundry';
       config.providers.foundry = undefined;
 
       const client = new LLMClient({ config });
-      expect(client.getProviderMode()).toBeUndefined();
+      // Foundry defaults to 'cloud' mode to ensure provider prompt loads
+      expect(client.getProviderMode()).toBe('cloud');
     });
 
-    it('returns undefined when Foundry mode is not a string', () => {
+    it('returns cloud as default when Foundry mode is not a string', () => {
       config.providers.default = 'foundry';
       config.providers.foundry = { mode: 123 as unknown as string };
 
       const client = new LLMClient({ config });
-      expect(client.getProviderMode()).toBeUndefined();
+      // Invalid mode defaults to 'cloud'
+      expect(client.getProviderMode()).toBe('cloud');
     });
   });
 
