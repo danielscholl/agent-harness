@@ -122,11 +122,26 @@ class AzureResponsesChatModel extends BaseChatModel {
   /**
    * Bind tools to the model for function calling.
    * Returns a new model instance with tools bound.
+   *
+   * Note: This method diverges from BaseChatModel's bindTools signature in two ways:
+   * 1. Parameter type: Accepts unknown[] instead of BindToolsInput[] to remain structurally
+   *    compatible with agent framework usage. Internally casts to StructuredToolInterface[].
+   * 2. Return type: Returns Runnable<BaseMessage[], AIMessage> instead of the base class's
+   *    Runnable<BaseLanguageModelInput, AIMessageChunk>. This is safe because:
+   *    - The agent framework expects AIMessage (not AIMessageChunk)
+   *    - The Responses API generates complete messages, not streaming chunks
+   *    - Runtime behavior is compatible despite the type mismatch
+   *
+   * The type divergence is intentional and safe for this custom model implementation.
+   * We suppress type checking to allow this necessary flexibility while maintaining
+   * runtime compatibility with LangChain's agent framework.
    */
-  // @ts-expect-error - Signature differs from base class but is compatible with Agent usage
-  bindTools(tools: StructuredToolInterface[]): Runnable<BaseMessage[], AIMessage> {
+  // @ts-expect-error - Return type intentionally diverges from base class (returns AIMessage not AIMessageChunk)
+  bindTools(tools: unknown[]): Runnable<BaseMessage[], AIMessage> {
+    // Cast to StructuredToolInterface[] for internal processing
+    const structuredTools = tools as StructuredToolInterface[];
     // Convert LangChain tools to Responses API format
-    const responsesTools: FunctionTool[] = tools.map((tool) => {
+    const responsesTools: FunctionTool[] = structuredTools.map((tool) => {
       let parameters: FunctionTool['parameters'] = null;
 
       const schema = tool.schema;
