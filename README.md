@@ -159,10 +159,8 @@ rm -rf ~/.agent  # optional: remove config
 ```powershell
 Remove-Item "$env:LOCALAPPDATA\Microsoft\WindowsApps\agent.exe" -Force -ErrorAction SilentlyContinue
 Remove-Item "$env:LOCALAPPDATA\Microsoft\WindowsApps\agent.cmd" -Force -ErrorAction SilentlyContinue
-Remove-Item "$env:LOCALAPPDATA\Microsoft\WindowsApps\prompts" -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item "$env:LOCALAPPDATA\Microsoft\WindowsApps\_bundled_skills" -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item "$env:LOCALAPPDATA\Programs\agent-base-v2" -Recurse -Force -ErrorAction SilentlyContinue
-Remove-Item "$env:USERPROFILE\.agent" -Recurse -Force -ErrorAction SilentlyContinue  # optional: remove config
+Remove-Item "$env:USERPROFILE\.agent" -Recurse -Force -ErrorAction SilentlyContinue  # removes config, assets, and sessions
 ```
 
 ---
