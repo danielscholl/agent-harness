@@ -10,11 +10,17 @@ import type { GitHubProviderConfig } from '../../config/schema.js';
 import type { ModelResponse } from '../types.js';
 import { successResponse, errorResponse, mapErrorToCode } from '../base.js';
 import { DEFAULT_GITHUB_MODEL, DEFAULT_GITHUB_ENDPOINT } from '../../config/constants.js';
-import { getGitHubCLIToken } from '../../config/providers/github.js';
+import { getGitHubCLIToken, getGitHubCLIOrg } from '../../config/providers/github.js';
 
 /**
  * Create a ChatOpenAI instance for GitHub Models.
  * Uses the OpenAI-compatible API at models.github.ai/inference.
+ *
+ * Organization detection (in order of priority):
+ * 1. providers.github.org in config
+ * 2. gh api user/orgs (first org from GitHub CLI)
+ * 3. None (uses personal endpoint)
+ *
  * Authentication sources (in order of priority):
  * 1. providers.github.token in config
  * 2. GITHUB_TOKEN environment variable
@@ -37,22 +43,33 @@ export function createGitHubClient(
       configEndpoint !== undefined && configEndpoint !== ''
         ? configEndpoint
         : DEFAULT_GITHUB_ENDPOINT;
-    const org = config.org as string | undefined;
+    let org = config.org as string | undefined;
+
+    // Auto-detect org from gh CLI if not configured
+    if (org === undefined || org === '') {
+      org = getGitHubCLIOrg();
+    }
+
+    // Check GITHUB_TOKEN environment variable first
+    if (token === undefined || token === '') {
+      token = process.env.GITHUB_TOKEN;
+    }
 
     // Try to get token from gh CLI if not configured
     if (token === undefined || token === '') {
       token = getGitHubCLIToken();
     }
 
-    // GitHub Models requires authentication
+    // GitHub Models requires authentication with models:read scope
     if (token === undefined || token === '') {
       return Promise.resolve(
         errorResponse(
           'PROVIDER_NOT_CONFIGURED',
-          'GitHub Models requires authentication. Options:\n' +
-            '  - Configure providers.github.token in settings\n' +
-            '  - Set GITHUB_TOKEN environment variable\n' +
-            '  - Run: gh auth login'
+          'GitHub Models requires authentication with models:read scope. Options:\n' +
+            '  1. Create fine-grained PAT at https://github.com/settings/tokens\n' +
+            '     with models:read scope, then set GITHUB_TOKEN env var\n' +
+            '  2. Configure providers.github.token in ~/.agent/config.yaml\n' +
+            'Note: gh CLI OAuth tokens may not have models:read scope'
         )
       );
     }

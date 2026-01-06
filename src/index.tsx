@@ -14,6 +14,7 @@ import { createCliContext } from './cli/cli-context.js';
 import { configHandler } from './cli/commands/config.js';
 import { skillHandler } from './cli/commands/skills.js';
 import { updateHandler } from './cli/commands/update.js';
+import { telemetryHandler } from './cli/commands/telemetry.js';
 
 const cli = meow(
   `
@@ -22,6 +23,7 @@ const cli = meow(
   Commands
     config        Manage agent configuration
     skill         Manage agent skills
+    telemetry     Manage telemetry dashboard
     update        Check for and install updates
 
   Options
@@ -157,6 +159,33 @@ if (command === 'update') {
 
   const context = await createCliContext();
   const result = await updateHandler(restArgs.join(' '), context);
+  process.exit(result.success ? 0 : 1);
+}
+
+if (command === 'telemetry') {
+  // Pass --help to subcommand meow if requested
+  const telemetryArgv = wantsHelp ? ['--help'] : restArgs;
+  meow(
+    `
+  Usage: agent telemetry [command]
+
+    Manage telemetry dashboard (Aspire)
+
+  Commands
+    start          Start the telemetry dashboard
+    stop           Stop the telemetry dashboard
+    status         Check if dashboard is running
+    url            Show dashboard URLs
+
+  Examples
+    agent telemetry start     Start Aspire dashboard
+    agent telemetry status    Check dashboard status
+`,
+    { importMeta: import.meta, argv: telemetryArgv, description: false }
+  );
+
+  const context = await createCliContext();
+  const result = await telemetryHandler(restArgs.join(' '), context);
   process.exit(result.success ? 0 : 1);
 }
 

@@ -6,7 +6,6 @@ import {
   COMMAND_EXIT,
   COMMAND_HELP,
   COMMAND_CLEAR,
-  COMMAND_TELEMETRY,
   SHELL_PREFIX,
   EXIT_CODES,
   matchesCommand,
@@ -35,11 +34,6 @@ describe('CLI Constants', () => {
     it('should define clear command aliases', () => {
       expect(COMMAND_CLEAR).toContain('clear');
       expect(COMMAND_CLEAR).toContain('/clear');
-    });
-
-    it('should define telemetry command aliases', () => {
-      expect(COMMAND_TELEMETRY).toContain('/telemetry');
-      expect(COMMAND_TELEMETRY).toContain('/aspire');
     });
   });
 

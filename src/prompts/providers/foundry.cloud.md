@@ -4,7 +4,7 @@ models: [phi-4, phi-4-mini]
 note: Azure AI Foundry local and cloud models
 ---
 
-# Azure AI Foundry Guidelines
+# Provider Guidelines
 
 ## Format Preferences
 

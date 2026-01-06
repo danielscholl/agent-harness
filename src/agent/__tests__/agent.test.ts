@@ -21,6 +21,7 @@ const mockGetModel =
   jest.fn<() => { success: boolean; result?: unknown; error?: string; message: string }>();
 const mockGetModelName = jest.fn<() => string>();
 const mockGetProviderName = jest.fn<() => string>();
+const mockGetProviderMode = jest.fn<() => string | undefined>();
 
 // Mock fs/promises for prompt loading
 // Note: mkdir, rm, and rename are required because the skills/installer module imports them
@@ -52,6 +53,7 @@ jest.unstable_mockModule('../../model/llm.js', () => {
       getModel = mockGetModel;
       getModelName = mockGetModelName;
       getProviderName = mockGetProviderName;
+      getProviderMode = mockGetProviderMode;
     },
   };
 });
@@ -134,6 +136,7 @@ describe('Agent', () => {
     // Default mock responses
     mockGetModelName.mockReturnValue('gpt-4o');
     mockGetProviderName.mockReturnValue('openai');
+    mockGetProviderMode.mockReturnValue(undefined);
 
     // Default: no tools from registry
     mockToolRegistryTools.mockResolvedValue([]);

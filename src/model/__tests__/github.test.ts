@@ -146,12 +146,20 @@ describe('createGitHubClient', () => {
 
   describe('gh CLI fallback', () => {
     it('uses token from gh CLI when no token provided', async () => {
-      // Mock gh auth token returning a valid token
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: 'gho_cli_token_12345\n',
-        stderr: '',
-      });
+      // Mock spawnSync calls in order:
+      // 1. getGitHubCLIOrg() - return no org (empty)
+      // 2. getGitHubCLIToken() - return token
+      mockSpawnSync
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: '', // No org
+          stderr: '',
+        })
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: 'gho_cli_token_12345\n',
+          stderr: '',
+        });
 
       const result = await createGitHubClient({
         model: 'gpt-4o',
@@ -163,6 +171,38 @@ describe('createGitHubClient', () => {
         model: 'gpt-4o',
         openAIApiKey: 'gho_cli_token_12345',
         configuration: { baseURL: 'https://models.github.ai/inference' },
+      });
+    });
+
+    it('uses org from gh CLI and constructs org-specific endpoint', async () => {
+      // Mock spawnSync calls in order:
+      // 1. getGitHubCLIOrg() - return org
+      // 2. getGitHubCLIToken() - return token
+      mockSpawnSync
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: 'myorg\n', // Org detected
+          stderr: '',
+        })
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: 'gho_cli_token_12345\n',
+          stderr: '',
+        });
+
+      const result = await createGitHubClient({
+        model: 'gpt-4o',
+      });
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.message).toContain('gpt-4o');
+        expect(result.message).toContain('org: myorg');
+      }
+      expect(mockChatOpenAI).toHaveBeenCalledWith({
+        model: 'gpt-4o',
+        openAIApiKey: 'gho_cli_token_12345',
+        configuration: { baseURL: 'https://models.github.ai/orgs/myorg/inference' },
       });
     });
   });

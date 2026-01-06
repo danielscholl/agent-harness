@@ -27,6 +27,26 @@ export function getGitHubCLIToken(): string | undefined {
 }
 
 /**
+ * Get user's primary GitHub organization from gh CLI.
+ * Returns the first organization the user belongs to, if any.
+ */
+export function getGitHubCLIOrg(): string | undefined {
+  try {
+    const result = spawnSync('gh', ['api', 'user/orgs', '--jq', '.[0].login'], {
+      encoding: 'utf-8',
+      timeout: 5000,
+    });
+    if (result.status === 0 && result.stdout) {
+      const org = result.stdout.trim();
+      return org !== '' ? org : undefined;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Interactive setup wizard for GitHub Models provider.
  * Detects existing env vars and gh CLI auth, prompts for token and model.
  */
@@ -41,19 +61,30 @@ export async function setupGitHub(context: CommandContext): Promise<ProviderSetu
   // Check for existing token in environment
   let envToken = checkEnvVar(context, 'GITHUB_TOKEN', 'Token');
 
-  // Also check gh CLI if no env var
+  // Also check gh CLI if no env var (but warn about scope)
   if (envToken === undefined) {
     const cliToken = getGitHubCLIToken();
     if (cliToken !== undefined) {
-      context.onOutput(`  ✓ Detected: Token from gh CLI (${maskSecret(cliToken)})`, 'success');
+      // gh CLI tokens (gho_) may not have models:read scope
+      context.onOutput(
+        `  ⚠ Detected: Token from gh CLI (${maskSecret(cliToken)}) - may lack models:read scope`,
+        'warning'
+      );
+      context.onOutput(
+        '  Tip: Create a fine-grained PAT with models:read for reliable access',
+        'info'
+      );
       envToken = cliToken;
     }
   }
 
   if (envToken === undefined) {
-    context.onOutput('Generate a token at: https://github.com/settings/tokens', 'info');
+    context.onOutput(
+      'Generate a fine-grained token at: https://github.com/settings/tokens',
+      'info'
+    );
     context.onOutput('Required scope: models:read', 'info');
-    context.onOutput('Or run: gh auth login\n', 'info');
+    context.onOutput('', 'info');
   } else {
     context.onOutput('', 'info'); // Blank line after detection message
   }

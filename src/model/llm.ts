@@ -94,14 +94,8 @@ export class LLMClient {
       );
     }
 
-    // Get provider config
-    const providerConfig = this.config.providers[providerName];
-    if (!providerConfig) {
-      return errorResponse(
-        'PROVIDER_NOT_CONFIGURED',
-        `Provider '${providerName}' is set as default but not configured`
-      );
-    }
+    // Get provider config (may be undefined if relying on env vars)
+    const providerConfig = this.config.providers[providerName] ?? {};
 
     // Get factory and create client
     const factory = getProviderFactory(providerName);
@@ -113,6 +107,7 @@ export class LLMClient {
     }
 
     // Factory may return a Promise for async providers (e.g., Foundry local mode)
+    // Pass empty config if not configured - factory will try env vars
     const result = await factory(providerConfig);
     if (result.success) {
       this.client = result.result;
@@ -361,10 +356,40 @@ export class LLMClient {
       return typeof deployment === 'string' ? deployment : 'unknown';
     }
     if (providerName === 'foundry') {
+      // Local mode uses modelAlias, cloud mode uses modelDeployment
+      const mode = providerConfig.mode;
+      if (mode === 'local') {
+        const modelAlias = providerConfig.modelAlias;
+        return typeof modelAlias === 'string' ? modelAlias : 'unknown';
+      }
       const modelDeployment = providerConfig.modelDeployment;
       return typeof modelDeployment === 'string' ? modelDeployment : 'unknown';
     }
     const model = providerConfig.model;
     return typeof model === 'string' ? model : 'unknown';
+  }
+
+  /**
+   * Get the current provider mode (e.g., 'local', 'cloud').
+   * Only applicable to providers that support modes (e.g., foundry).
+   * Returns undefined if the provider doesn't have a mode.
+   *
+   * For foundry, defaults to 'cloud' if mode is not explicitly set,
+   * ensuring the provider-specific prompt layer loads correctly.
+   */
+  getProviderMode(): string | undefined {
+    const providerName = this.config.providers.default;
+    const providerConfig = this.config.providers[providerName] as
+      | Record<string, unknown>
+      | undefined;
+
+    // Currently only foundry supports modes
+    if (providerName === 'foundry') {
+      // Default to 'cloud' if mode is not set (matches config schema default)
+      const mode = providerConfig?.mode;
+      return typeof mode === 'string' ? mode : 'cloud';
+    }
+
+    return undefined;
   }
 }

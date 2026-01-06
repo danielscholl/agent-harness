@@ -3,7 +3,7 @@ provider: anthropic
 models: [claude-opus-4-5, claude-sonnet-4-5, claude-haiku-4-5]
 ---
 
-# Claude-Specific Guidelines
+# Provider Guidelines
 
 ## Format Preferences
 

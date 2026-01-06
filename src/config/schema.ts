@@ -203,7 +203,9 @@ export const ProvidersConfigSchema = z.object({
   local: LocalProviderConfigSchema.optional().describe('Local LLM provider (e.g., Ollama)'),
   openai: OpenAIProviderConfigSchema.optional().describe('OpenAI provider'),
   anthropic: AnthropicProviderConfigSchema.optional().describe('Anthropic provider'),
-  azure: AzureOpenAIProviderConfigSchema.optional().describe('Azure OpenAI provider'),
+  azure: AzureOpenAIProviderConfigSchema.optional().describe(
+    'Azure OpenAI provider (auto-detects Chat Completions vs Responses API based on model)'
+  ),
   foundry: FoundryProviderConfigSchema.optional().describe('Azure AI Foundry provider'),
   gemini: GeminiProviderConfigSchema.optional().describe('Google Gemini provider'),
   github: GitHubProviderConfigSchema.optional().describe('GitHub Models provider'),

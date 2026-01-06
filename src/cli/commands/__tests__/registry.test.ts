@@ -23,7 +23,8 @@ describe('COMMANDS', () => {
     expect(aliases).toContain('/help');
     expect(aliases).toContain('clear');
     expect(aliases).toContain('/clear');
-    expect(aliases).toContain('/telemetry');
+    expect(aliases).toContain('/save');
+    expect(aliases).toContain('/resume');
   });
 });
 
@@ -47,9 +48,9 @@ describe('findCommand', () => {
     expect(findCommand('/clear')).toBeDefined();
   });
 
-  it('should find telemetry command', () => {
-    expect(findCommand('/telemetry')).toBeDefined();
-    expect(findCommand('/aspire')).toBeDefined();
+  it('should find save/resume commands', () => {
+    expect(findCommand('/save')).toBeDefined();
+    expect(findCommand('/resume')).toBeDefined();
   });
 
   it('should be case-insensitive', () => {
@@ -59,8 +60,8 @@ describe('findCommand', () => {
   });
 
   it('should extract base command from input with arguments', () => {
-    expect(findCommand('/telemetry start')).toBeDefined();
-    expect(findCommand('/telemetry stop')).toBeDefined();
+    expect(findCommand('/save mysession')).toBeDefined();
+    expect(findCommand('/resume session-id')).toBeDefined();
   });
 
   it('should return undefined for unknown commands', () => {
@@ -77,8 +78,8 @@ describe('findCommand', () => {
 
 describe('extractArgs', () => {
   it('should extract arguments after command', () => {
-    expect(extractArgs('/telemetry start')).toBe('start');
-    expect(extractArgs('/telemetry stop')).toBe('stop');
+    expect(extractArgs('/save mysession')).toBe('mysession');
+    expect(extractArgs('/resume session-id')).toBe('session-id');
     expect(extractArgs('command arg1 arg2')).toBe('arg1 arg2');
   });
 
@@ -196,7 +197,6 @@ describe('getAutocompleteCommands', () => {
     // Check that key commands are present
     expect(names).toContain('clear');
     expect(names).toContain('help');
-    expect(names).toContain('telemetry');
     expect(names).toContain('save');
     expect(names).toContain('resume');
   });
