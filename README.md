@@ -11,7 +11,7 @@ A TypeScript agent framework + CLI for building conversational AI agents with **
 ## Why Agent Base v2?
 
 - **Multi-provider LLM support** — local + cloud with runtime switching
-- **Session persistence + conversation memory** — in-memory or Mem0 backend
+- **Session persistence + conversation memory** — in-memory
 - **Observability built in** — trace execution, tools, and timing
 - **Extensible toolsets** — add agent capabilities easily
 - **CLI-first workflow** — interactive use and scripting
@@ -25,7 +25,6 @@ A TypeScript agent framework + CLI for building conversational AI agents with **
 ```bash
 agent
 
-# After provider configuration
 Agent - Conversational Assistant
 Version 0.1.0 • OpenAI/gpt-4o
 ──────────────────────────────────────────────────────────────────────────────
@@ -98,7 +97,7 @@ agent
 agent -p "Say hello to Alice"
 ```
 
-> **Tip:** `-p` prints clean text by default. Add `--verbose` for traces and execution detail.
+> **Tip:** `-p` prints clean text by default. Add `--verbose` for traces and execution detail or `-s` for silent.
 
 ---
 
@@ -138,8 +137,8 @@ agent --tools
 # Single prompt
 agent -p "Analyze this text"
 
-# Single prompt with verbose execution
-agent -p "Analyze this text" --verbose
+# Single prompt with silent execution
+agent -p "Analyze this text" --silent
 
 # Switch providers/models on the fly
 agent --provider openai -p "Hello"
