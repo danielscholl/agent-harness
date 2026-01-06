@@ -41,19 +41,30 @@ export async function setupGitHub(context: CommandContext): Promise<ProviderSetu
   // Check for existing token in environment
   let envToken = checkEnvVar(context, 'GITHUB_TOKEN', 'Token');
 
-  // Also check gh CLI if no env var
+  // Also check gh CLI if no env var (but warn about scope)
   if (envToken === undefined) {
     const cliToken = getGitHubCLIToken();
     if (cliToken !== undefined) {
-      context.onOutput(`  ✓ Detected: Token from gh CLI (${maskSecret(cliToken)})`, 'success');
+      // gh CLI tokens (gho_) may not have models:read scope
+      context.onOutput(
+        `  ⚠ Detected: Token from gh CLI (${maskSecret(cliToken)}) - may lack models:read scope`,
+        'warning'
+      );
+      context.onOutput(
+        '  Tip: Create a fine-grained PAT with models:read for reliable access',
+        'info'
+      );
       envToken = cliToken;
     }
   }
 
   if (envToken === undefined) {
-    context.onOutput('Generate a token at: https://github.com/settings/tokens', 'info');
+    context.onOutput(
+      'Generate a fine-grained token at: https://github.com/settings/tokens',
+      'info'
+    );
     context.onOutput('Required scope: models:read', 'info');
-    context.onOutput('Or run: gh auth login\n', 'info');
+    context.onOutput('', 'info');
   } else {
     context.onOutput('', 'info'); // Blank line after detection message
   }

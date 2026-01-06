@@ -39,20 +39,26 @@ export function createGitHubClient(
         : DEFAULT_GITHUB_ENDPOINT;
     const org = config.org as string | undefined;
 
+    // Check GITHUB_TOKEN environment variable first
+    if (token === undefined || token === '') {
+      token = process.env.GITHUB_TOKEN;
+    }
+
     // Try to get token from gh CLI if not configured
     if (token === undefined || token === '') {
       token = getGitHubCLIToken();
     }
 
-    // GitHub Models requires authentication
+    // GitHub Models requires authentication with models:read scope
     if (token === undefined || token === '') {
       return Promise.resolve(
         errorResponse(
           'PROVIDER_NOT_CONFIGURED',
-          'GitHub Models requires authentication. Options:\n' +
-            '  - Configure providers.github.token in settings\n' +
-            '  - Set GITHUB_TOKEN environment variable\n' +
-            '  - Run: gh auth login'
+          'GitHub Models requires authentication with models:read scope. Options:\n' +
+            '  1. Create fine-grained PAT at https://github.com/settings/tokens\n' +
+            '     with models:read scope, then set GITHUB_TOKEN env var\n' +
+            '  2. Configure providers.github.token in ~/.agent/config.yaml\n' +
+            'Note: gh CLI OAuth tokens may not have models:read scope'
         )
       );
     }
