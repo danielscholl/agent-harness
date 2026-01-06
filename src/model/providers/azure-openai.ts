@@ -164,7 +164,10 @@ class AzureResponsesChatModel extends BaseChatModel {
               ...(description !== undefined && description !== '' ? { description } : {}),
             };
 
-            if (!typeName.includes('Optional') && typeof field.isOptional !== 'function') {
+            if (
+              !typeName.includes('Optional') &&
+              (typeof field.isOptional !== 'function' || !field.isOptional())
+            ) {
               required.push(key);
             }
           }
