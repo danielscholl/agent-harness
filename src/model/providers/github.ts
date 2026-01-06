@@ -10,11 +10,17 @@ import type { GitHubProviderConfig } from '../../config/schema.js';
 import type { ModelResponse } from '../types.js';
 import { successResponse, errorResponse, mapErrorToCode } from '../base.js';
 import { DEFAULT_GITHUB_MODEL, DEFAULT_GITHUB_ENDPOINT } from '../../config/constants.js';
-import { getGitHubCLIToken } from '../../config/providers/github.js';
+import { getGitHubCLIToken, getGitHubCLIOrg } from '../../config/providers/github.js';
 
 /**
  * Create a ChatOpenAI instance for GitHub Models.
  * Uses the OpenAI-compatible API at models.github.ai/inference.
+ *
+ * Organization detection (in order of priority):
+ * 1. providers.github.org in config
+ * 2. gh api user/orgs (first org from GitHub CLI)
+ * 3. None (uses personal endpoint)
+ *
  * Authentication sources (in order of priority):
  * 1. providers.github.token in config
  * 2. GITHUB_TOKEN environment variable
@@ -37,7 +43,12 @@ export function createGitHubClient(
       configEndpoint !== undefined && configEndpoint !== ''
         ? configEndpoint
         : DEFAULT_GITHUB_ENDPOINT;
-    const org = config.org as string | undefined;
+    let org = config.org as string | undefined;
+
+    // Auto-detect org from gh CLI if not configured
+    if (org === undefined || org === '') {
+      org = getGitHubCLIOrg();
+    }
 
     // Check GITHUB_TOKEN environment variable first
     if (token === undefined || token === '') {

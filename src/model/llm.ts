@@ -94,14 +94,8 @@ export class LLMClient {
       );
     }
 
-    // Get provider config
-    const providerConfig = this.config.providers[providerName];
-    if (!providerConfig) {
-      return errorResponse(
-        'PROVIDER_NOT_CONFIGURED',
-        `Provider '${providerName}' is set as default but not configured`
-      );
-    }
+    // Get provider config (may be undefined if relying on env vars)
+    const providerConfig = this.config.providers[providerName] ?? {};
 
     // Get factory and create client
     const factory = getProviderFactory(providerName);
@@ -113,6 +107,7 @@ export class LLMClient {
     }
 
     // Factory may return a Promise for async providers (e.g., Foundry local mode)
+    // Pass empty config if not configured - factory will try env vars
     const result = await factory(providerConfig);
     if (result.success) {
       this.client = result.result;

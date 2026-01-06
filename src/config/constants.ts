@@ -35,7 +35,7 @@ export const DEFAULT_OPENAI_MODEL = 'gpt-5-mini';
 export const DEFAULT_ANTHROPIC_MODEL = 'claude-sonnet-4-20250514';
 
 export const DEFAULT_AZURE_API_VERSION = '2024-06-01';
-export const DEFAULT_AZURE_MODEL = 'gpt-4o';
+export const DEFAULT_AZURE_MODEL = 'gpt-5.2';
 
 export const DEFAULT_FOUNDRY_MODEL = 'gpt-4o';
 export const DEFAULT_FOUNDRY_MODE = 'cloud' as const;

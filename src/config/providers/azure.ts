@@ -39,7 +39,7 @@ export async function setupAzure(context: CommandContext): Promise<ProviderSetup
   const endpointPrompt =
     envEndpoint !== undefined
       ? 'Endpoint (press Enter to use detected, or enter new):'
-      : 'Azure OpenAI Endpoint (https://...openai.azure.com/):';
+      : 'Azure OpenAI Endpoint (https://xxx.openai.azure.com/ or .cognitiveservices.azure.com/):';
   const endpointInput = await context.onPrompt(endpointPrompt);
   const endpoint = endpointInput.trim() || envEndpoint;
 
@@ -48,14 +48,27 @@ export async function setupAzure(context: CommandContext): Promise<ProviderSetup
     let isValidEndpoint = false;
     try {
       const url = new URL(endpoint);
-      isValidEndpoint = url.protocol === 'https:' && url.hostname.endsWith('.openai.azure.com');
+      // Accept multiple Azure domain patterns:
+      // - xxx.openai.azure.com (classic Azure OpenAI)
+      // - xxx.cognitiveservices.azure.com (Azure AI Services)
+      // - xxx.services.ai.azure.com (Azure AI Studio/Foundry)
+      const validDomains = [
+        '.openai.azure.com',
+        '.cognitiveservices.azure.com',
+        '.services.ai.azure.com',
+      ];
+      isValidEndpoint =
+        url.protocol === 'https:' && validDomains.some((d) => url.hostname.endsWith(d));
     } catch {
       isValidEndpoint = false;
     }
 
     if (!isValidEndpoint) {
       context.onOutput(
-        'Invalid endpoint. Expected URL like "https://xxx.openai.azure.com/"',
+        'Invalid endpoint. Expected Azure URL like:\n' +
+          '  https://xxx.openai.azure.com/\n' +
+          '  https://xxx.cognitiveservices.azure.com/\n' +
+          '  https://xxx.services.ai.azure.com/',
         'error'
       );
       return { success: false, message: 'Invalid endpoint format' };

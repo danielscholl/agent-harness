@@ -22,6 +22,9 @@ import { createGitHubClient } from './providers/github.js';
  * - Feature 23: GitHub Models
  * - Feature 26: Local (Docker)
  * - Feature 31: Azure AI Foundry
+ *
+ * Note: Azure provider auto-detects whether to use Chat Completions API
+ * or Responses API based on the model (reasoning models use Responses API).
  */
 export const PROVIDER_REGISTRY: Partial<Record<ProviderName, ProviderFactory>> = {
   openai: createOpenAIClient,

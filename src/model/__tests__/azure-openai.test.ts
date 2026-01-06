@@ -2,7 +2,7 @@
  * Unit tests for Azure OpenAI provider factory.
  */
 
-import { describe, it, expect, jest, beforeEach } from '@jest/globals';
+import { describe, it, expect, jest, beforeEach, afterAll } from '@jest/globals';
 
 // Mock @langchain/openai before importing
 interface MockAzureOpenAIConfig {
@@ -27,8 +27,28 @@ jest.unstable_mockModule('@langchain/openai', () => ({
 const { createAzureOpenAIClient } = await import('../providers/azure-openai.js');
 
 describe('createAzureOpenAIClient', () => {
+  // Save original env vars
+  const originalEndpoint = process.env.AZURE_OPENAI_ENDPOINT;
+  const originalDeploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_NAME;
+  const originalApiKey = process.env.AZURE_OPENAI_API_KEY;
+  const originalApiVersion = process.env.AZURE_OPENAI_API_VERSION;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    // Clear Azure-related env vars to ensure test isolation
+    delete process.env.AZURE_OPENAI_ENDPOINT;
+    delete process.env.AZURE_OPENAI_DEPLOYMENT_NAME;
+    delete process.env.AZURE_OPENAI_API_KEY;
+    delete process.env.AZURE_OPENAI_API_VERSION;
+  });
+
+  afterAll(() => {
+    // Restore original env vars
+    if (originalEndpoint !== undefined) process.env.AZURE_OPENAI_ENDPOINT = originalEndpoint;
+    if (originalDeploymentName !== undefined)
+      process.env.AZURE_OPENAI_DEPLOYMENT_NAME = originalDeploymentName;
+    if (originalApiKey !== undefined) process.env.AZURE_OPENAI_API_KEY = originalApiKey;
+    if (originalApiVersion !== undefined) process.env.AZURE_OPENAI_API_VERSION = originalApiVersion;
   });
 
   it('creates AzureChatOpenAI with full config', async () => {

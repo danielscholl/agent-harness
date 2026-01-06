@@ -27,6 +27,26 @@ export function getGitHubCLIToken(): string | undefined {
 }
 
 /**
+ * Get user's primary GitHub organization from gh CLI.
+ * Returns the first organization the user belongs to, if any.
+ */
+export function getGitHubCLIOrg(): string | undefined {
+  try {
+    const result = spawnSync('gh', ['api', 'user/orgs', '--jq', '.[0].login'], {
+      encoding: 'utf-8',
+      timeout: 5000,
+    });
+    if (result.status === 0 && result.stdout) {
+      const org = result.stdout.trim();
+      return org !== '' ? org : undefined;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Interactive setup wizard for GitHub Models provider.
  * Detects existing env vars and gh CLI auth, prompts for token and model.
  */

@@ -146,12 +146,20 @@ describe('createGitHubClient', () => {
 
   describe('gh CLI fallback', () => {
     it('uses token from gh CLI when no token provided', async () => {
-      // Mock gh auth token returning a valid token
-      mockSpawnSync.mockReturnValue({
-        status: 0,
-        stdout: 'gho_cli_token_12345\n',
-        stderr: '',
-      });
+      // Mock spawnSync calls in order:
+      // 1. getGitHubCLIOrg() - return no org (empty)
+      // 2. getGitHubCLIToken() - return token
+      mockSpawnSync
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: '', // No org
+          stderr: '',
+        })
+        .mockReturnValueOnce({
+          status: 0,
+          stdout: 'gho_cli_token_12345\n',
+          stderr: '',
+        });
 
       const result = await createGitHubClient({
         model: 'gpt-4o',
