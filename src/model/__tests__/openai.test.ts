@@ -95,13 +95,12 @@ describe('createOpenAIClient', () => {
 
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.message).toContain('gpt-5-mini');
+      // Default model is gpt-5-codex which uses Responses API
+      expect(result.message).toContain('gpt-5-codex');
+      expect(result.message).toContain('Responses');
     }
-    expect(mockChatOpenAI).toHaveBeenCalledWith({
-      model: 'gpt-5-mini',
-      openAIApiKey: 'test-key',
-      configuration: undefined,
-    });
+    // Note: gpt-5-codex uses Responses API (OpenAI client), not ChatOpenAI
+    // So mockChatOpenAI is not called for the default model
   });
 
   it('passes correct parameters to ChatOpenAI', async () => {
