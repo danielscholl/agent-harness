@@ -8,7 +8,8 @@
  * 2. **Provider layer**: Optional provider-specific guidance
  * 3. **Environment section**: Runtime context (working dir, git status, etc.)
  * 4. **AGENTS.md**: Project-specific agent instructions (https://agents.md/)
- * 5. **Skills section**: Progressive skill disclosure XML
+ * 5. **Skills section** (optional): Progressive skill disclosure XML, added via
+ *    `loadSystemPromptWithSkills()` rather than `assembleSystemPrompt()` directly
  * 6. **User override**: Custom instructions from config or user files
  *
  * ## Backward Compatibility
