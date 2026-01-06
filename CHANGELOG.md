@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.3.7](https://github.com/danielscholl/agent-base-v2/compare/v0.3.6...v0.3.7) (2026-01-06)
+
+
+### Features
+
+* **prompts:** add AGENTS.md support ([3a9906d](https://github.com/danielscholl/agent-base-v2/commit/3a9906dfe0d05a029cd4d475d4e1a504d30be12f))
+* **prompts:** add AGENTS.md support for prompts ([d061ee4](https://github.com/danielscholl/agent-base-v2/commit/d061ee43dbec34c80755fa4fcf4473bc4ca6bdb9))
+* **prompts:** use workspace root for AGENTS.md discovery ([c0445f9](https://github.com/danielscholl/agent-base-v2/commit/c0445f91c32bc2b3cc2cec2c281f04989ebd90e0))
+
+
+### Documentation
+
+* **architecture:** apply targeted polish to README ([800a3d4](https://github.com/danielscholl/agent-base-v2/commit/800a3d4d9523733c1416ff506c7e66f8b929b19b))
+* **architecture:** final polish pass ([5ee874a](https://github.com/danielscholl/agent-base-v2/commit/5ee874a2b994400a82193b6d9c3b00cd61143890))
+* **architecture:** improve readability and address feedback ([8bc065f](https://github.com/danielscholl/agent-base-v2/commit/8bc065faa4ae593408f51a42f32f5090563abe7f))
+* **architecture:** improve README as effective entry point ([ae69506](https://github.com/danielscholl/agent-base-v2/commit/ae6950602c6a0dff5b949065ee5dc11b01e0766d))
+* **architecture:** improve README as effective entry point ([009f89a](https://github.com/danielscholl/agent-base-v2/commit/009f89ac76262cea93be1990c307e0af6ba64e47))
+* **architecture:** refresh architecture docs with clarifications and notes ([c581c94](https://github.com/danielscholl/agent-base-v2/commit/c581c9461466311ef00543d58303937df6f11160))
+* **prompts:** clarify skills loading via loadSystemPromptWithSkills() ([5b850f5](https://github.com/danielscholl/agent-base-v2/commit/5b850f5fb88dab4c84be709d7d66ddb092b0b6c7))
+* **readme:** reorganize with improved information architecture ([0f47123](https://github.com/danielscholl/agent-base-v2/commit/0f47123ea649426d10361647c1e6559a15efbf16))
+* **readme:** reorganize with improved information architecture ([e4fa92c](https://github.com/danielscholl/agent-base-v2/commit/e4fa92cdf25cb04666b8d3a52cde3554fe382630))
+* **readme:** simplify intro and remove deprecated sections ([b5077ea](https://github.com/danielscholl/agent-base-v2/commit/b5077eaa77b969492a81de86cad06277522a9b52))
+* **readme:** simplify intro and remove deprecated sections ([300adc6](https://github.com/danielscholl/agent-base-v2/commit/300adc6638a4a90d9dfcfd7f8923d5893a52a601))
+* **readme:** simplify memory description and add silent mode examples ([3a87648](https://github.com/danielscholl/agent-base-v2/commit/3a8764818fe56c33d0530b3f0d46f2b8be652634))
+
 ## [0.3.6](https://github.com/danielscholl/agent-base-v2/compare/v0.3.5...v0.3.6) (2026-01-06)
 
 
