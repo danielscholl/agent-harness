@@ -8,7 +8,7 @@
 ## Start here (pick your path)
 
 - **Understand the system quickly** → [System Layers](./layers.md) → [Core Interfaces](./core-interfaces.md)
-- **Add a tool** → [Tools](./tools.md) → [Tool Development Guide](../guides/tools.md)
+- **Add a tool** → [Tools](./tools.md) → [Permissions](./permissions.md) → [Tool Development Guide](../guides/tools.md)
 - **Add or debug an LLM provider** → [Providers](./providers.md) → [Error Handling](./error-handling.md) → [Telemetry](./telemetry.md)
 - **Debug memory/session behavior** → [Sessions](./sessions.md) → [Configuration](./configuration.md)
 - **Extend the framework** → [Extension Points](./extension-points.md) → [Coding Styles](./styles.md)
@@ -35,6 +35,8 @@ Agent assembles response
   ↓
 CLI displays answer
 ```
+
+Callbacks flow Agent → CLI (streaming updates, lifecycle events) and Model → Agent (tokens, tool calls).
 
 ### Layer summary
 
@@ -103,8 +105,11 @@ Full principles and rules: [CLAUDE.md](../../CLAUDE.md)
 **Only the Agent layer may invoke the Model layer.**
 
 - Tools must **not** call LLMs directly
-- If a tool needs LLM assistance, return `Tool.Result` with `error: 'LLM_ASSIST_REQUIRED'` and a message describing what help is needed
-- The Agent interprets and acts on this request
+- If a tool needs LLM assistance, return a `Tool.Result` where output contains an `LLMAssistRequest`:
+  ```typescript
+  { action: 'LLM_ASSIST_REQUIRED', prompt: '...', message: '...', description?: '...' }
+  ```
+- The Agent detects this in tool output and handles the request
 
 **Why this matters:** Centralizing LLM access keeps cost tracking, observability, retry policies, and safety guardrails in one place. It also simplifies testing (mock one layer) and enables consistent rate limiting across all tool executions.
 
@@ -121,9 +126,9 @@ Full principles and rules: [CLAUDE.md](../../CLAUDE.md)
 | Internal folder structure | Evolving | May reorganize `src/` |
 | Provider factory signatures | Semi-stable | New providers may change patterns |
 
-**Stable** = Breaking changes require major version bump
-**Semi-stable** = May change with minor versions, migration guide provided
-**Evolving** = Internal implementation detail, may change without notice
+- **Stable** — Breaking changes require major version bump
+- **Semi-stable** — May change in minor versions; migration guide provided
+- **Evolving** — Internal detail; may change without notice
 
 ---
 
