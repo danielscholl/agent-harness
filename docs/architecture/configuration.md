@@ -419,6 +419,89 @@ interface ConfigResponse<T> {
 
 ---
 
+## Workspace CLI Commands
+
+The `agent config workspace` command provides visibility and management of the workspace root setting:
+
+### View Workspace Configuration
+
+```bash
+# Show detailed workspace information
+agent config workspace
+```
+
+Example output:
+```
+Workspace Configuration
+
+  Current:  /home/user/projects/myapp
+  Source:   config file (~/.agent/config.yaml)
+```
+
+If an environment variable overrides the config:
+```
+Workspace Configuration
+
+  Current:  /sandbox
+  Source:   env variable (AGENT_WORKSPACE_ROOT)
+
+  ⚠ Warning: config.agent.workspaceRoot is outside AGENT_WORKSPACE_ROOT. Config ignored for security.
+
+  Config value: /home/user/projects (not used)
+```
+
+### Set Workspace Root
+
+```bash
+# Set workspace to an absolute path
+agent config workspace set /home/user/projects
+
+# Set workspace to a path relative to current directory
+agent config workspace set ./myproject
+
+# Set workspace using ~ for home directory
+agent config workspace set ~/projects/myapp
+```
+
+**Notes:**
+- Paths are resolved to absolute paths before saving
+- If the path doesn't exist and interactive prompts are available, you'll be asked whether to create the directory before saving the setting
+- If you choose not to create it, or if prompts are unavailable, a warning is shown and the setting is still saved
+- If `AGENT_WORKSPACE_ROOT` env var is set, it will override the config value
+
+### Clear Workspace Root
+
+```bash
+# Remove workspace root from config (fall back to cwd)
+agent config workspace clear
+```
+
+### Workspace in Config Show
+
+The `agent config show` command includes workspace information:
+
+```bash
+agent config show
+```
+
+Output includes:
+```
+┃ Setting          ┃ Value                  ┃
+┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ ...              │ ...                    │
+│ Workspace Root   │ /home/user/projects    │
+│   Source         │ config file            │
+```
+
+### Help Text
+
+```bash
+# Get help for workspace commands
+agent config workspace --help
+```
+
+---
+
 ## Related Documentation
 
 - [Providers Architecture](./providers.md) - Provider-specific config details
