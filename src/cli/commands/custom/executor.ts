@@ -92,7 +92,8 @@ export function substituteArguments(body: string, args: string): string {
 
 /**
  * Parse arguments string into positional array.
- * Handles quoted strings with spaces.
+ * Handles quoted strings with spaces and escaped quotes within strings.
+ * Supports backslash escapes: \", \', and \\ within quoted strings.
  *
  * @param args - Arguments string
  * @returns Array of parsed arguments
@@ -106,6 +107,17 @@ function parseArguments(args: string): string[] {
     const char = args[i] as string;
 
     if (inQuote !== null) {
+      // Handle backslash escapes within quoted strings
+      if (char === '\\' && i + 1 < args.length) {
+        const nextChar = args[i + 1] as string;
+        // Escape quote character or backslash itself
+        if (nextChar === inQuote || nextChar === '\\') {
+          current = current + nextChar;
+          i++; // Skip the next character
+          continue;
+        }
+      }
+
       if (char === inQuote) {
         inQuote = null;
       } else {
@@ -156,12 +168,14 @@ export async function processFileReferences(body: string, workspaceRoot: string)
   // Match @filepath patterns - supports files with or without extensions
   // Supports: @src/file.ts, @./relative/path.md, @/absolute/path, @README, @Makefile
   // Also supports Windows paths: @C:\path\file.ts
-  // Excludes: email addresses (@user.name@domain), backticked code
-  // Pattern breakdown:
-  // - (?:[A-Za-z]:[\\/])? - optional Windows drive letter (C:\, D:/, etc.)
-  // - (?:\.{0,2}[\\/])? - optional relative path prefix (./, ../, .\, ..\)
-  // - [^\s`@*?"<>|]+ - path characters (excluding special chars, but allowing : for Windows)
-  const fileRefPattern = /@((?:[A-Za-z]:[\\/])?(?:\.{0,2}[\\/])?[^\s`@*?"<>|]+)/g;
+  // Excludes: email addresses (@user.name@domain, @user:name), backticked code
+  // Pattern breakdown (alternatives separated by |):
+  // - (?:[A-Za-z]:[\\/][^\s`@*?"<>|:]+) - Windows drive letter (C:\, D:/) followed by path (no more colons)
+  // - (?:\.{1,2}[\\/][^\s`@*?"<>|:]+) - relative path (./, ../) followed by path (no colons)
+  // - (?:[\\/][^\s`@*?"<>|:]+) - absolute path (/) followed by path (no colons)
+  // - (?:[A-Za-z0-9][^\s`@*?"<>|:]*) - regular filename starting with letter/number (no colons)
+  const fileRefPattern =
+    /@((?:[A-Za-z]:[\\/][^\s`@*?"<>|:]+)|(?:\.{1,2}[\\/][^\s`@*?"<>|:]+)|(?:[\\/][^\s`@*?"<>|:]+)|(?:[A-Za-z0-9][^\s`@*?"<>|:]*))/g;
 
   const matches = Array.from(body.matchAll(fileRefPattern));
 
@@ -202,7 +216,7 @@ export async function processFileReferences(body: string, workspaceRoot: string)
       if (fileSize > MAX_FILE_REFERENCE_SIZE) {
         const fileSizeKb = String(Math.round(fileSize / 1024));
         const maxSizeKb = String(MAX_FILE_REFERENCE_SIZE / 1024);
-        result = result.replace(
+        result = result.replaceAll(
           actualMatch,
           `[File too large: ${filePath} (${fileSizeKb}KB > ${maxSizeKb}KB)]`
         );
@@ -211,10 +225,10 @@ export async function processFileReferences(body: string, workspaceRoot: string)
 
       const content = await readFile(absolutePath, 'utf-8');
       // Escape $ in content to prevent replacement pattern interpretation
-      result = result.replace(actualMatch, escapeReplacementString(content));
+      result = result.replaceAll(actualMatch, escapeReplacementString(content));
     } catch {
       // File not found or unreadable - leave a note
-      result = result.replace(actualMatch, `[File not found: ${filePath}]`);
+      result = result.replaceAll(actualMatch, `[File not found: ${filePath}]`);
     }
   }
 
@@ -253,10 +267,10 @@ export async function executeBashContext(body: string, workspaceRoot: string): P
     try {
       const output = await runBashCommand(command, workspaceRoot, DEFAULT_BASH_TIMEOUT_MS);
       // Escape $ in output to prevent replacement pattern interpretation
-      result = result.replace(fullMatch, escapeReplacementString(output.trim()));
+      result = result.replaceAll(fullMatch, escapeReplacementString(output.trim()));
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-      result = result.replace(fullMatch, `[Command failed: ${errorMsg}]`);
+      result = result.replaceAll(fullMatch, `[Command failed: ${errorMsg}]`);
     }
   }
 
@@ -321,10 +335,12 @@ async function runBashCommand(command: string, cwd: string, timeoutMs: number): 
     });
 
     proc.on('error', (error) => {
+      clearTimeout(timeoutId);
       reject(error);
     });
 
     proc.on('close', (code) => {
+      clearTimeout(timeoutId);
       if (code === 0) {
         resolve(stdout);
       } else {
@@ -334,7 +350,7 @@ async function runBashCommand(command: string, cwd: string, timeoutMs: number): 
     });
 
     // Handle timeout
-    setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       proc.kill('SIGTERM');
       reject(new Error(`Command timed out after ${String(timeoutMs)}ms`));
     }, timeoutMs);
