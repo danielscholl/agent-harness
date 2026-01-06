@@ -108,9 +108,9 @@ describe('isProviderConfigured', () => {
       expect(result).toBe(true);
     });
 
-    it('should return true when only apiVersion is set', () => {
+    it('should return false when only apiVersion is set', () => {
       const result = isProviderConfigured('azure', { apiVersion: '2024-06-01' });
-      expect(result).toBe(true);
+      expect(result).toBe(false);
     });
 
     it('should return false when no Azure fields are set', () => {
