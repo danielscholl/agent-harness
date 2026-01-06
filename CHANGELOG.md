@@ -1,5 +1,46 @@
 # Changelog
 
+## [0.3.3](https://github.com/danielscholl/agent-base-v2/compare/v0.3.2...v0.3.3) (2026-01-06)
+
+
+### Features
+
+* add telemetry CLI, default foundry mode to cloud ([b38498a](https://github.com/danielscholl/agent-base-v2/commit/b38498a0790700c4de878adffb78eb9887b936b3))
+* **azure-openai:** auto-select chat vs responses Azure API by model ([d92f43b](https://github.com/danielscholl/agent-base-v2/commit/d92f43bd16342762cbcdb9743090074b425022f8))
+* **azureai:** add azure-responses chat model for azure openai ([ec22a2e](https://github.com/danielscholl/agent-base-v2/commit/ec22a2e4589edede9fb14b8fd1bf82528dda9608))
+* **github:** auto-detect org via gh CLI for GitHub models ([d92f43b](https://github.com/danielscholl/agent-base-v2/commit/d92f43bd16342762cbcdb9743090074b425022f8))
+* **github:** improve token handling and models:read scope guidance ([5aab0ba](https://github.com/danielscholl/agent-base-v2/commit/5aab0ba0bb06a9e072df3980ef8c93d373120814))
+* **prompts:** enable mode-specific provider prompts and loading ([aeb5416](https://github.com/danielscholl/agent-base-v2/commit/aeb5416a86d5ce39b27f22134dc16b6b92a08ebe))
+* **providers:** enhance config display and add telemetry CLI ([1dae745](https://github.com/danielscholl/agent-base-v2/commit/1dae74587e105bd217578b3e66a52224da0d49f5))
+* **providers:** enhance config display and simplify base prompt ([f04bd79](https://github.com/danielscholl/agent-base-v2/commit/f04bd79df2bf3e874303a25191161b398ae1d986))
+
+
+### Bug Fixes
+
+* **azure-openai:** tighten requiresResponsesApi deployment matching ([5f8650a](https://github.com/danielscholl/agent-base-v2/commit/5f8650a20bd9d222a2a36f4aca6f3cf8aab63d29))
+* **azure:** respect field.isOptional() when determining required fields ([88e8591](https://github.com/danielscholl/agent-base-v2/commit/88e8591a986774e92a866c9bcf82b0c751a626ab))
+
+
+### Documentation
+
+* **architecture:** document streaming callbacks and dual API support ([c5e14b4](https://github.com/danielscholl/agent-base-v2/commit/c5e14b4d781fc9d4d9d2a9448ba616f981b03a03))
+
+
+### Code Refactoring
+
+* **azure:** adjust bindTools to accept unknown[] ([186d878](https://github.com/danielscholl/agent-base-v2/commit/186d878830d82aced2aeb1e6a3a035f826d37648))
+
+
+### Tests
+
+* **azure:** add token provider tests for Azure OpenAI client ([3c38b1d](https://github.com/danielscholl/agent-base-v2/commit/3c38b1d53abe38b68b264eb8b0cdd688301832b2))
+* **config:** add tests for foundry mode display in config show ([8aacc11](https://github.com/danielscholl/agent-base-v2/commit/8aacc11e12c036921d45c47e4c4d720adf596e23))
+
+
+### Miscellaneous
+
+* **cli:** remove telemetry command and aliases from CLI ([e3dff40](https://github.com/danielscholl/agent-base-v2/commit/e3dff40e5e5f88ff6b0e7fd05c2a06c6e44a1afb))
+
 ## [0.3.2](https://github.com/danielscholl/agent-base-v2/compare/v0.3.1...v0.3.2) (2026-01-05)
 
 
