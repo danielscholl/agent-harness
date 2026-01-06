@@ -24,15 +24,13 @@ User
   ↓
 CLI (React/Ink)
   ↓ callbacks
-Agent (orchestrates loop)
+Agent (orchestrates loop, assembles response)
   ↓              ↓
 Model            Tools
 (LLM calls)      (validated execution)
   ↓              ↓
   └──────────────┘
          ↓
-Agent assembles response
-  ↓
 CLI displays answer
 ```
 
