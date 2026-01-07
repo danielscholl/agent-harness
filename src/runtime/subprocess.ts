@@ -23,7 +23,13 @@ declare global {
     | {
         spawn: (
           cmd: string[],
-          opts?: { stdout?: string; stderr?: string; cwd?: string; env?: Record<string, string> }
+          opts?: {
+            stdin?: string;
+            stdout?: string;
+            stderr?: string;
+            cwd?: string;
+            env?: Record<string, string>;
+          }
         ) => {
           stdout: ReadableStream;
           stderr: ReadableStream;
@@ -39,6 +45,8 @@ declare global {
  * Options for spawning a subprocess.
  */
 export interface SpawnOptions {
+  /** Handle stdin - use 'inherit' for interactive processes */
+  stdin?: 'pipe' | 'inherit' | 'ignore';
   /** Capture stdout as a pipe */
   stdout?: 'pipe' | 'inherit' | 'ignore';
   /** Capture stderr as a pipe */
@@ -137,6 +145,7 @@ async function spawnWithBun(
   }
 
   const proc = BunRuntime.spawn([command, ...args], {
+    stdin: options.stdin ?? 'ignore',
     stdout: options.stdout ?? 'pipe',
     stderr: options.stderr ?? 'pipe',
     cwd: options.cwd,
@@ -203,7 +212,7 @@ function spawnWithNode(
 
     const proc = nodeSpawn(command, args, {
       stdio: [
-        'ignore',
+        options.stdin === 'inherit' ? 'inherit' : options.stdin === 'pipe' ? 'pipe' : 'ignore',
         options.stdout === 'inherit' ? 'inherit' : options.stdout === 'pipe' ? 'pipe' : 'ignore',
         options.stderr === 'inherit' ? 'inherit' : options.stderr === 'pipe' ? 'pipe' : 'ignore',
       ],

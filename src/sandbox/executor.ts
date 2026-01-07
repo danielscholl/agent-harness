@@ -407,6 +407,7 @@ export async function executeSandbox(
   const timeoutMs = options.timeout ?? (isInteractive ? undefined : 30 * 60 * 1000);
 
   const result = await spawnProcess(cmd, {
+    stdin: isInteractive ? 'inherit' : 'ignore',
     stdout: 'inherit',
     stderr: 'inherit',
     timeoutMs,
