@@ -165,7 +165,7 @@ export async function pullSandboxImage(
     return {
       success: false,
       error: 'IMAGE_NOT_FOUND' as SandboxErrorCode,
-      message: `Failed to pull sandbox image '${imageName}'. You can build it locally with: docker build -f Dockerfile.sandbox -t ai-harness-sandbox .`,
+      message: `Failed to pull sandbox image '${imageName}'. If you're using the default image, you can build it locally with: docker build -f Dockerfile.sandbox -t ${SANDBOX_REGISTRY}:${VERSION} . You can also override the image by setting the AGENT_SANDBOX_IMAGE environment variable.`,
     };
   }
 
@@ -225,7 +225,7 @@ export async function ensureSandboxImage(
   return {
     success: false,
     error: 'IMAGE_NOT_FOUND' as SandboxErrorCode,
-    message: `Sandbox image '${imageName}' not found. Build it locally with: docker build -f Dockerfile.sandbox -t ai-harness-sandbox .`,
+    message: `Sandbox image '${imageName}' not found. Build it locally with: docker build -f Dockerfile.sandbox -t ${imageName} . Or set the AGENT_SANDBOX_IMAGE environment variable to use a different image.`,
   };
 }
 
@@ -236,10 +236,13 @@ export async function ensureSandboxImage(
  * @returns Array of command arguments
  */
 export function buildDockerCommand(options: SandboxOptions): string[] {
-  const image = options.image ?? process.env['AGENT_SANDBOX_IMAGE'] ?? DEFAULT_SANDBOX_IMAGE;
+  const envImage = process.env['AGENT_SANDBOX_IMAGE'];
+  const image =
+    options.image ??
+    (envImage !== undefined && envImage.trim() !== '' ? envImage : DEFAULT_SANDBOX_IMAGE);
   const workspacePath = options.workspacePath ?? process.cwd();
   // Support custom AGENT_HOME, fall back to ~/.agent
-  const agentHome = process.env['AGENT_HOME'] ?? `${process.env['HOME'] ?? ''}/.agent`;
+  const agentHome = process.env['AGENT_HOME'] ?? `${process.env['HOME'] ?? '/tmp'}/.agent`;
   const configPath = options.configPath ?? agentHome;
   // Default to interactive only if stdin is a TTY
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -264,6 +267,7 @@ export function buildDockerCommand(options: SandboxOptions): string[] {
 
   // Pass through environment variables
   for (const envVar of PASSTHROUGH_ENV_VARS) {
+    // Note: Empty strings are intentionally excluded as empty API keys are not useful
     const envValue = process.env[envVar];
     if (envValue !== undefined && envValue !== '') {
       cmd.push('-e', envVar);
@@ -344,7 +348,10 @@ export async function executeSandbox(
   debug('Docker daemon running');
 
   // Ensure sandbox image is available (auto-pull if needed)
-  const imageName = options.image ?? process.env['AGENT_SANDBOX_IMAGE'] ?? DEFAULT_SANDBOX_IMAGE;
+  const envImage = process.env['AGENT_SANDBOX_IMAGE'];
+  const imageName =
+    options.image ??
+    (envImage !== undefined && envImage.trim() !== '' ? envImage : DEFAULT_SANDBOX_IMAGE);
   debug(`Ensuring sandbox image '${imageName}' is available...`);
   const imageCheck = await ensureSandboxImage(imageName, debug);
   if (!imageCheck.success) {
