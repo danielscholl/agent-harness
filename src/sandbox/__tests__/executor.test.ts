@@ -196,14 +196,16 @@ describe('executor', () => {
       expect(cmd).toContain('/my/project:/workspace');
     });
 
-    it('mounts config directory read-only', async () => {
+    it('mounts config directory read-write', async () => {
       const { buildDockerCommand } = await import('../executor.js');
       const cmd = buildDockerCommand({
         configPath: '/home/user/.agent',
       });
 
       expect(cmd).toContain('-v');
-      expect(cmd).toContain('/home/user/.agent:/home/agent/.agent:ro');
+      expect(cmd).toContain('/home/user/.agent:/home/agent/.agent');
+      // Should NOT be read-only (no :ro suffix)
+      expect(cmd).not.toContain('/home/user/.agent:/home/agent/.agent:ro');
     });
 
     it('sets AGENT_SANDBOX environment variable', async () => {
@@ -211,6 +213,15 @@ describe('executor', () => {
       const cmd = buildDockerCommand({});
 
       const envIndex = cmd.indexOf('AGENT_SANDBOX=true');
+      expect(envIndex).toBeGreaterThan(-1);
+      expect(cmd[envIndex - 1]).toBe('-e');
+    });
+
+    it('sets AGENT_WORKSPACE_ROOT environment variable', async () => {
+      const { buildDockerCommand } = await import('../executor.js');
+      const cmd = buildDockerCommand({});
+
+      const envIndex = cmd.indexOf('AGENT_WORKSPACE_ROOT=/workspace');
       expect(envIndex).toBeGreaterThan(-1);
       expect(cmd[envIndex - 1]).toBe('-e');
     });

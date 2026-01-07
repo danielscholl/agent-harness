@@ -12,7 +12,7 @@
 # Manual usage:
 #   docker run -it --rm \
 #     -v $(pwd):/workspace \
-#     -v ~/.agent:/home/agent/.agent:ro \
+#     -v ~/.agent:/home/agent/.agent \
 #     -e OPENAI_API_KEY \
 #     ai-harness-sandbox
 
@@ -168,7 +168,7 @@ WORKDIR /workspace
 # Environment marker
 ENV AGENT_SANDBOX=true
 
-# Config volume (mounted read-only from host)
+# Config volume (mounted from host for sessions/plugins)
 VOLUME ["/home/agent/.agent"]
 
 # Workspace volume (mounted read-write from host)

@@ -253,8 +253,8 @@ export function buildDockerCommand(options: SandboxOptions): string[] {
   cmd.push('-v', `${workspacePath}:/workspace`);
   cmd.push('-w', '/workspace');
 
-  // Mount config directory (read-only for security)
-  cmd.push('-v', `${configPath}:/home/agent/.agent:ro`);
+  // Mount config directory (read-write for sessions/plugins)
+  cmd.push('-v', `${configPath}:/home/agent/.agent`);
 
   // Pass through environment variables
   for (const envVar of PASSTHROUGH_ENV_VARS) {
@@ -266,6 +266,9 @@ export function buildDockerCommand(options: SandboxOptions): string[] {
 
   // Mark as sandbox environment
   cmd.push('-e', 'AGENT_SANDBOX=true');
+
+  // Set workspace root constraint inside container
+  cmd.push('-e', 'AGENT_WORKSPACE_ROOT=/workspace');
 
   // Set hostname for visibility
   cmd.push('--hostname', 'agent-sandbox');
@@ -351,10 +354,15 @@ export async function executeSandbox(
   const cmd = buildDockerCommand(options);
   debug(`Running: ${cmd.join(' ')}`);
 
+  // Determine timeout: no timeout for interactive sessions, 30 min for non-interactive
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  const isInteractive = options.interactive ?? process.stdin.isTTY ?? false;
+  const timeoutMs = options.timeout ?? (isInteractive ? undefined : 30 * 60 * 1000);
+
   const result = await spawnProcess(cmd, {
     stdout: 'inherit',
     stderr: 'inherit',
-    timeoutMs: options.timeout ?? 10 * 60 * 1000, // 10 minutes default
+    timeoutMs,
   });
 
   if (result.exitCode === -1 && result.stderr === 'Command timed out') {

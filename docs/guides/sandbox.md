@@ -23,8 +23,9 @@ When you pass `--sandbox`, the harness:
 3. **Ensures** the sandbox image is available (auto-pulls if missing)
 4. **Re-executes** itself inside the Docker container with:
    - Your workspace mounted at `/workspace` (read-write)
-   - Your config directory at `~/.agent` (read-only)
+   - Your config directory at `~/.agent` (read-write for sessions/plugins)
    - API credentials passed via environment variables
+   - `AGENT_WORKSPACE_ROOT=/workspace` to enforce workspace constraints
 
 Inside the container, the agent runs as a non-root user with the `AGENT_SANDBOX=true` marker set.
 
@@ -108,9 +109,10 @@ You can run the sandbox manually without the `--sandbox` flag:
 docker run -it --rm \
   -v $(pwd):/workspace \
   -w /workspace \
-  -v ~/.agent:/home/agent/.agent:ro \
+  -v ~/.agent:/home/agent/.agent \
   -e OPENAI_API_KEY \
   -e AGENT_SANDBOX=true \
+  -e AGENT_WORKSPACE_ROOT=/workspace \
   --hostname agent-sandbox \
   ai-harness-sandbox \
   -p "Analyze this codebase"
