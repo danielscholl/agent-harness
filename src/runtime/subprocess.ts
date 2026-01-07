@@ -23,7 +23,13 @@ declare global {
     | {
         spawn: (
           cmd: string[],
-          opts?: { stdout?: string; stderr?: string; cwd?: string; env?: Record<string, string> }
+          opts?: {
+            stdin?: string;
+            stdout?: string;
+            stderr?: string;
+            cwd?: string;
+            env?: Record<string, string>;
+          }
         ) => {
           stdout: ReadableStream;
           stderr: ReadableStream;
@@ -39,6 +45,8 @@ declare global {
  * Options for spawning a subprocess.
  */
 export interface SpawnOptions {
+  /** Handle stdin - use 'inherit' for interactive processes */
+  stdin?: 'pipe' | 'inherit' | 'ignore';
   /** Capture stdout as a pipe */
   stdout?: 'pipe' | 'inherit' | 'ignore';
   /** Capture stderr as a pipe */
@@ -137,6 +145,7 @@ async function spawnWithBun(
   }
 
   const proc = BunRuntime.spawn([command, ...args], {
+    stdin: options.stdin ?? 'ignore',
     stdout: options.stdout ?? 'pipe',
     stderr: options.stderr ?? 'pipe',
     cwd: options.cwd,
@@ -183,6 +192,17 @@ async function spawnWithBun(
 }
 
 /**
+ * Map stdio option to Node.js child_process stdio value.
+ */
+function mapStdioOption(
+  option: 'pipe' | 'inherit' | 'ignore' | undefined
+): 'pipe' | 'inherit' | 'ignore' {
+  if (option === 'inherit') return 'inherit';
+  if (option === 'pipe') return 'pipe';
+  return 'ignore';
+}
+
+/**
  * Spawn using Node child_process (fallback/test path).
  */
 function spawnWithNode(
@@ -203,9 +223,9 @@ function spawnWithNode(
 
     const proc = nodeSpawn(command, args, {
       stdio: [
-        'ignore',
-        options.stdout === 'inherit' ? 'inherit' : options.stdout === 'pipe' ? 'pipe' : 'ignore',
-        options.stderr === 'inherit' ? 'inherit' : options.stderr === 'pipe' ? 'pipe' : 'ignore',
+        mapStdioOption(options.stdin),
+        mapStdioOption(options.stdout),
+        mapStdioOption(options.stderr),
       ],
       cwd: options.cwd,
       env: options.env ? { ...process.env, ...options.env } : undefined,
