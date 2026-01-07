@@ -105,6 +105,12 @@ export function extractArgs(input: string): string {
 /**
  * Execute a command and return the result.
  * Returns undefined if input is not a command.
+ *
+ * DESIGN DECISION: Built-in CLI commands (/help, /exit, /clear, etc.) are checked BEFORE
+ * custom commands and cannot be overridden. This is intentional for safety and consistency.
+ * The "project > user > bundled" priority applies ONLY to custom commands (AFTER built-in
+ * commands are checked). This prevents users from accidentally shadowing critical CLI
+ * functionality like /exit or /help.
  */
 export async function executeCommand(
   input: string,
@@ -116,7 +122,7 @@ export async function executeCommand(
     return shellHandler(command, context);
   }
 
-  // Find matching built-in command
+  // Find matching built-in command (checked FIRST - cannot be overridden by custom commands)
   const command = findCommand(input);
   if (command !== undefined) {
     // Extract arguments and execute

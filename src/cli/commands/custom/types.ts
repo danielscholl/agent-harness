@@ -7,7 +7,7 @@ import { z } from 'zod';
 
 /**
  * Schema for custom command YAML front matter.
- * Uses passthrough to allow unknown fields (lenient validation).
+ * Uses z.looseObject to allow unknown fields (lenient validation).
  */
 export const CustomCommandManifestSchema = z.looseObject({
   /** Optional: Override command name (defaults to filename) */

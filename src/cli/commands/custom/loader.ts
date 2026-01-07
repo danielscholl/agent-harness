@@ -154,6 +154,28 @@ export class CustomCommandLoader {
           continue;
         }
 
+        // Security: Verify .md file doesn't escape via symlink
+        try {
+          const resolvedFile = await realpath(entryPath);
+          const relativePath = relative(resolvedBaseDir, resolvedFile);
+
+          if (relativePath.startsWith('..') || isAbsolute(relativePath)) {
+            this.debug('Rejected command file symlink escape attempt', {
+              path: entryPath,
+              resolvedPath: resolvedFile,
+            });
+            errors.push({
+              path: entryPath,
+              message: 'Command file symlink escapes base directory',
+              type: 'IO_ERROR',
+            });
+            continue;
+          }
+        } catch {
+          // realpath failed - file may not be accessible
+          continue;
+        }
+
         // Load and parse the command file
         const result = await this.loadCommand(entryPath, entry.name, source, namespace);
         if (result.success) {

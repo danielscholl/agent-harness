@@ -136,7 +136,7 @@ export function getBundledCommandsDir(): string {
   }
 
   // 2. Next to executable (compiled binary with bundled assets)
-  const execRelativePath = join(dirname(process.execPath), 'commands');
+  const execRelativePath = join(dirname(process.execPath), '_bundled_commands');
   if (existsSync(execRelativePath)) {
     return execRelativePath;
   }
@@ -144,14 +144,14 @@ export function getBundledCommandsDir(): string {
   // 3. Relative to module (dev/bundled)
   const moduleDir = dirname(fileURLToPath(import.meta.url));
 
-  // Bundled: dist/index.js -> dist/commands/
-  const sameDirPath = join(moduleDir, 'commands');
+  // Bundled: dist/index.js -> dist/_bundled_commands/
+  const sameDirPath = join(moduleDir, '_bundled_commands');
   if (existsSync(sameDirPath)) {
     return sameDirPath;
   }
 
-  // Dev: src/utils/paths.ts -> src/commands/
-  const parentDirPath = join(moduleDir, '..', 'commands');
+  // Dev: src/utils/paths.ts -> src/_bundled_commands/
+  const parentDirPath = join(moduleDir, '..', '_bundled_commands');
   if (existsSync(parentDirPath)) {
     return parentDirPath;
   }

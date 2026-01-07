@@ -6,7 +6,9 @@ This guide covers the custom slash command system and how to create your own com
 
 ## Design Philosophy
 
-Custom commands extend the agent with reusable prompts that execute in response to `/command` invocations. Commands follow a **source priority** model—from bundled defaults up to project-specific overrides:
+Custom commands extend the agent with reusable prompts that execute in response to `/command` invocations. Commands follow a **source priority** model—from bundled defaults up to project-specific overrides.
+
+**Important:** Built-in CLI commands (`/help`, `/exit`, `/clear`, `/save`, `/resume`, `/telemetry`) cannot be overridden by custom commands. The source priority applies only to custom commands:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -34,16 +36,19 @@ Custom commands extend the agent with reusable prompts that execute in response 
 | Users have personal workflows | User commands in `~/.agent/commands/` work across projects |
 | Framework needs extensible defaults | Bundled commands ship with the agent |
 | Name conflicts need predictable resolution | Later source wins (project > user > bundled) |
+| Safety and consistency for CLI operations | Built-in commands (`/help`, `/exit`, etc.) are protected and cannot be overridden |
 
 ### Mental Model
 
-Think of command discovery as **layered override**:
+Think of command discovery as **layered override** with protected built-ins:
 
-1. **Bundled** commands ship with the agent (e.g., `/prime`)
-2. **User** commands are personal shortcuts that work anywhere
-3. **Project** commands are team-shared workflows for a specific repository
+1. **Built-in CLI** commands are checked first and cannot be overridden (`/help`, `/exit`, `/clear`, `/save`, `/resume`, `/telemetry`)
+2. **Custom commands** follow source priority:
+   - **Bundled** commands ship with the agent (e.g., `/prime`)
+   - **User** commands are personal shortcuts that work anywhere
+   - **Project** commands are team-shared workflows for a specific repository
 
-When commands share a name, later sources **replace** earlier ones—project commands override user commands, which override bundled commands.
+When custom commands share a name, later sources **replace** earlier ones—project commands override user commands, which override bundled commands. Built-in CLI commands are never replaced.
 
 ---
 

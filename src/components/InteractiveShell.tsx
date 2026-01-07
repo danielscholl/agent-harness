@@ -415,7 +415,9 @@ export function InteractiveShell({
     getAutocompleteCommandsAsync()
       .then((commands) => {
         autocompleteCommandsRef.current = commands;
-        // Force a re-render to update autocomplete
+        // Trigger re-render to update autocomplete - since autocompleteCommandsRef is a ref
+        // (not state), React won't re-render when it changes. This setState forces a re-render
+        // so the CommandAutocomplete component picks up the newly loaded custom commands.
         setState((s) => ({ ...s }));
       })
       .catch((err: unknown) => {
