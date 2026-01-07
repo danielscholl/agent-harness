@@ -21,7 +21,12 @@ function getSandboxWorkspaceRoot(): string {
   const envRoot = process.env['AGENT_WORKSPACE_ROOT'];
   if (envRoot !== undefined && envRoot !== '') {
     // Expand ~ to home directory
-    const expanded = envRoot.startsWith('~') ? path.join(os.homedir(), envRoot.slice(1)) : envRoot;
+    const expanded =
+      envRoot === '~'
+        ? os.homedir()
+        : envRoot.startsWith('~/')
+          ? path.join(os.homedir(), envRoot.slice(2))
+          : envRoot;
     return path.resolve(expanded);
   }
   return process.cwd();
@@ -286,18 +291,26 @@ export function buildDockerCommand(options: SandboxOptions): string[] {
   const agentHome = process.env['AGENT_HOME'] ?? `${process.env['HOME'] ?? '/tmp'}/.agent`;
   const configPath = options.configPath ?? agentHome;
 
-  // Determine interactivity: check for -p/--prompt flag which forces non-interactive mode
-  // This must align with the stdin handling logic in executeSandbox
-  const hasPromptArg =
-    options.agentArgs?.some((arg) => arg === '-p' || arg === '--prompt') ?? false;
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const stdinIsTTY = process.stdin.isTTY ?? false;
-  const interactive = !hasPromptArg && (options.interactive ?? stdinIsTTY);
+  // Determine interactivity: check for non-interactive flags that don't need TTY
+  // This must align with the stdin handling logic in executeSandbox and index.tsx wantsInteractive check
+  const isNonInteractiveCommand =
+    options.agentArgs?.some(
+      (arg) => arg === '-p' || arg === '--prompt' || arg === '--check' || arg === '--tools'
+    ) ?? false;
+  const stdinIsTTY =
+    typeof process.stdin === 'object' &&
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    process.stdin !== null &&
+    'isTTY' in process.stdin &&
+    typeof (process.stdin as { isTTY?: unknown }).isTTY === 'boolean'
+      ? (process.stdin as { isTTY: boolean }).isTTY
+      : false;
+  const interactive = !isNonInteractiveCommand && (options.interactive ?? stdinIsTTY);
 
   const cmd: string[] = ['docker', 'run', '--rm'];
 
   // Interactive mode: -it for TTY allocation and stdin connection
-  // Only add when truly interactive (not when -p flag is present)
+  // Only add when truly interactive (not when -p/--prompt/--check/--tools flags are present)
   if (interactive) {
     cmd.push('-it');
   }
@@ -419,9 +432,11 @@ export async function executeSandbox(
   debug(`Running: ${cmd.join(' ')}`);
 
   // Determine timeout: no timeout for interactive sessions, 30 min for non-interactive
-  // Check if --prompt/-p was passed (non-interactive even with TTY)
-  const hasPromptArg =
-    options.agentArgs?.some((arg) => arg === '-p' || arg === '--prompt') ?? false;
+  // Check for non-interactive flags (non-interactive even with TTY)
+  const isNonInteractiveCommand =
+    options.agentArgs?.some(
+      (arg) => arg === '-p' || arg === '--prompt' || arg === '--check' || arg === '--tools'
+    ) ?? false;
   const stdinIsTTY =
     typeof process.stdin === 'object' &&
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
@@ -429,7 +444,7 @@ export async function executeSandbox(
     'isTTY' in process.stdin
       ? Boolean((process.stdin as { isTTY?: unknown }).isTTY)
       : false;
-  const isInteractive = !hasPromptArg && (options.interactive ?? stdinIsTTY);
+  const isInteractive = !isNonInteractiveCommand && (options.interactive ?? stdinIsTTY);
   const timeoutMs = options.timeout ?? (isInteractive ? undefined : 30 * 60 * 1000);
 
   const result = await spawnProcess(cmd, {
