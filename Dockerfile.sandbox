@@ -155,8 +155,11 @@ RUN BUILD_SOURCE=$(cat /tmp/build-source) && \
     chmod +x /app/agent && \
     /app/agent --version || { echo "ERROR: Agent binary is not executable or corrupted"; exit 1; }
 
-# Create non-root user
-RUN adduser -D -h /home/agent agent
+# Allow configuring agent UID at build time to avoid host permission issues
+ARG AGENT_UID=1000
+
+# Create non-root user with configurable UID
+RUN adduser -D -u "$AGENT_UID" -h /home/agent agent
 
 # Create sandbox marker file (before switching to non-root user)
 RUN touch /.agent-sandbox

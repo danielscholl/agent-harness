@@ -28,6 +28,7 @@ jobs:
       # Update bun.lock when release PR is created/updated
       - name: Checkout release PR branch
         if: ${{ steps.release.outputs.pr != '' }}
+        # Note: Using v4 which is the latest stable version (v6 does not exist)
         uses: actions/checkout@v4
         with:
           ref: ${{ fromJson(steps.release.outputs.pr).headBranchName }}
@@ -73,6 +74,7 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
+      # Note: Using v4 which is the latest stable version (v6 does not exist)
       - uses: actions/checkout@v4
 
       - uses: oven-sh/setup-bun@v2
@@ -136,6 +138,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Note: Using v4 which is the latest stable version (v6 does not exist)
       - uses: actions/checkout@v4
 
       - name: Download all artifacts
@@ -197,6 +200,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # Note: Using v4 which is the latest stable version (v6 does not exist)
       - uses: actions/checkout@v4
 
       - name: Set up QEMU

@@ -43,9 +43,13 @@ describe('executor', () => {
     const subprocess = await import('../../runtime/subprocess.js');
     const detection = await import('../detection.js');
 
-    spawnProcess = subprocess.spawnProcess as typeof spawnProcess;
-    detectContainer = detection.detectContainer as typeof detectContainer;
-    isAgentSandbox = detection.isAgentSandbox as typeof isAgentSandbox;
+    spawnProcess = subprocess.spawnProcess as jest.MockedFunction<
+      (cmd: string[], options?: SpawnOptions) => Promise<SubprocessResult>
+    >;
+    detectContainer = detection.detectContainer as jest.MockedFunction<
+      () => { isContainer: boolean; method: string; details?: string }
+    >;
+    isAgentSandbox = detection.isAgentSandbox as jest.MockedFunction<() => boolean>;
 
     // Default: not in container
     detectContainer.mockReturnValue({
@@ -287,13 +291,21 @@ describe('executor', () => {
     });
 
     it('uses AGENT_HOME env var for config path', async () => {
+      const previousAgentHome = process.env['AGENT_HOME'];
       process.env['AGENT_HOME'] = '/custom/agent/home';
 
-      const { buildDockerCommand } = await import('../executor.js');
-      const cmd = buildDockerCommand({});
+      try {
+        const { buildDockerCommand } = await import('../executor.js');
+        const cmd = buildDockerCommand({});
 
-      expect(cmd).toContain('/custom/agent/home:/home/agent/.agent');
-      delete process.env['AGENT_HOME'];
+        expect(cmd).toContain('/custom/agent/home:/home/agent/.agent');
+      } finally {
+        if (previousAgentHome === undefined) {
+          delete process.env['AGENT_HOME'];
+        } else {
+          process.env['AGENT_HOME'] = previousAgentHome;
+        }
+      }
     });
 
     it('sets AGENT_HOME in container', async () => {

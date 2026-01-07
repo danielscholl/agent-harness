@@ -165,7 +165,7 @@ export async function pullSandboxImage(
     return {
       success: false,
       error: 'IMAGE_NOT_FOUND' as SandboxErrorCode,
-      message: `Failed to pull sandbox image '${imageName}'. If you're using the default image, you can build it locally with: docker build -f Dockerfile.sandbox -t ${SANDBOX_REGISTRY}:${VERSION} . You can also override the image by setting the AGENT_SANDBOX_IMAGE environment variable.`,
+      message: `Failed to pull sandbox image '${imageName}'. You can build it locally with: docker build -f Dockerfile.sandbox -t ${imageName} .`,
     };
   }
 
@@ -218,14 +218,35 @@ export async function ensureSandboxImage(
     debug(`Versioned image not found, trying '${latestImage}'...`);
     const latestPull = await pullSandboxImage(latestImage, onDebug);
     if (latestPull.success) {
-      return latestPull;
+      // Tag the 'latest' image with the originally requested versioned tag so
+      // subsequent Docker runs using `imageName` will work as expected.
+      debug(`Tagging '${latestImage}' as '${imageName}'...`);
+      const tagResult = await spawnProcess(['docker', 'tag', latestImage, imageName], {
+        stdout: 'pipe',
+        stderr: 'pipe',
+        timeoutMs: 5000,
+      });
+      if (tagResult.exitCode === 0) {
+        debug(`Successfully tagged '${latestImage}' as '${imageName}'`);
+        return {
+          success: true,
+          message: `Sandbox image '${imageName}' available (pulled from latest and tagged)`,
+        };
+      } else {
+        debug(`Failed to tag '${latestImage}' as '${imageName}': ${tagResult.stderr}`);
+        return {
+          success: false,
+          error: 'IMAGE_NOT_FOUND' as SandboxErrorCode,
+          message: `Pulled '${latestImage}' but failed to tag as '${imageName}'. ${tagResult.stderr}`,
+        };
+      }
     }
   }
 
   return {
     success: false,
     error: 'IMAGE_NOT_FOUND' as SandboxErrorCode,
-    message: `Sandbox image '${imageName}' not found. Build it locally with: docker build -f Dockerfile.sandbox -t ${imageName} . Or set the AGENT_SANDBOX_IMAGE environment variable to use a different image.`,
+    message: `Sandbox image '${imageName}' not found. Build it locally with: docker build -f Dockerfile.sandbox -t ${SANDBOX_REGISTRY}:${VERSION} .`,
   };
 }
 
@@ -267,7 +288,11 @@ export function buildDockerCommand(options: SandboxOptions): string[] {
 
   // Pass through environment variables
   for (const envVar of PASSTHROUGH_ENV_VARS) {
-    // Note: Empty strings are intentionally excluded as empty API keys are not useful
+    // Security note: We check for both undefined and empty string to ensure proper
+    // credential isolation. Empty API keys are not useful and should not be passed.
+    // This prevents conflating "unset" with "set but empty" for security-sensitive
+    // values. If an attacker could set these to empty strings in the host environment,
+    // they would not bypass credential isolation as empty strings are excluded.
     const envValue = process.env[envVar];
     if (envValue !== undefined && envValue !== '') {
       cmd.push('-e', envVar);
@@ -371,8 +396,14 @@ export async function executeSandbox(
   // Check if --prompt/-p was passed (non-interactive even with TTY)
   const hasPromptArg =
     options.agentArgs?.some((arg) => arg === '-p' || arg === '--prompt') ?? false;
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-  const isInteractive = !hasPromptArg && (options.interactive ?? process.stdin.isTTY ?? false);
+  const stdinIsTTY =
+    typeof process.stdin === 'object' &&
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    process.stdin !== null &&
+    'isTTY' in process.stdin
+      ? Boolean((process.stdin as { isTTY?: unknown }).isTTY)
+      : false;
+  const isInteractive = !hasPromptArg && (options.interactive ?? stdinIsTTY);
   const timeoutMs = options.timeout ?? (isInteractive ? undefined : 30 * 60 * 1000);
 
   const result = await spawnProcess(cmd, {
