@@ -94,6 +94,7 @@ jobs:
           cp ${{ matrix.artifact }} package/agent
           cp -r dist/prompts package/
           cp -r dist/_bundled_skills package/
+          cp -r dist/_bundled_commands package/
           tar -czf ${{ matrix.artifact }}.tar.gz -C package .
           shasum -a 256 ${{ matrix.artifact }}.tar.gz > ${{ matrix.artifact }}.tar.gz.sha256
 
@@ -105,6 +106,7 @@ jobs:
           Copy-Item ${{ matrix.artifact }} package/agent.exe
           Copy-Item -Recurse dist/prompts package/
           Copy-Item -Recurse dist/_bundled_skills package/
+          Copy-Item -Recurse dist/_bundled_commands package/
           Compress-Archive -Path package/* -DestinationPath ${{ matrix.artifact }}.zip
           $hash = (Get-FileHash "${{ matrix.artifact }}.zip" -Algorithm SHA256).Hash.ToLower()
           "$hash  ${{ matrix.artifact }}.zip" | Out-File -Encoding UTF8 -NoNewline "${{ matrix.artifact }}.zip.sha256"

@@ -147,6 +147,10 @@ download_binary() {
     rm -rf "${INSTALL_DIR}/_bundled_skills"
     cp -r "${extract_dir}/_bundled_skills" "${INSTALL_DIR}/_bundled_skills"
   fi
+  if [ -d "${extract_dir}/_bundled_commands" ]; then
+    rm -rf "${INSTALL_DIR}/_bundled_commands"
+    cp -r "${extract_dir}/_bundled_commands" "${INSTALL_DIR}/_bundled_commands"
+  fi
 
   rm -rf "${tmp_dir}"
 
@@ -232,6 +236,10 @@ build_from_source() {
   if [ -d "${dist_dir}/_bundled_skills" ]; then
     rm -rf "${INSTALL_DIR}/_bundled_skills"
     cp -r "${dist_dir}/_bundled_skills" "${INSTALL_DIR}/_bundled_skills"
+  fi
+  if [ -d "${dist_dir}/_bundled_commands" ]; then
+    rm -rf "${INSTALL_DIR}/_bundled_commands"
+    cp -r "${dist_dir}/_bundled_commands" "${INSTALL_DIR}/_bundled_commands"
   fi
 
   # Create symlink

@@ -117,6 +117,9 @@ function Install-Binary {
     if (Test-Path "$extractDir\_bundled_skills") {
         Copy-Item -Path "$extractDir\_bundled_skills" -Destination "$AGENT_HOME\_bundled_skills" -Recurse -Force
     }
+    if (Test-Path "$extractDir\_bundled_commands") {
+        Copy-Item -Path "$extractDir\_bundled_commands" -Destination "$AGENT_HOME\_bundled_commands" -Recurse -Force
+    }
 
     Remove-Item -Path $tmpDir -Recurse -Force -ErrorAction SilentlyContinue
 
@@ -226,6 +229,9 @@ function Build-FromSource {
     }
     if (Test-Path "$distDir\_bundled_skills") {
         Copy-Item -Path "$distDir\_bundled_skills" -Destination "$AGENT_HOME\_bundled_skills" -Recurse -Force
+    }
+    if (Test-Path "$distDir\_bundled_commands") {
+        Copy-Item -Path "$distDir\_bundled_commands" -Destination "$AGENT_HOME\_bundled_commands" -Recurse -Force
     }
 
     # Create wrapper script
