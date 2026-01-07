@@ -62,6 +62,74 @@ describe('generateAvailableSkillsXml', () => {
     expect(generateAvailableSkillsXml([])).toBe('');
   });
 
+  it('filters out unavailable skills', () => {
+    const skills = [
+      createTestSkill({ manifest: { name: 'available', description: 'Available skill' } }),
+      createTestSkill({
+        manifest: { name: 'unavailable', description: 'Unavailable skill' },
+        unavailable: true,
+        unavailableReason: 'missing commands: gh',
+      }),
+    ];
+    const xml = generateAvailableSkillsXml(skills);
+
+    expect(xml).toContain('<name>available</name>');
+    expect(xml).not.toContain('<name>unavailable</name>');
+  });
+
+  it('filters out disabled skills', () => {
+    const skills = [
+      createTestSkill({ manifest: { name: 'enabled', description: 'Enabled skill' } }),
+      createTestSkill({
+        manifest: { name: 'disabled', description: 'Disabled skill' },
+        disabled: true,
+      }),
+    ];
+    const xml = generateAvailableSkillsXml(skills);
+
+    expect(xml).toContain('<name>enabled</name>');
+    expect(xml).not.toContain('<name>disabled</name>');
+  });
+
+  it('filters out both unavailable and disabled skills', () => {
+    const skills = [
+      createTestSkill({ manifest: { name: 'available', description: 'Available skill' } }),
+      createTestSkill({
+        manifest: { name: 'unavailable', description: 'Unavailable skill' },
+        unavailable: true,
+      }),
+      createTestSkill({
+        manifest: { name: 'disabled', description: 'Disabled skill' },
+        disabled: true,
+      }),
+      createTestSkill({
+        manifest: { name: 'both', description: 'Both unavailable and disabled' },
+        unavailable: true,
+        disabled: true,
+      }),
+    ];
+    const xml = generateAvailableSkillsXml(skills);
+
+    expect(xml).toContain('<name>available</name>');
+    expect(xml).not.toContain('<name>unavailable</name>');
+    expect(xml).not.toContain('<name>disabled</name>');
+    expect(xml).not.toContain('<name>both</name>');
+  });
+
+  it('returns empty string when all skills are unavailable', () => {
+    const skills = [
+      createTestSkill({
+        manifest: { name: 'unavailable1', description: 'Unavailable skill 1' },
+        unavailable: true,
+      }),
+      createTestSkill({
+        manifest: { name: 'unavailable2', description: 'Unavailable skill 2' },
+        unavailable: true,
+      }),
+    ];
+    expect(generateAvailableSkillsXml(skills)).toBe('');
+  });
+
   it('generates valid XML for single skill', () => {
     const skill = createTestSkill();
     const xml = generateAvailableSkillsXml([skill]);
