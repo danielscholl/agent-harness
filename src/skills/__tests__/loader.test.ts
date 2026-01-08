@@ -491,7 +491,7 @@ Skill body content.`;
       expect(result.skills[0]?.manifest.description).toBe('Claude version');
     });
 
-    it('discovers skills from all four source types', async () => {
+    it('discovers skills from bundled, user, claude, and project source types', async () => {
       await createSkillDir(bundledDir, 'bundled-skill', {
         name: 'bundled-skill',
         description: 'Bundled skill',
@@ -526,7 +526,7 @@ Skill body content.`;
       expect(sources).toContain('project');
     });
 
-    it('respects priority order: plugin > project > claude > user > bundled', async () => {
+    it('respects priority order: project > claude > user > bundled', async () => {
       // All sources have same skill name
       await createSkillDir(bundledDir, 'priority-skill', {
         name: 'priority-skill',
@@ -554,7 +554,7 @@ Skill body content.`;
 
       const result = await loader.discover();
 
-      // Project should win (highest priority among the non-plugin sources)
+      // Project should win (highest priority)
       expect(result.skills).toHaveLength(1);
       expect(result.skills[0]?.source).toBe('project');
       expect(result.skills[0]?.manifest.description).toBe('Project version');
@@ -592,12 +592,13 @@ Skill body content.`;
 
       const result = await loader.discover();
 
-      // Symlinks are ignored by the loader (entry.isDirectory() returns false for symlinks)
-      // This provides implicit security protection - no skills from symlinks are loaded
+      // Security protection: scanDirectory uses realpath() and relative() to detect
+      // symlink escape attempts (lines 263-284 of loader.ts). Symlinks pointing outside
+      // the skill directory are actively rejected with SECURITY_ERROR, not passively skipped.
       expect(result.skills).toHaveLength(0);
 
-      // No error is reported since symlinks are just skipped as non-directories
-      // The security goal (no unauthorized skill loading) is still met
+      // A security error is reported when symlink escape is detected
+      // The security goal (no unauthorized skill loading) is enforced through validation
     });
   });
 

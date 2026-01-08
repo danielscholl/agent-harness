@@ -190,7 +190,7 @@ export function getClaudeDir(workspaceRoot?: string): string {
 /**
  * Get the Claude skills directory path (.claude/skills/).
  *
- * @param workspaceRoot - Workspace root directory (defaults to cwd)
+ * @param workspaceRoot - Workspace root directory (defaults to AGENT_WORKSPACE_ROOT or cwd)
  * @returns Path to .claude/skills directory
  */
 export function getClaudeSkillsDir(workspaceRoot?: string): string {
@@ -200,7 +200,7 @@ export function getClaudeSkillsDir(workspaceRoot?: string): string {
 /**
  * Get the Claude commands directory path (.claude/commands/).
  *
- * @param workspaceRoot - Workspace root directory (defaults to cwd)
+ * @param workspaceRoot - Workspace root directory (defaults to AGENT_WORKSPACE_ROOT or cwd)
  * @returns Path to .claude/commands directory
  */
 export function getClaudeCommandsDir(workspaceRoot?: string): string {
