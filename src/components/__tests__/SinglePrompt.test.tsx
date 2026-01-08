@@ -7,8 +7,10 @@ import React from 'react';
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
 import { render } from 'ink-testing-library';
 import type { AgentCallbacks } from '../../agent/callbacks.js';
+import type { CommandResult, CommandContext } from '../../cli/commands/types.js';
 
 let stderrWriteSpy: { mockRestore: () => void } | null = null;
+let stdoutWriteSpy: { mockRestore: () => void } | null = null;
 
 // Mock modules before importing
 const mockLoadConfig = jest.fn<() => Promise<unknown>>();
@@ -19,12 +21,45 @@ jest.unstable_mockModule('../../config/manager.js', () => ({
   configFileExists: mockConfigFileExists,
 }));
 
+// Mock executeCommand for slash command tests
+const mockExecuteCommand =
+  jest.fn<(input: string, context: CommandContext) => Promise<CommandResult | undefined>>();
+
+jest.unstable_mockModule('../../cli/commands/index.js', () => ({
+  executeCommand: mockExecuteCommand,
+}));
+
+// Mock createCliContextWithConfig - return a proper mutable context object
+const mockCreateCliContextWithConfig = jest.fn((config: unknown) => ({
+  config,
+  onOutput: jest.fn(),
+  onPrompt: jest.fn(),
+  exit: jest.fn(),
+}));
+
+jest.unstable_mockModule('../../cli/cli-context.js', () => ({
+  createCliContextWithConfig: mockCreateCliContextWithConfig,
+}));
+
 // Mock utils module
 jest.unstable_mockModule('../../utils/index.js', () => ({
   resolveModelName: jest.fn((providerName: string) => {
     if (providerName === 'azure') return 'test-deployment';
     if (providerName === 'foundry') return 'test-model-deployment';
     return 'gpt-4o';
+  }),
+  SessionManager: jest.fn().mockImplementation(() => ({
+    getLastSession: jest.fn().mockResolvedValue(null),
+    loadSession: jest.fn().mockResolvedValue(null),
+  })),
+  getAgentHome: jest.fn(() => '/test/.agent'),
+}));
+
+// Mock help handler
+jest.unstable_mockModule('../../cli/commands/help.js', () => ({
+  helpHandler: jest.fn((_args, context) => {
+    context.onOutput('Help displayed', 'info');
+    return Promise.resolve({ success: true });
   }),
 }));
 
@@ -148,6 +183,8 @@ describe('SinglePrompt', () => {
   afterEach(() => {
     stderrWriteSpy?.mockRestore();
     stderrWriteSpy = null;
+    stdoutWriteSpy?.mockRestore();
+    stdoutWriteSpy = null;
   });
 
   it('shows spinner while loading config in verbose mode', () => {
@@ -252,5 +289,181 @@ describe('SinglePrompt', () => {
     expect(() => {
       render(<SinglePrompt prompt="test" />);
     }).not.toThrow();
+  });
+
+  describe('slash command handling', () => {
+    beforeEach(() => {
+      // Reset executeCommand mock
+      mockExecuteCommand.mockReset();
+    });
+
+    it('executes custom command and uses prompt for agent', async () => {
+      // Mock custom command that returns a prompt
+      mockExecuteCommand.mockResolvedValue({
+        success: true,
+        customCommandPrompt: 'Hello World! How are you?',
+        customCommandName: 'greet',
+      });
+
+      const { lastFrame } = render(<SinglePrompt prompt="/greet World" />);
+
+      // Wait for async operations
+      const maxWait = 2000;
+      const interval = 50;
+      let elapsed = 0;
+      while (elapsed < maxWait) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, interval);
+        });
+        elapsed += interval;
+        const frame = lastFrame();
+        // Agent mock returns "Hello, world!" - the custom command transforms the prompt
+        // but the agent response is still the mock response
+        if (frame !== undefined && frame.includes('Hello, world!')) break;
+      }
+
+      // Verify executeCommand was called with the slash command
+      // Note: The context object structure may vary based on mocking, just verify the call happened
+      expect(mockExecuteCommand).toHaveBeenCalledWith(
+        '/greet World',
+        expect.objectContaining({ exit: expect.any(Function) })
+      );
+    });
+
+    it('handles built-in command (/help) and exits without agent', async () => {
+      // /help is handled directly without config, exits successfully
+      // Note: Help output goes to context.onOutput, not rendered output
+      const { lastFrame } = render(<SinglePrompt prompt="/help" />);
+
+      // Wait for async operations
+      await new Promise((resolve) => {
+        setTimeout(resolve, 300);
+      });
+
+      // /help completes successfully, output goes through context.onOutput
+      // In non-verbose mode, render is empty after completion
+      const frame = lastFrame();
+      expect(frame?.trim()).toBe(''); // Clean exit, output was to context.onOutput
+    });
+
+    it('handles unknown command with error', async () => {
+      // Mock unknown command error
+      mockExecuteCommand.mockResolvedValue({
+        success: false,
+        message: 'Unknown command: /unknown',
+      });
+
+      render(<SinglePrompt prompt="/unknown" />);
+
+      // Wait for async operations
+      await new Promise((resolve) => {
+        setTimeout(resolve, 300);
+      });
+
+      // Error should be written to stderr
+      expect(stderrWriteSpy).toHaveBeenCalled();
+    });
+
+    it('passes regular prompts to agent without command processing', async () => {
+      // Regular prompt - executeCommand returns undefined (not a command)
+      mockExecuteCommand.mockResolvedValue(undefined);
+
+      const { lastFrame } = render(<SinglePrompt prompt="What is TypeScript?" />);
+
+      // Wait for async operations
+      const maxWait = 2000;
+      const interval = 50;
+      let elapsed = 0;
+      while (elapsed < maxWait) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, interval);
+        });
+        elapsed += interval;
+        const frame = lastFrame();
+        if (frame !== undefined && frame.includes('Hello, world!')) break;
+      }
+
+      // executeCommand should not be called for non-slash commands
+      expect(mockExecuteCommand).not.toHaveBeenCalled();
+
+      // Should show agent response
+      expect(lastFrame()).toContain('Hello, world!');
+    });
+
+    it('shows processing spinner for commands in verbose mode', async () => {
+      // Slow command execution for a command that requires config (not /help)
+      mockExecuteCommand.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            setTimeout(() => {
+              resolve({
+                success: true,
+                message: 'Done',
+              });
+            }, 200);
+          })
+      );
+
+      // Use /telemetry which requires config loading
+      const { lastFrame } = render(<SinglePrompt prompt="/telemetry status" verbose={true} />);
+
+      // Should show processing spinner while command executes
+      // Need to wait for config to load first
+      await new Promise((resolve) => {
+        setTimeout(resolve, 100);
+      });
+
+      const frame = lastFrame();
+      // In verbose mode, should show processing message
+      expect(frame).toContain('Processing');
+    });
+
+    it('blocks shell commands for security', async () => {
+      // Shell commands should be blocked in prompt mode
+      render(<SinglePrompt prompt="!ls -la" />);
+
+      // Wait for async operations
+      await new Promise((resolve) => {
+        setTimeout(resolve, 100);
+      });
+
+      // Error should be written to stderr
+      expect(stderrWriteSpy).toHaveBeenCalled();
+    });
+
+    it('handles // escape for literal slashes', async () => {
+      // "//etc/hosts" should be sent to agent as "/etc/hosts"
+      const { lastFrame } = render(<SinglePrompt prompt="//etc/hosts" />);
+
+      // Wait for async operations
+      const maxWait = 2000;
+      const interval = 50;
+      let elapsed = 0;
+      while (elapsed < maxWait) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, interval);
+        });
+        elapsed += interval;
+        const frame = lastFrame();
+        if (frame !== undefined && frame.includes('Hello, world!')) break;
+      }
+
+      // Agent should be called (// escape sends to agent, not as command)
+      // Mock agent returns "Hello, world!"
+      expect(lastFrame()).toContain('Hello, world!');
+    });
+
+    it('rejects unsupported commands (/save, /resume, /clear)', async () => {
+      // These commands don't make sense in prompt mode
+      render(<SinglePrompt prompt="/save" />);
+
+      // Wait for async operations
+      await new Promise((resolve) => {
+        setTimeout(resolve, 100);
+      });
+
+      // Error should be written to stderr
+      expect(stderrWriteSpy).toHaveBeenCalled();
+    });
   });
 });
