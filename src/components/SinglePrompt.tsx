@@ -120,8 +120,7 @@ export function SinglePrompt({
    */
   async function processSlashCommand(
     input: string,
-    config: AppConfig | null,
-    _verboseMode: boolean
+    config: AppConfig | null
   ): Promise<{ result: CommandResult | undefined; shouldContinueToAgent: boolean }> {
     // Create a CLI context for command execution
     // Override exit to not actually exit (we handle exit via state/useApp)
@@ -160,7 +159,7 @@ export function SinglePrompt({
     async function execute(): Promise<void> {
       // Handle // escape: "//foo" becomes "/foo" (literal slash, not a command)
       let processedPrompt = prompt;
-      if (prompt.startsWith('//')) {
+      if (prompt.trim().startsWith('//')) {
         const unescaped = unescapeSlash(prompt);
         if (unescaped !== undefined) {
           processedPrompt = unescaped;
@@ -190,7 +189,7 @@ export function SinglePrompt({
 
       // Handle /help before config loading (doesn't need config)
       if (isCommand) {
-        const commandName = processedPrompt.split(' ')[0]?.toLowerCase() ?? '';
+        const commandName = processedPrompt.split(/\s+/)[0]?.toLowerCase() ?? '';
         const commandArgs = processedPrompt.slice(commandName.length).trim();
 
         // Check for unsupported commands in prompt mode
@@ -210,7 +209,7 @@ export function SinglePrompt({
         }
 
         // Handle /help without config
-        if (commandName === '/help' || commandName === '?' || commandName === 'help') {
+        if (commandName === '/help') {
           const context: CommandContext = {
             ...createCliContextWithConfig(null),
             exit: () => {
@@ -228,7 +227,7 @@ export function SinglePrompt({
         }
 
         // Handle /exit without config
-        if (commandName === '/exit' || commandName === '/quit' || commandName === 'q') {
+        if (commandName === '/exit' || commandName === '/quit') {
           setState((s) => ({
             ...s,
             phase: 'done',
@@ -285,7 +284,7 @@ export function SinglePrompt({
       if (isCommand) {
         // Process slash command before agent execution
         if (verbose === true) {
-          const commandName = processedPrompt.split(' ')[0] ?? processedPrompt;
+          const commandName = processedPrompt.split(/\s+/)[0] ?? processedPrompt;
           setState((s) => ({
             ...s,
             phase: 'processing-command',
@@ -295,8 +294,7 @@ export function SinglePrompt({
 
         const { result: cmdResult, shouldContinueToAgent } = await processSlashCommand(
           processedPrompt,
-          config,
-          verbose === true
+          config
         );
 
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- mountedRef may change during await

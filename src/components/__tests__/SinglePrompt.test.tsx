@@ -41,6 +41,20 @@ jest.unstable_mockModule('../../cli/cli-context.js', () => ({
   createCliContextWithConfig: mockCreateCliContextWithConfig,
 }));
 
+// Create mock functions for SessionManager methods
+// These will be shared across all SessionManager instances
+// Initialize with default return values
+const sessionManagerMocks = {
+  getLastSession: jest.fn<() => Promise<string | null>>().mockResolvedValue(null),
+  loadSession: jest.fn<(sessionId: string) => Promise<unknown>>().mockResolvedValue(null),
+};
+
+// Create a mock SessionManager class
+class MockSessionManager {
+  getLastSession = sessionManagerMocks.getLastSession;
+  loadSession = sessionManagerMocks.loadSession;
+}
+
 // Mock utils module
 jest.unstable_mockModule('../../utils/index.js', () => ({
   resolveModelName: jest.fn((providerName: string) => {
@@ -48,10 +62,7 @@ jest.unstable_mockModule('../../utils/index.js', () => ({
     if (providerName === 'foundry') return 'test-model-deployment';
     return 'gpt-4o';
   }),
-  SessionManager: jest.fn().mockImplementation(() => ({
-    getLastSession: jest.fn().mockResolvedValue(null),
-    loadSession: jest.fn().mockResolvedValue(null),
-  })),
+  SessionManager: MockSessionManager,
   getAgentHome: jest.fn(() => '/test/.agent'),
 }));
 
@@ -163,6 +174,7 @@ const mockConfig = {
   memory: { enabled: false },
   skills: { plugins: [], disabledBundled: [], enabledBundled: [] },
   retry: { maxRetries: 3, baseDelay: 1000, maxDelay: 30000, multiplier: 2.0 },
+  session: { autoSave: true, maxSessions: 50 },
 };
 
 describe('SinglePrompt', () => {
@@ -178,6 +190,9 @@ describe('SinglePrompt', () => {
       result: mockConfig,
       message: 'Config loaded',
     });
+    // Default: no last session
+    sessionManagerMocks.getLastSession.mockResolvedValue(null);
+    sessionManagerMocks.loadSession.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -464,6 +479,193 @@ describe('SinglePrompt', () => {
 
       // Error should be written to stderr
       expect(stderrWriteSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('resumeSession functionality', () => {
+    it('loads last session when resumeSession=true and session exists', async () => {
+      // Mock session data
+      const mockSessionId = 'session-123';
+      const mockSession = {
+        id: mockSessionId,
+        timestamp: new Date('2024-01-01').toISOString(),
+        messages: [
+          { role: 'user', content: 'Previous question' },
+          { role: 'assistant', content: 'Previous answer' },
+        ],
+      };
+
+      // Setup mocks to return a session
+      sessionManagerMocks.getLastSession.mockResolvedValue(mockSessionId);
+      sessionManagerMocks.loadSession.mockResolvedValue(mockSession);
+
+      const { lastFrame } = render(<SinglePrompt prompt="New question" resumeSession={true} />);
+
+      // Wait for async operations
+      const maxWait = 2000;
+      const interval = 50;
+      let elapsed = 0;
+      while (elapsed < maxWait) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, interval);
+        });
+        elapsed += interval;
+        const frame = lastFrame();
+        if (frame !== undefined && frame.includes('Hello, world!')) break;
+      }
+
+      // Verify SessionManager methods were called correctly
+      expect(sessionManagerMocks.getLastSession).toHaveBeenCalledTimes(1);
+      expect(sessionManagerMocks.loadSession).toHaveBeenCalledWith(mockSessionId);
+
+      // Should show agent response (agent was called with the loaded history)
+      expect(lastFrame()).toContain('Hello, world!');
+    });
+
+    it('loads last session in verbose mode and shows session resume message', async () => {
+      // Mock session data
+      const mockSessionId = 'session-456';
+      const mockSession = {
+        id: mockSessionId,
+        timestamp: new Date('2024-01-01').toISOString(),
+        messages: [
+          { role: 'user', content: 'Previous question' },
+          { role: 'assistant', content: 'Previous answer' },
+        ],
+      };
+
+      // Setup mocks to return a session
+      sessionManagerMocks.getLastSession.mockResolvedValue(mockSessionId);
+      sessionManagerMocks.loadSession.mockResolvedValue(mockSession);
+
+      const { lastFrame } = render(
+        <SinglePrompt prompt="New question" resumeSession={true} verbose={true} />
+      );
+
+      // Wait for async operations
+      const maxWait = 2000;
+      const interval = 50;
+      let elapsed = 0;
+      while (elapsed < maxWait) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, interval);
+        });
+        elapsed += interval;
+        const frame = lastFrame();
+        if (frame !== undefined && frame.includes('Hello, world!')) break;
+      }
+
+      // Verify SessionManager methods were called correctly
+      expect(sessionManagerMocks.getLastSession).toHaveBeenCalledTimes(1);
+      expect(sessionManagerMocks.loadSession).toHaveBeenCalledWith(mockSessionId);
+
+      // In verbose mode, session resume message is written to stderr
+      expect(stderrWriteSpy).toHaveBeenCalledWith(`[session] Resuming session: ${mockSessionId}\n`);
+
+      // Should show agent response
+      expect(lastFrame()).toContain('Hello, world!');
+    });
+
+    it('runs without additional history when resumeSession=true but no session exists', async () => {
+      // Setup mocks to indicate no session exists
+      sessionManagerMocks.getLastSession.mockResolvedValue(null);
+
+      const { lastFrame } = render(<SinglePrompt prompt="First question" resumeSession={true} />);
+
+      // Wait for async operations
+      const maxWait = 2000;
+      const interval = 50;
+      let elapsed = 0;
+      while (elapsed < maxWait) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, interval);
+        });
+        elapsed += interval;
+        const frame = lastFrame();
+        if (frame !== undefined && frame.includes('Hello, world!')) break;
+      }
+
+      // Verify SessionManager.getLastSession was called
+      expect(sessionManagerMocks.getLastSession).toHaveBeenCalledTimes(1);
+      // loadSession should not be called when getLastSession returns null
+      expect(sessionManagerMocks.loadSession).not.toHaveBeenCalled();
+
+      // Should show agent response (agent was called without history)
+      expect(lastFrame()).toContain('Hello, world!');
+    });
+
+    it('does not load session when resumeSession=false', async () => {
+      const { lastFrame } = render(<SinglePrompt prompt="Question" resumeSession={false} />);
+
+      // Wait for async operations
+      const maxWait = 2000;
+      const interval = 50;
+      let elapsed = 0;
+      while (elapsed < maxWait) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, interval);
+        });
+        elapsed += interval;
+        const frame = lastFrame();
+        if (frame !== undefined && frame.includes('Hello, world!')) break;
+      }
+
+      // Verify SessionManager methods were NOT called
+      expect(sessionManagerMocks.getLastSession).not.toHaveBeenCalled();
+      expect(sessionManagerMocks.loadSession).not.toHaveBeenCalled();
+
+      // Should show agent response
+      expect(lastFrame()).toContain('Hello, world!');
+    });
+
+    it('prioritizes initialHistory over resumeSession', async () => {
+      const mockSessionId = 'session-789';
+      const mockSession = {
+        id: mockSessionId,
+        timestamp: new Date('2024-01-01').toISOString(),
+        messages: [
+          { role: 'user', content: 'Session question' },
+          { role: 'assistant', content: 'Session answer' },
+        ],
+      };
+
+      // Setup mocks to return a session
+      sessionManagerMocks.getLastSession.mockResolvedValue(mockSessionId);
+      sessionManagerMocks.loadSession.mockResolvedValue(mockSession);
+
+      // Provide initialHistory - should be used instead of loading from session
+      const initialHistory = [
+        { role: 'user', content: 'Initial question' },
+        { role: 'assistant', content: 'Initial answer' },
+      ];
+
+      const { lastFrame } = render(
+        <SinglePrompt
+          prompt="Question"
+          resumeSession={true}
+          initialHistory={initialHistory as never}
+        />
+      );
+
+      // Wait for async operations
+      const maxWait = 2000;
+      const interval = 50;
+      let elapsed = 0;
+      while (elapsed < maxWait) {
+        await new Promise((resolve) => {
+          setTimeout(resolve, interval);
+        });
+        elapsed += interval;
+        const frame = lastFrame();
+        if (frame !== undefined && frame.includes('Hello, world!')) break;
+      }
+
+      // Verify SessionManager methods were NOT called (initialHistory takes precedence)
+      expect(sessionManagerMocks.getLastSession).not.toHaveBeenCalled();
+      expect(sessionManagerMocks.loadSession).not.toHaveBeenCalled();
+
+      // Should show agent response
+      expect(lastFrame()).toContain('Hello, world!');
     });
   });
 });
