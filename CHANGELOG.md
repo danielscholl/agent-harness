@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.22](https://github.com/danielscholl/agent-harness/compare/v0.3.21...v0.3.22) (2026-01-09)
+
+
+### Features
+
+* **cli:** enable slash command support in prompt mode ([1f5e841](https://github.com/danielscholl/agent-harness/commit/1f5e84176c5c6ce677c949e6ff47732c2e945256))
+* **cli:** enable slash command support in prompt mode ([37ec3df](https://github.com/danielscholl/agent-harness/commit/37ec3df751b64d55012c15a656ff3d2c6f482c8d))
+* **session:** implement resumeSession with last-session loading ([026e5b3](https://github.com/danielscholl/agent-harness/commit/026e5b3bd24e7eeda3c238027c04bd2491c8f239))
+
 ## [0.3.21](https://github.com/danielscholl/agent-harness/compare/v0.3.20...v0.3.21) (2026-01-08)
 
 
