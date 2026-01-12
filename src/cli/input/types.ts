@@ -15,13 +15,16 @@ export interface InputState {
 /** Keyboard shortcut identifiers */
 export type KeyboardShortcut =
   | 'escape'
-  | 'ctrl+d'
   | 'ctrl+c'
+  | 'ctrl+d'
+  | 'ctrl+v' // Clipboard paste
   | 'up'
   | 'down'
   | 'return'
+  | 'shift+return' // Multi-line newline
   | 'backspace'
-  | 'delete';
+  | 'delete'
+  | 'tab';
 
 /** Result of input processing */
 export interface InputResult {

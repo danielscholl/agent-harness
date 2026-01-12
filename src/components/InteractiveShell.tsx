@@ -23,7 +23,7 @@ import type { AutocompleteCommand } from './CommandAutocomplete.js';
 import { configInitHandler } from '../cli/commands/config.js';
 import { unescapeSlash } from '../cli/constants.js';
 import { InputHistory } from '../cli/input/index.js';
-import { MessageHistory, SessionManager, resolveModelName } from '../utils/index.js';
+import { MessageHistory, SessionManager, resolveModelName, readClipboard } from '../utils/index.js';
 import type { StoredMessage, SessionTokenUsage, SessionMetadata } from '../utils/index.js';
 import { SessionSelector } from './SessionSelector.js';
 import { resumeHandler } from '../cli/commands/session.js';
@@ -147,6 +147,8 @@ interface PhaseState {
  */
 interface ShellState {
   input: string;
+  /** Cursor position within input (index into string) */
+  cursorPosition: number;
   isProcessing: boolean;
   spinnerMessage: string;
   streamingOutput: string;
@@ -217,6 +219,7 @@ export function InteractiveShell({
 
   const [state, setState] = useState<ShellState>({
     input: '',
+    cursorPosition: 0,
     isProcessing: false,
     spinnerMessage: '',
     streamingOutput: '',
@@ -478,6 +481,7 @@ export function InteractiveShell({
               ...s,
               promptState: { question, resolve },
               input: '',
+              cursorPosition: 0,
             }));
           });
         },
@@ -627,7 +631,7 @@ export function InteractiveShell({
     // Check if this is a command (after unescape, so // is not a command)
     if (isCommand(query)) {
       // Clear input first
-      setState((s) => ({ ...s, input: '' }));
+      setState((s) => ({ ...s, input: '', cursorPosition: 0 }));
 
       // Add placeholder system message for command output
       addSystemMessage('');
@@ -669,6 +673,7 @@ export function InteractiveShell({
               ...s,
               promptState: { question, resolve },
               input: '', // Clear any existing input
+              cursorPosition: 0,
             }));
           });
         },
@@ -847,6 +852,7 @@ export function InteractiveShell({
           setState((s) => ({
             ...s,
             input: '',
+            cursorPosition: 0,
             messages: [
               ...s.messages,
               { role: 'user' as const, content: displayMessage, timestamp: new Date() },
@@ -886,6 +892,7 @@ export function InteractiveShell({
       setState((s) => ({
         ...s,
         input: '',
+        cursorPosition: 0,
         messages: [...s.messages, { role: 'user' as const, content: query, timestamp: new Date() }],
         isProcessing: true,
         spinnerMessage: 'Thinking...',
@@ -1186,6 +1193,23 @@ export function InteractiveShell({
       return;
     }
 
+    // Handle Ctrl+V for clipboard paste
+    // Check both: ASCII control character 0x16 AND key.ctrl + 'v' (terminal-dependent)
+    if (input === '\x16' || (key.ctrl && input.toLowerCase() === 'v')) {
+      const clipboardContent = readClipboard();
+      if (clipboardContent !== null && clipboardContent.trim() !== '') {
+        historyRef.current.reset();
+        setState((s) => ({
+          ...s,
+          input:
+            s.input.slice(0, s.cursorPosition) + clipboardContent + s.input.slice(s.cursorPosition),
+          cursorPosition: s.cursorPosition + clipboardContent.length,
+          autocompleteIndex: 0,
+        }));
+      }
+      return;
+    }
+
     // Don't process input until config is loaded
     // Use stateRef to avoid stale closure issues with config loading
     const currentState = stateRef.current;
@@ -1196,22 +1220,40 @@ export function InteractiveShell({
       if (key.escape) {
         // Cancel prompt with empty response
         const { resolve } = state.promptState;
-        setState((s) => ({ ...s, promptState: null, input: '' }));
+        setState((s) => ({ ...s, promptState: null, input: '', cursorPosition: 0 }));
         resolve('');
         return;
       }
-      if (key.return) {
+      // Handle Shift+Enter for newline in prompt mode
+      // Check both: \r without key.return flag AND key.shift + key.return (CSI u terminals)
+      // NOTE: Unlike main input mode, prompt mode does not track cursor position.
+      // Newlines are always appended to the end, and cursor stays at the end.
+      // This is intentional - prompt mode is simpler and doesn't support cursor navigation.
+      if ((input === '\r' && !key.return) || (key.shift && key.return)) {
+        setState((s) => ({ ...s, input: s.input + '\n' }));
+        return;
+      }
+      if (key.return && !key.shift) {
         // Resolve prompt with current input
         const { resolve } = state.promptState;
         const response = state.input;
-        setState((s) => ({ ...s, promptState: null, input: '' }));
+        setState((s) => ({ ...s, promptState: null, input: '', cursorPosition: 0 }));
         resolve(response);
         return;
       }
-      // Handle text input in prompt mode
+      // Handle Ctrl+V for clipboard paste in prompt mode
+      // Check both: ASCII control character 0x16 AND key.ctrl + 'v' (terminal-dependent)
+      if (input === '\x16' || (key.ctrl && input.toLowerCase() === 'v')) {
+        const clipboardContent = readClipboard();
+        if (clipboardContent !== null && clipboardContent.trim() !== '') {
+          setState((s) => ({ ...s, input: s.input + clipboardContent }));
+        }
+        return;
+      }
+      // Handle text input in prompt mode (including multi-character paste)
       if (key.backspace || key.delete) {
         setState((s) => ({ ...s, input: s.input.slice(0, -1) }));
-      } else if (!key.ctrl && !key.meta && input.length === 1) {
+      } else if (!key.ctrl && !key.meta && input.length >= 1) {
         setState((s) => ({ ...s, input: s.input + input }));
       }
       return;
@@ -1328,12 +1370,33 @@ export function InteractiveShell({
 
     // ESC to clear input (or close autocomplete)
     if (key.escape) {
-      setState((s) => ({ ...s, input: '', autocompleteIndex: 0 }));
+      setState((s) => ({ ...s, input: '', cursorPosition: 0, autocompleteIndex: 0 }));
       historyRef.current.reset();
       return;
     }
 
-    // Up arrow - navigate autocomplete or history
+    // Check if input is multi-line (contains newlines)
+    const isMultiLineInput = state.input.includes('\n');
+
+    // Left arrow - move cursor left
+    if (key.leftArrow) {
+      setState((s) => ({
+        ...s,
+        cursorPosition: Math.max(0, s.cursorPosition - 1),
+      }));
+      return;
+    }
+
+    // Right arrow - move cursor right
+    if (key.rightArrow) {
+      setState((s) => ({
+        ...s,
+        cursorPosition: Math.min(s.input.length, s.cursorPosition + 1),
+      }));
+      return;
+    }
+
+    // Up arrow - navigate autocomplete, history, or move cursor up in multi-line
     if (key.upArrow) {
       if (hasAutocomplete) {
         // Navigate autocomplete up
@@ -1342,17 +1405,38 @@ export function InteractiveShell({
           autocompleteIndex:
             s.autocompleteIndex > 0 ? s.autocompleteIndex - 1 : filteredCommands.length - 1,
         }));
+      } else if (isMultiLineInput) {
+        // Move cursor to previous line or navigate history if on first line
+        const linesBeforeCursor = state.input.slice(0, state.cursorPosition).split('\n');
+        if (linesBeforeCursor.length <= 1) {
+          // On first line, navigate history instead
+          const previousEntry = historyRef.current.previous(state.input);
+          if (previousEntry !== undefined) {
+            setState((s) => ({ ...s, input: previousEntry, cursorPosition: previousEntry.length }));
+          }
+        } else {
+          // Move cursor to previous line (same column or end of line if shorter)
+          setState((s) => {
+            const lines = s.input.slice(0, s.cursorPosition).split('\n');
+            const currentLineStart = s.cursorPosition - (lines[lines.length - 1]?.length ?? 0);
+            const currentCol = s.cursorPosition - currentLineStart;
+            const prevLineStart = currentLineStart - 1 - (lines[lines.length - 2]?.length ?? 0);
+            const prevLineLength = lines[lines.length - 2]?.length ?? 0;
+            const newCol = Math.min(currentCol, prevLineLength);
+            return { ...s, cursorPosition: prevLineStart + newCol };
+          });
+        }
       } else {
-        // Navigate history backward
+        // Navigate history backward (only when not in multi-line mode)
         const previousEntry = historyRef.current.previous(state.input);
         if (previousEntry !== undefined) {
-          setState((s) => ({ ...s, input: previousEntry }));
+          setState((s) => ({ ...s, input: previousEntry, cursorPosition: previousEntry.length }));
         }
       }
       return;
     }
 
-    // Down arrow - navigate autocomplete or history
+    // Down arrow - navigate autocomplete, history, or move cursor down in multi-line
     if (key.downArrow) {
       if (hasAutocomplete) {
         // Navigate autocomplete down
@@ -1361,11 +1445,29 @@ export function InteractiveShell({
           autocompleteIndex:
             s.autocompleteIndex < filteredCommands.length - 1 ? s.autocompleteIndex + 1 : 0,
         }));
+      } else if (isMultiLineInput) {
+        // Move cursor to next line (same column or end of line if shorter)
+        setState((s) => {
+          const beforeCursor = s.input.slice(0, s.cursorPosition);
+          const afterCursor = s.input.slice(s.cursorPosition);
+          const linesBeforeCursor = beforeCursor.split('\n');
+          const currentCol = linesBeforeCursor[linesBeforeCursor.length - 1]?.length ?? 0;
+          const nextNewline = afterCursor.indexOf('\n');
+          if (nextNewline === -1) {
+            // Already on last line, move to end
+            return { ...s, cursorPosition: s.input.length };
+          }
+          const restAfterNewline = afterCursor.slice(nextNewline + 1);
+          const nextLineEnd = restAfterNewline.indexOf('\n');
+          const nextLineLength = nextLineEnd === -1 ? restAfterNewline.length : nextLineEnd;
+          const newCol = Math.min(currentCol, nextLineLength);
+          return { ...s, cursorPosition: s.cursorPosition + nextNewline + 1 + newCol };
+        });
       } else {
-        // Navigate history forward
+        // Navigate history forward (only when not in multi-line mode)
         const nextEntry = historyRef.current.next();
         if (nextEntry !== undefined) {
-          setState((s) => ({ ...s, input: nextEntry }));
+          setState((s) => ({ ...s, input: nextEntry, cursorPosition: nextEntry.length }));
         }
       }
       return;
@@ -1375,16 +1477,31 @@ export function InteractiveShell({
     if (key.tab && hasAutocomplete) {
       const selectedCommand = filteredCommands[state.autocompleteIndex];
       if (selectedCommand !== undefined) {
+        const newInput = `/${selectedCommand.name} `;
         setState((s) => ({
           ...s,
-          input: `/${selectedCommand.name} `,
+          input: newInput,
+          cursorPosition: newInput.length,
           autocompleteIndex: 0,
         }));
       }
       return;
     }
 
-    if (key.return) {
+    // Handle Shift+Enter for newline (don't submit)
+    // Check both: \r without key.return flag AND key.shift + key.return (CSI u terminals)
+    if ((input === '\r' && !key.return) || (key.shift && key.return)) {
+      historyRef.current.reset();
+      setState((s) => ({
+        ...s,
+        input: s.input.slice(0, s.cursorPosition) + '\n' + s.input.slice(s.cursorPosition),
+        cursorPosition: s.cursorPosition + 1,
+        autocompleteIndex: 0,
+      }));
+      return;
+    }
+
+    if (key.return && !key.shift) {
       // If autocomplete is showing and has a selection, select it first
       if (hasAutocomplete && filteredCommands.length > 0) {
         const selectedCommand = filteredCommands[state.autocompleteIndex];
@@ -1393,9 +1510,11 @@ export function InteractiveShell({
           if (autocompleteFilter.toLowerCase() === selectedCommand.name.toLowerCase()) {
             void handleSubmit();
           } else {
+            const newInput = `/${selectedCommand.name} `;
             setState((s) => ({
               ...s,
-              input: `/${selectedCommand.name} `,
+              input: newInput,
+              cursorPosition: newInput.length,
               autocompleteIndex: 0,
             }));
           }
@@ -1404,13 +1523,29 @@ export function InteractiveShell({
       }
       void handleSubmit();
     } else if (key.backspace || key.delete) {
-      // Reset history navigation and autocomplete index on edit
+      // Delete character before cursor (backspace behavior)
+      // Both backspace and delete keys delete backward for intuitive typing
+      // On Mac, the "delete" key sends key.delete but users expect backspace behavior
       historyRef.current.reset();
-      setState((s) => ({ ...s, input: s.input.slice(0, -1), autocompleteIndex: 0 }));
-    } else if (!key.ctrl && !key.meta && input.length === 1) {
-      // Reset history navigation and autocomplete index on edit
+      setState((s) => {
+        if (s.cursorPosition === 0) return s;
+        return {
+          ...s,
+          input: s.input.slice(0, s.cursorPosition - 1) + s.input.slice(s.cursorPosition),
+          cursorPosition: s.cursorPosition - 1,
+          autocompleteIndex: 0,
+        };
+      });
+    } else if (!key.ctrl && !key.meta && input.length >= 1) {
+      // Handle both single character input and multi-character paste
+      // Insert at cursor position
       historyRef.current.reset();
-      setState((s) => ({ ...s, input: s.input + input, autocompleteIndex: 0 }));
+      setState((s) => ({
+        ...s,
+        input: s.input.slice(0, s.cursorPosition) + input + s.input.slice(s.cursorPosition),
+        cursorPosition: s.cursorPosition + input.length,
+        autocompleteIndex: 0,
+      }));
     }
   });
 
@@ -1672,18 +1807,55 @@ export function InteractiveShell({
         (state.sessionSelection === null || !state.sessionSelection.active) &&
         state.messages.length > 0 && <PromptDivider cwd={process.cwd()} />}
 
-      {/* Input prompt with autocomplete */}
+      {/* Input prompt with autocomplete - supports multi-line via Shift+Enter */}
       {!state.isProcessing &&
         state.promptState === null &&
         (state.sessionSelection === null || !state.sessionSelection.active) && (
           <>
-            <Box>
-              <Text color="cyan">{'> '}</Text>
-              <Text>{state.input}</Text>
-              <Text color="cyan">{'█'}</Text>
+            <Box flexDirection="column">
+              {(() => {
+                const lines = state.input.split('\n');
+                // Calculate cursor line and column
+                let charCount = 0;
+                let cursorLine = 0;
+                let cursorCol = state.cursorPosition;
+                for (let i = 0; i < lines.length; i++) {
+                  const lineLength = lines[i]?.length ?? 0;
+                  if (charCount + lineLength >= state.cursorPosition) {
+                    cursorLine = i;
+                    cursorCol = state.cursorPosition - charCount;
+                    break;
+                  }
+                  charCount += lineLength + 1; // +1 for newline
+                  cursorLine = i + 1;
+                  cursorCol = 0;
+                }
+                return lines.map((line, index) => (
+                  <Box key={index}>
+                    <Text color="cyan">{index === 0 ? '> ' : '. '}</Text>
+                    {index === cursorLine ? (
+                      <>
+                        {/* Underline cursor: shows position without implying "delete this" */}
+                        <Text>{line.slice(0, cursorCol)}</Text>
+                        {cursorCol < line.length ? (
+                          <Text underline color="cyan">
+                            {line[cursorCol]}
+                          </Text>
+                        ) : (
+                          <Text color="cyan">{'█'}</Text>
+                        )}
+                        <Text>{line.slice(cursorCol + 1)}</Text>
+                      </>
+                    ) : (
+                      <Text>{line}</Text>
+                    )}
+                  </Box>
+                ));
+              })()}
             </Box>
-            {/* Command autocomplete - show when typing slash commands */}
-            {state.input.startsWith('/') &&
+            {/* Command autocomplete - show when typing slash commands (single line only) */}
+            {!state.input.includes('\n') &&
+              state.input.startsWith('/') &&
               !state.input.startsWith('//') &&
               state.input.indexOf(' ') === -1 && (
                 <CommandAutocomplete

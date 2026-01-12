@@ -106,6 +106,9 @@ const mockResolveModelName = (
   return model !== undefined ? model : 'gpt-4o';
 };
 
+// Mock clipboard utility
+const mockReadClipboard = jest.fn<() => string | null>().mockReturnValue(null);
+
 // Mock utils module for SessionManager
 jest.unstable_mockModule('../../utils/index.js', () => ({
   SessionManager: class MockSessionManager {
@@ -136,6 +139,7 @@ jest.unstable_mockModule('../../utils/index.js', () => ({
   },
   resolveModelName: mockResolveModelName,
   isProviderConfigured: () => true,
+  readClipboard: mockReadClipboard,
 }));
 
 // Mock Agent that invokes callbacks properly
