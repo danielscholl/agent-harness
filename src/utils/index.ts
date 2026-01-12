@@ -36,3 +36,5 @@ export {
 export { resolveModelName, isProviderConfigured } from './model.js';
 
 export { getAgentHome, getPromptsDir, getBundledSkillsDir } from './paths.js';
+
+export { readClipboard } from './clipboard.js';

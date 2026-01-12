@@ -233,4 +233,53 @@ describe('InputHistory', () => {
       expect(history.getAll()).toEqual(['old', 'new']);
     });
   });
+
+  describe('multi-line input support', () => {
+    it('should store entries with newlines', () => {
+      history.add('line1\nline2\nline3');
+
+      expect(history.getAll()).toEqual(['line1\nline2\nline3']);
+    });
+
+    it('should navigate multi-line entries correctly', () => {
+      history.add('single line');
+      history.add('multi\nline\nentry');
+      history.add('another single');
+
+      expect(history.previous('')).toBe('another single');
+      expect(history.previous('')).toBe('multi\nline\nentry');
+      expect(history.previous('')).toBe('single line');
+    });
+
+    it('should preserve multi-line temp input', () => {
+      history.add('command1');
+
+      const multiLineCurrent = 'typing\nmultiple\nlines';
+      history.previous(multiLineCurrent);
+      const result = history.next();
+
+      expect(result).toBe(multiLineCurrent);
+    });
+
+    it('should not add duplicate multi-line entries', () => {
+      history.add('line1\nline2');
+      history.add('line1\nline2');
+
+      expect(history.getAll()).toEqual(['line1\nline2']);
+    });
+
+    it('should handle entries with only newlines after trim', () => {
+      // Entries that are only whitespace/newlines should not be added
+      history.add('  \n  \n  ');
+
+      expect(history.getAll()).toEqual([]);
+    });
+
+    it('should trim leading/trailing whitespace but preserve internal newlines', () => {
+      history.add('  line1\nline2  ');
+
+      // trim() removes leading/trailing whitespace including newlines at edges
+      expect(history.getAll()).toEqual(['line1\nline2']);
+    });
+  });
 });
