@@ -1197,7 +1197,7 @@ export function InteractiveShell({
     // Check both: ASCII control character 0x16 AND key.ctrl + 'v' (terminal-dependent)
     if (input === '\x16' || (key.ctrl && input.toLowerCase() === 'v')) {
       const clipboardContent = readClipboard();
-      if (clipboardContent !== null && clipboardContent !== '') {
+      if (clipboardContent !== null && clipboardContent.trim() !== '') {
         historyRef.current.reset();
         setState((s) => ({
           ...s,
@@ -1226,6 +1226,9 @@ export function InteractiveShell({
       }
       // Handle Shift+Enter for newline in prompt mode
       // Check both: \r without key.return flag AND key.shift + key.return (CSI u terminals)
+      // NOTE: Unlike main input mode, prompt mode does not track cursor position.
+      // Newlines are always appended to the end, and cursor stays at the end.
+      // This is intentional - prompt mode is simpler and doesn't support cursor navigation.
       if ((input === '\r' && !key.return) || (key.shift && key.return)) {
         setState((s) => ({ ...s, input: s.input + '\n' }));
         return;
@@ -1242,7 +1245,7 @@ export function InteractiveShell({
       // Check both: ASCII control character 0x16 AND key.ctrl + 'v' (terminal-dependent)
       if (input === '\x16' || (key.ctrl && input.toLowerCase() === 'v')) {
         const clipboardContent = readClipboard();
-        if (clipboardContent !== null && clipboardContent !== '') {
+        if (clipboardContent !== null && clipboardContent.trim() !== '') {
           setState((s) => ({ ...s, input: s.input + clipboardContent }));
         }
         return;
@@ -1403,20 +1406,26 @@ export function InteractiveShell({
             s.autocompleteIndex > 0 ? s.autocompleteIndex - 1 : filteredCommands.length - 1,
         }));
       } else if (isMultiLineInput) {
-        // Move cursor to previous line (same column or end of line if shorter)
-        setState((s) => {
-          const lines = s.input.slice(0, s.cursorPosition).split('\n');
-          if (lines.length <= 1) {
-            // Already on first line, move to start
-            return { ...s, cursorPosition: 0 };
+        // Move cursor to previous line or navigate history if on first line
+        const linesBeforeCursor = state.input.slice(0, state.cursorPosition).split('\n');
+        if (linesBeforeCursor.length <= 1) {
+          // On first line, navigate history instead
+          const previousEntry = historyRef.current.previous(state.input);
+          if (previousEntry !== undefined) {
+            setState((s) => ({ ...s, input: previousEntry, cursorPosition: previousEntry.length }));
           }
-          const currentLineStart = s.cursorPosition - (lines[lines.length - 1]?.length ?? 0);
-          const currentCol = s.cursorPosition - currentLineStart;
-          const prevLineStart = currentLineStart - 1 - (lines[lines.length - 2]?.length ?? 0);
-          const prevLineLength = lines[lines.length - 2]?.length ?? 0;
-          const newCol = Math.min(currentCol, prevLineLength);
-          return { ...s, cursorPosition: prevLineStart + newCol };
-        });
+        } else {
+          // Move cursor to previous line (same column or end of line if shorter)
+          setState((s) => {
+            const lines = s.input.slice(0, s.cursorPosition).split('\n');
+            const currentLineStart = s.cursorPosition - (lines[lines.length - 1]?.length ?? 0);
+            const currentCol = s.cursorPosition - currentLineStart;
+            const prevLineStart = currentLineStart - 1 - (lines[lines.length - 2]?.length ?? 0);
+            const prevLineLength = lines[lines.length - 2]?.length ?? 0;
+            const newCol = Math.min(currentCol, prevLineLength);
+            return { ...s, cursorPosition: prevLineStart + newCol };
+          });
+        }
       } else {
         // Navigate history backward (only when not in multi-line mode)
         const previousEntry = historyRef.current.previous(state.input);

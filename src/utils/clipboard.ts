@@ -20,34 +20,52 @@ import { platform } from 'os';
 export function readClipboard(): string | null {
   try {
     const os = platform();
-    let cmd: string;
+
+    // Use require() for child_process to avoid ESM module loading issues in tests
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { execSync, execFileSync } = require('child_process') as typeof import('child_process');
+
+    let result: string;
 
     if (os === 'darwin') {
-      cmd = 'pbpaste';
+      result = execSync('pbpaste', {
+        encoding: 'utf8',
+        timeout: 1000,
+        stdio: ['pipe', 'pipe', 'ignore'],
+      });
     } else if (os === 'linux') {
       // Try xclip first, fall back to xsel
-      // Using shell to handle command-not-found gracefully
-      cmd = 'xclip -selection clipboard -o 2>/dev/null || xsel --clipboard --output 2>/dev/null';
+      // Using execFileSync to avoid shell execution and command injection risks
+      try {
+        result = execFileSync('xclip', ['-selection', 'clipboard', '-o'], {
+          encoding: 'utf8',
+          timeout: 1000,
+          stdio: ['pipe', 'pipe', 'ignore'],
+        });
+      } catch {
+        // xclip failed, try xsel
+        result = execFileSync('xsel', ['--clipboard', '--output'], {
+          encoding: 'utf8',
+          timeout: 1000,
+          stdio: ['pipe', 'pipe', 'ignore'],
+        });
+      }
     } else if (os === 'win32') {
       // PowerShell's Get-Clipboard works on Windows 10+
-      cmd = 'powershell -command "Get-Clipboard"';
+      // Security: Command is a fixed string with no user input, no shell injection risk
+      result = execSync('powershell -command "Get-Clipboard"', {
+        encoding: 'utf8',
+        timeout: 1000,
+        stdio: ['pipe', 'pipe', 'ignore'],
+      });
     } else {
       // Unsupported platform
       return null;
     }
 
-    // Use require() for child_process to avoid ESM module loading issues in tests
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { execSync } = require('child_process') as typeof import('child_process');
-
-    const result = execSync(cmd, {
-      encoding: 'utf8',
-      timeout: 1000, // 1 second timeout to avoid hanging
-      stdio: ['pipe', 'pipe', 'pipe'], // Suppress stderr
-    });
-
     // Normalize CRLF to LF for cross-platform consistency
-    return result.replace(/\r\n/g, '\n');
+    // Trim trailing whitespace/newlines for better usability
+    return result.replace(/\r\n/g, '\n').trimEnd();
   } catch {
     // Clipboard read failed (permissions, missing tools, empty clipboard, etc.)
     // Return null to indicate failure - callers should handle gracefully
