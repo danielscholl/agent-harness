@@ -46,7 +46,8 @@ export function readClipboard(): string | null {
       stdio: ['pipe', 'pipe', 'pipe'], // Suppress stderr
     });
 
-    return result;
+    // Normalize CRLF to LF for cross-platform consistency
+    return result.replace(/\r\n/g, '\n');
   } catch {
     // Clipboard read failed (permissions, missing tools, empty clipboard, etc.)
     // Return null to indicate failure - callers should handle gracefully

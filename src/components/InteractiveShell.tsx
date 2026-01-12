@@ -1194,12 +1194,18 @@ export function InteractiveShell({
     }
 
     // Handle Ctrl+V for clipboard paste
-    // Ctrl+V sends ASCII control character 0x16 (22) in terminals, not 'v'
-    if (input === '\x16') {
+    // Check both: ASCII control character 0x16 AND key.ctrl + 'v' (terminal-dependent)
+    if (input === '\x16' || (key.ctrl && input.toLowerCase() === 'v')) {
       const clipboardContent = readClipboard();
       if (clipboardContent !== null && clipboardContent !== '') {
         historyRef.current.reset();
-        setState((s) => ({ ...s, input: s.input + clipboardContent, autocompleteIndex: 0 }));
+        setState((s) => ({
+          ...s,
+          input:
+            s.input.slice(0, s.cursorPosition) + clipboardContent + s.input.slice(s.cursorPosition),
+          cursorPosition: s.cursorPosition + clipboardContent.length,
+          autocompleteIndex: 0,
+        }));
       }
       return;
     }
@@ -1219,12 +1225,12 @@ export function InteractiveShell({
         return;
       }
       // Handle Shift+Enter for newline in prompt mode
-      // Shift+Enter sends \r without key.return flag
-      if (input === '\r' && !key.return) {
+      // Check both: \r without key.return flag AND key.shift + key.return (CSI u terminals)
+      if ((input === '\r' && !key.return) || (key.shift && key.return)) {
         setState((s) => ({ ...s, input: s.input + '\n' }));
         return;
       }
-      if (key.return) {
+      if (key.return && !key.shift) {
         // Resolve prompt with current input
         const { resolve } = state.promptState;
         const response = state.input;
@@ -1233,8 +1239,8 @@ export function InteractiveShell({
         return;
       }
       // Handle Ctrl+V for clipboard paste in prompt mode
-      // Ctrl+V sends ASCII control character 0x16 (22) in terminals
-      if (input === '\x16') {
+      // Check both: ASCII control character 0x16 AND key.ctrl + 'v' (terminal-dependent)
+      if (input === '\x16' || (key.ctrl && input.toLowerCase() === 'v')) {
         const clipboardContent = readClipboard();
         if (clipboardContent !== null && clipboardContent !== '') {
           setState((s) => ({ ...s, input: s.input + clipboardContent }));
@@ -1462,9 +1468,11 @@ export function InteractiveShell({
     if (key.tab && hasAutocomplete) {
       const selectedCommand = filteredCommands[state.autocompleteIndex];
       if (selectedCommand !== undefined) {
+        const newInput = `/${selectedCommand.name} `;
         setState((s) => ({
           ...s,
-          input: `/${selectedCommand.name} `,
+          input: newInput,
+          cursorPosition: newInput.length,
           autocompleteIndex: 0,
         }));
       }
@@ -1472,10 +1480,8 @@ export function InteractiveShell({
     }
 
     // Handle Shift+Enter for newline (don't submit)
-    // Terminal sends \r (code 13) for both Enter and Shift+Enter, but:
-    // - Regular Enter: key.return === true
-    // - Shift+Enter: key.return === false, just raw \r character
-    if (input === '\r' && !key.return) {
+    // Check both: \r without key.return flag AND key.shift + key.return (CSI u terminals)
+    if ((input === '\r' && !key.return) || (key.shift && key.return)) {
       historyRef.current.reset();
       setState((s) => ({
         ...s,
@@ -1486,7 +1492,7 @@ export function InteractiveShell({
       return;
     }
 
-    if (key.return) {
+    if (key.return && !key.shift) {
       // If autocomplete is showing and has a selection, select it first
       if (hasAutocomplete && filteredCommands.length > 0) {
         const selectedCommand = filteredCommands[state.autocompleteIndex];
@@ -1495,9 +1501,11 @@ export function InteractiveShell({
           if (autocompleteFilter.toLowerCase() === selectedCommand.name.toLowerCase()) {
             void handleSubmit();
           } else {
+            const newInput = `/${selectedCommand.name} `;
             setState((s) => ({
               ...s,
-              input: `/${selectedCommand.name} `,
+              input: newInput,
+              cursorPosition: newInput.length,
               autocompleteIndex: 0,
             }));
           }
