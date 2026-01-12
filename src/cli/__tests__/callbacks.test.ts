@@ -149,7 +149,17 @@ describe('createCallbacks', () => {
 
     const result: ToolResponse = { success: true, result: { content: 'test' }, message: 'OK' };
     callbacks.onToolEnd?.(ctx, 'read_file', result);
-    expect(completeTask).toHaveBeenCalledWith(ctx.spanId, 'read_file', true, 0, undefined);
+    // Now also passes primaryArg, resultSummary, hasDetail from generateToolSummary
+    expect(completeTask).toHaveBeenCalledWith(
+      ctx.spanId,
+      'read_file',
+      true,
+      0,
+      undefined,
+      expect.any(String),
+      expect.any(String),
+      expect.any(Boolean)
+    );
   });
 
   it('marks tool as failed when executionResult has metadata.error', () => {
@@ -180,7 +190,17 @@ describe('createCallbacks', () => {
 
     callbacks.onToolEnd?.(ctx, 'read_file', result, executionResult);
     // Should prefer executionResult.success and extract error from metadata
-    expect(completeTask).toHaveBeenCalledWith(ctx.spanId, 'read_file', false, 0, 'NOT_FOUND');
+    // Now also passes primaryArg, resultSummary, hasDetail from generateToolSummary
+    expect(completeTask).toHaveBeenCalledWith(
+      ctx.spanId,
+      'read_file',
+      false,
+      0,
+      'NOT_FOUND',
+      expect.any(String),
+      expect.any(String),
+      expect.any(Boolean)
+    );
   });
 
   it('handles backward compatibility when executionResult is undefined', () => {
@@ -197,9 +217,19 @@ describe('createCallbacks', () => {
     const ctx = createMockSpanContext();
 
     // Test success case with undefined executionResult (legacy)
+    // Now also passes primaryArg, resultSummary, hasDetail from generateToolSummary
     const successResult: ToolResponse = { success: true, result: { data: 'test' }, message: 'OK' };
     callbacks.onToolEnd?.(ctx, 'read_file', successResult, undefined);
-    expect(completeTask).toHaveBeenCalledWith(ctx.spanId, 'read_file', true, 0, undefined);
+    expect(completeTask).toHaveBeenCalledWith(
+      ctx.spanId,
+      'read_file',
+      true,
+      0,
+      undefined,
+      expect.any(String),
+      expect.any(String),
+      expect.any(Boolean)
+    );
 
     // Test error case with undefined executionResult (legacy)
     const errorResult: ToolResponse = {
@@ -208,7 +238,16 @@ describe('createCallbacks', () => {
       message: 'File not found',
     };
     callbacks.onToolEnd?.(ctx, 'write_file', errorResult, undefined);
-    expect(completeTask).toHaveBeenCalledWith(ctx.spanId, 'write_file', false, 0, 'File not found');
+    expect(completeTask).toHaveBeenCalledWith(
+      ctx.spanId,
+      'write_file',
+      false,
+      0,
+      'File not found',
+      expect.any(String),
+      expect.any(String),
+      expect.any(Boolean)
+    );
   });
 
   it('updates token usage on LLM end', () => {

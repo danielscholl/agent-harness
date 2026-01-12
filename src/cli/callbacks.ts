@@ -8,7 +8,7 @@ import type { Span, Context } from '@opentelemetry/api';
 import type { AgentCallbacks } from '../agent/callbacks.js';
 import type { SpanContext } from '../agent/types.js';
 import type { AgentErrorResponse } from '../errors/index.js';
-import type { SessionTokenUsage } from '../utils/index.js';
+import { generateToolSummary, type SessionTokenUsage } from '../utils/index.js';
 import {
   isEnabled as isTelemetryEnabled,
   startAgentSpan,
@@ -55,19 +55,28 @@ export interface CallbackState {
     name: string,
     success: boolean,
     duration: number,
-    error?: string
+    error?: string,
+    /** Primary argument for display (e.g., file path, command) */
+    primaryArg?: string,
+    /** Result summary for display (e.g., "42 files", "270 lines") */
+    resultSummary?: string,
+    /** Whether the tool has detailed output worth expanding */
+    hasDetailedOutput?: boolean
   ) => void;
   /** Update session token usage with per-request data */
   updateTokenUsage?: (usage: SessionTokenUsage) => void;
   /** Set message count from LLM context (for execution status display) */
   setMessageCount?: (count: number) => void;
   /**
-   * Increment phase counter (called on each LLM iteration).
-   * Each LLM call starts a new phase - Phase 1, Phase 2, etc.
+   * Increment span counter (called on each LLM iteration).
+   * Each LLM call starts a new span - Span 1, Span 2, etc.
+   * Note: "Span" aligns with OpenTelemetry terminology.
    */
-  incrementPhase?: () => void;
-  /** Get current phase number (for associating tools with phases) */
-  getCurrentPhase?: () => number;
+  incrementSpan?: () => void;
+  /** Get current span number (for associating tools with spans) */
+  getCurrentSpan?: () => number;
+  /** Append to per-span reasoning buffer for post-completion review */
+  appendToSpanReasoning?: (chunk: string) => void;
 }
 
 /**
@@ -92,6 +101,10 @@ export function createCallbacks(
 ): AgentCallbacks {
   const { verbose = false } = options;
 
+  // Track original args for each tool call by spanId
+  // Used to pass correct args to generateToolSummary in onToolEnd
+  const toolArgsCache = new Map<string, Record<string, unknown>>();
+
   return {
     onSpinnerStart: (message) => {
       // Only control spinner message, not processing state
@@ -106,8 +119,8 @@ export function createCallbacks(
     },
 
     onLLMStart: (_ctx, _model, messages) => {
-      // Increment phase counter - each LLM call starts a new phase
-      state.incrementPhase?.();
+      // Increment span counter - each LLM call starts a new span
+      state.incrementSpan?.();
       // Track message count for execution status display
       state.setMessageCount?.(messages.length);
     },
@@ -116,7 +129,11 @@ export function createCallbacks(
       state.appendToOutput(chunk);
     },
 
-    onLLMEnd: (_ctx, _response, usage) => {
+    onLLMEnd: (_ctx, response, usage) => {
+      // Capture LLM response for per-span reasoning
+      // This works with both run() and runStream() since onLLMEnd is called in both
+      state.appendToSpanReasoning?.(response);
+
       // Forward token usage to component state if callback is provided
       if (usage !== undefined && state.updateTokenUsage !== undefined) {
         // Pass per-request TokenUsage with correct field names
@@ -131,16 +148,22 @@ export function createCallbacks(
     },
 
     onAgentEnd: (_ctx, answer) => {
+      // Clear cache to prevent memory leaks from aborted/crashed tools
+      toolArgsCache.clear();
       state.setIsProcessing(false);
       state.onComplete?.(answer);
     },
 
     onError: (_ctx, error) => {
+      // Clear cache to prevent memory leaks from aborted/crashed tools
+      toolArgsCache.clear();
       state.setError(error);
       state.setIsProcessing(false);
     },
 
     onToolStart: (ctx, toolName, args) => {
+      // Cache args for use in onToolEnd (generateToolSummary needs original args)
+      toolArgsCache.set(ctx.spanId, args);
       // Use spanId as unique identifier for concurrent tool calls
       state.addActiveTask?.(ctx.spanId, toolName, args);
     },
@@ -163,12 +186,46 @@ export function createCallbacks(
           error = result.message;
         }
       }
+
+      // Generate tool summary for progressive disclosure display
+      const metadata =
+        executionResult !== undefined
+          ? (executionResult.result.metadata as Record<string, unknown>)
+          : {};
+      const output =
+        executionResult !== undefined
+          ? executionResult.result.output
+          : result.success
+            ? result.message
+            : '';
+
+      // Retrieve original args from cache (set in onToolStart)
+      const originalArgs = toolArgsCache.get(ctx.spanId) ?? {};
+      toolArgsCache.delete(ctx.spanId); // Clean up cache
+
+      // Generate summary using original args (for primary display) and metadata (for result info)
+      const summary = generateToolSummary(
+        toolName,
+        originalArgs, // Use original args for primary argument extraction
+        { success, message: result.message, output },
+        metadata
+      );
+
       // Duration is calculated in the component from startTime
-      state.completeTask?.(ctx.spanId, toolName, success, 0, error);
+      state.completeTask?.(
+        ctx.spanId,
+        toolName,
+        success,
+        0,
+        error,
+        summary.primary,
+        summary.summary,
+        summary.hasDetail
+      );
     },
 
     onDebug: (message, data) => {
-      if (verbose || process.env.AGENT_DEBUG !== undefined) {
+      if (process.env.AGENT_DEBUG !== undefined) {
         process.stderr.write(
           `[DEBUG] ${message} ${data !== undefined ? JSON.stringify(data) : ''}\n`
         );

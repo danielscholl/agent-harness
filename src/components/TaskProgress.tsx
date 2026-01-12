@@ -19,8 +19,8 @@ export interface ActiveTask {
   args?: Record<string, unknown>;
   /** Timestamp when tool started */
   startTime: number;
-  /** Phase number this task belongs to (1-indexed) */
-  phase: number;
+  /** Span number this task belongs to (1-indexed) */
+  span: number;
 }
 
 /**
@@ -37,8 +37,14 @@ export interface CompletedTask {
   duration: number;
   /** Error message if failed */
   error?: string;
-  /** Phase number this task belongs to (1-indexed) */
-  phase: number;
+  /** Span number this task belongs to (1-indexed) */
+  span: number;
+  /** Primary argument to show inline (e.g., file path, command, pattern) */
+  primaryArg?: string;
+  /** One-line result summary (e.g., "42 files", "270 lines") */
+  resultSummary?: string;
+  /** Whether the tool has detailed output worth expanding */
+  hasDetailedOutput?: boolean;
 }
 
 /**

@@ -64,6 +64,12 @@ jest.unstable_mockModule('../../utils/index.js', () => ({
   }),
   SessionManager: MockSessionManager,
   getAgentHome: jest.fn(() => '/test/.agent'),
+  // Progressive disclosure UI utilities
+  generateToolSummary: () => ({ primary: '', summary: 'done', hasDetail: false }),
+  extractLastLine: (output: string) => output.split('\n').pop() ?? '',
+  extractPreview: (output: string) => output.split('\n').slice(0, 5),
+  // Reasoning capture utilities
+  truncateReasoning: (full: string) => ({ truncated: full, fullLength: full.length }),
 }));
 
 // Mock help handler

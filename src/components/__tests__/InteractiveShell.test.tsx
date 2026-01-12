@@ -140,6 +140,12 @@ jest.unstable_mockModule('../../utils/index.js', () => ({
   resolveModelName: mockResolveModelName,
   isProviderConfigured: () => true,
   readClipboard: mockReadClipboard,
+  // Progressive disclosure UI utilities
+  generateToolSummary: () => ({ primary: '', summary: 'done', hasDetail: false }),
+  extractLastLine: (output: string) => output.split('\n').pop() ?? '',
+  extractPreview: (output: string) => output.split('\n').slice(0, 5),
+  // Reasoning capture utilities
+  truncateReasoning: (full: string) => ({ truncated: full, fullLength: full.length }),
 }));
 
 // Mock Agent that invokes callbacks properly
