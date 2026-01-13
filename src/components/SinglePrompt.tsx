@@ -13,10 +13,15 @@ import { validateProviderCredentials } from '../config/schema.js';
 import { createCallbacks, wrapWithTelemetry } from '../cli/callbacks.js';
 import { initializeTelemetry, shutdown as shutdownTelemetry } from '../telemetry/index.js';
 import { Spinner } from './Spinner.js';
-import { ExecutionStatus } from './ExecutionStatus.js';
-import type { ToolNode, ExecutionPhase } from './ExecutionStatus.js';
+import { SpanFooter } from './SpanFooter.js';
+import type { ToolNode, ExecutionSpan } from './ExecutionStatus.js';
 import { getUserFriendlyMessage } from '../errors/index.js';
-import { resolveModelName, SessionManager, getAgentHome } from '../utils/index.js';
+import {
+  resolveModelName,
+  SessionManager,
+  getAgentHome,
+  truncateReasoning,
+} from '../utils/index.js';
 import type { SinglePromptProps } from '../cli/types.js';
 import type { AgentErrorResponse } from '../errors/index.js';
 import type { AppConfig } from '../config/schema.js';
@@ -37,8 +42,9 @@ interface ActiveTask {
   id: string;
   name: string;
   args?: Record<string, unknown>;
+  primaryArg?: string;
   startTime: number;
-  phase: number;
+  span: number;
 }
 
 interface CompletedTask {
@@ -47,20 +53,10 @@ interface CompletedTask {
   success: boolean;
   duration: number;
   error?: string;
-  phase: number;
-}
-
-/**
- * Format tool arguments for display.
- */
-function formatToolArgs(args: Record<string, unknown>): string {
-  const entries = Object.entries(args);
-  if (entries.length === 0) return '';
-  const formatted = entries
-    .slice(0, 2)
-    .map(([k, v]) => `${k}: ${typeof v === 'string' ? v.slice(0, 30) : String(v)}`)
-    .join(', ');
-  return entries.length > 2 ? `${formatted}, ...` : formatted;
+  span: number;
+  primaryArg?: string;
+  resultSummary?: string;
+  hasDetailedOutput?: boolean;
 }
 
 /**
@@ -85,26 +81,33 @@ export function SinglePrompt({
     spinnerMessage: string;
     output: string;
     error: AgentErrorResponse | null;
-    // Verbose mode phase tracking
-    currentPhase: number;
-    phaseStartTimes: number[];
-    phaseMessageCounts: number[];
+    // Verbose mode span tracking
+    currentSpan: number;
+    spanStartTimes: number[];
+    spanMessageCounts: number[];
+    spanReasoningBuffers: string[];
     messageCount: number;
     activeTasks: ActiveTask[];
     completedTasks: CompletedTask[];
     executionStartTime: number | null;
+    // Final snapshot for done state (persists execution trace)
+    finalSpans: ExecutionSpan[] | null;
+    finalDuration: number | null;
   }>({
     phase: 'loading',
     spinnerMessage: 'Loading configuration...',
     output: '',
     error: null,
-    currentPhase: 0,
-    phaseStartTimes: [],
-    phaseMessageCounts: [],
+    currentSpan: 0,
+    spanStartTimes: [],
+    spanMessageCounts: [],
+    spanReasoningBuffers: [],
     messageCount: 0,
     activeTasks: [],
     completedTasks: [],
     executionStartTime: null,
+    finalSpans: null,
+    finalDuration: null,
   });
 
   // Track if component is mounted to prevent state updates after unmount
@@ -377,9 +380,10 @@ export function SinglePrompt({
         ...s,
         phase: 'executing',
         spinnerMessage: 'Thinking...',
-        currentPhase: 0,
-        phaseStartTimes: [],
-        phaseMessageCounts: [],
+        currentSpan: 0,
+        spanStartTimes: [],
+        spanMessageCounts: [],
+        spanReasoningBuffers: [],
         messageCount: 0,
         activeTasks: [],
         completedTasks: [],
@@ -443,64 +447,145 @@ export function SinglePrompt({
           },
           onComplete: (answer) => {
             if (mountedRef.current) {
-              setState((s) => ({
-                ...s,
-                phase: 'done',
-                // In verbose mode, use streamed output; in non-verbose, use final answer
-                output: verbose === true && s.output !== '' ? s.output : answer,
-              }));
-            }
-          },
-          // Phase and tool tracking for verbose mode
-          setMessageCount: (count) => {
-            if (mountedRef.current) {
               setState((s) => {
-                const newPhaseMessageCounts = [...s.phaseMessageCounts];
-                if (s.currentPhase > 0) {
-                  newPhaseMessageCounts[s.currentPhase - 1] = count;
+                // Build final spans snapshot for done state
+                const now = Date.now();
+                const finalSpans: ExecutionSpan[] = [];
+                for (let i = 0; i < s.currentSpan; i++) {
+                  const spanNumber = i + 1;
+                  const startTime = s.spanStartTimes[i] ?? now;
+                  const nextSpanStart = s.spanStartTimes[i + 1];
+                  const spanDuration =
+                    nextSpanStart !== undefined
+                      ? (nextSpanStart - startTime) / 1000
+                      : (now - startTime) / 1000;
+
+                  const spanCompletedTools = s.completedTasks.filter((t) => t.span === spanNumber);
+                  const toolNodes: ToolNode[] = spanCompletedTools.map(
+                    (task): ToolNode => ({
+                      id: task.id,
+                      name: task.name,
+                      status: task.success ? 'complete' : 'error',
+                      duration: task.duration >= 0 ? task.duration / 1000 : undefined,
+                      error: task.error,
+                      span: spanNumber,
+                      primaryArg: task.primaryArg,
+                      resultSummary: task.resultSummary,
+                      hasDetailedOutput: task.hasDetailedOutput,
+                    })
+                  );
+
+                  // Truncate reasoning for storage (keep tail, most relevant)
+                  const fullReasoning = s.spanReasoningBuffers[i] ?? '';
+                  const { truncated, fullLength } = truncateReasoning(fullReasoning);
+
+                  finalSpans.push({
+                    number: spanNumber,
+                    status: 'complete',
+                    duration: spanDuration,
+                    messageCount: s.spanMessageCounts[i] ?? s.messageCount,
+                    isThinking: false,
+                    toolNodes,
+                    reasoning: truncated.length > 0 ? truncated : undefined,
+                    reasoningFullLength: fullLength > 0 ? fullLength : undefined,
+                  });
                 }
+
+                const totalDuration =
+                  s.executionStartTime !== null ? (now - s.executionStartTime) / 1000 : null;
+
                 return {
                   ...s,
-                  messageCount: count,
-                  phaseMessageCounts: newPhaseMessageCounts,
+                  phase: 'done',
+                  // In verbose mode, use streamed output; in non-verbose, use final answer
+                  output: verbose === true && s.output !== '' ? s.output : answer,
+                  finalSpans,
+                  finalDuration: totalDuration,
                 };
               });
             }
           },
-          incrementPhase: () => {
+          // Span and tool tracking for verbose mode
+          setMessageCount: (count) => {
+            if (mountedRef.current) {
+              setState((s) => {
+                const newSpanMessageCounts = [...s.spanMessageCounts];
+                if (s.currentSpan > 0) {
+                  newSpanMessageCounts[s.currentSpan - 1] = count;
+                }
+                return {
+                  ...s,
+                  messageCount: count,
+                  spanMessageCounts: newSpanMessageCounts,
+                };
+              });
+            }
+          },
+          incrementSpan: () => {
             if (mountedRef.current) {
               setState((s) => ({
                 ...s,
-                currentPhase: s.currentPhase + 1,
-                phaseStartTimes: [...s.phaseStartTimes, Date.now()],
-                phaseMessageCounts: [...s.phaseMessageCounts, 0],
+                currentSpan: s.currentSpan + 1,
+                spanStartTimes: [...s.spanStartTimes, Date.now()],
+                spanMessageCounts: [...s.spanMessageCounts, 0],
+                spanReasoningBuffers: [...s.spanReasoningBuffers, ''],
               }));
             }
           },
-          getCurrentPhase: () => stateRef.current.currentPhase,
-          addActiveTask: (id, name, args) => {
+          getCurrentSpan: () => stateRef.current.currentSpan,
+          appendToSpanReasoning: (chunk) => {
+            if (mountedRef.current) {
+              setState((s) => {
+                if (s.currentSpan === 0) return s;
+                const idx = s.currentSpan - 1;
+                const buffers = [...s.spanReasoningBuffers];
+                buffers[idx] = (buffers[idx] ?? '') + chunk;
+                return { ...s, spanReasoningBuffers: buffers };
+              });
+            }
+          },
+          addActiveTask: (id, name, args, primaryArg) => {
             if (mountedRef.current) {
               setState((s) => ({
                 ...s,
                 activeTasks: [
                   ...s.activeTasks,
-                  { id, name, args, startTime: Date.now(), phase: s.currentPhase },
+                  { id, name, args, primaryArg, startTime: Date.now(), span: s.currentSpan },
                 ],
               }));
             }
           },
-          completeTask: (id, name, success, _duration, error) => {
+          completeTask: (
+            id,
+            name,
+            success,
+            _duration,
+            error,
+            primaryArg,
+            resultSummary,
+            hasDetailedOutput
+          ) => {
             if (mountedRef.current) {
               setState((s) => {
                 const task = s.activeTasks.find((t) => t.id === id);
                 const duration = task !== undefined ? Date.now() - task.startTime : -1;
-                const phase = task?.phase ?? s.currentPhase;
+                const span = task?.span ?? s.currentSpan;
                 return {
                   ...s,
                   activeTasks: s.activeTasks.filter((t) => t.id !== id),
                   completedTasks: [
                     ...s.completedTasks,
-                    { id, name, success, duration, error, phase },
+                    {
+                      id,
+                      name,
+                      success,
+                      duration,
+                      error,
+                      span,
+                      primaryArg,
+                      resultSummary,
+                      hasDetailedOutput,
+                    },
                   ],
                 };
               });
@@ -539,11 +624,62 @@ export function SinglePrompt({
           setState((s) => {
             // Don't override error state - onError callback may have already set it
             if (s.phase === 'error') return s;
+            // Don't override if already done (onComplete may have been called)
+            if (s.phase === 'done') return s;
+
+            // Build final spans snapshot for done state
+            const now = Date.now();
+            const finalSpans: ExecutionSpan[] = [];
+            for (let i = 0; i < s.currentSpan; i++) {
+              const spanNumber = i + 1;
+              const startTime = s.spanStartTimes[i] ?? now;
+              const nextSpanStart = s.spanStartTimes[i + 1];
+              const spanDuration =
+                nextSpanStart !== undefined
+                  ? (nextSpanStart - startTime) / 1000
+                  : (now - startTime) / 1000;
+
+              const spanCompletedTools = s.completedTasks.filter((t) => t.span === spanNumber);
+              const toolNodes: ToolNode[] = spanCompletedTools.map(
+                (task): ToolNode => ({
+                  id: task.id,
+                  name: task.name,
+                  status: task.success ? 'complete' : 'error',
+                  duration: task.duration >= 0 ? task.duration / 1000 : undefined,
+                  error: task.error,
+                  span: spanNumber,
+                  primaryArg: task.primaryArg,
+                  resultSummary: task.resultSummary,
+                  hasDetailedOutput: task.hasDetailedOutput,
+                })
+              );
+
+              // Truncate reasoning for storage (keep tail, most relevant)
+              const fullReasoning = s.spanReasoningBuffers[i] ?? '';
+              const { truncated, fullLength } = truncateReasoning(fullReasoning);
+
+              finalSpans.push({
+                number: spanNumber,
+                status: 'complete',
+                duration: spanDuration,
+                messageCount: s.spanMessageCounts[i] ?? s.messageCount,
+                isThinking: false,
+                toolNodes,
+                reasoning: truncated.length > 0 ? truncated : undefined,
+                reasoningFullLength: fullLength > 0 ? fullLength : undefined,
+              });
+            }
+
+            const totalDuration =
+              s.executionStartTime !== null ? (now - s.executionStartTime) / 1000 : null;
+
             return {
               ...s,
               phase: 'done',
               // In verbose mode, prefer streamed output if available; otherwise use final result
               output: verbose === true && s.output !== '' ? s.output : result,
+              finalSpans,
+              finalDuration: totalDuration,
             };
           });
         }
@@ -641,83 +777,40 @@ export function SinglePrompt({
   }
 
   if (state.phase === 'executing') {
-    // Build phases for ExecutionStatus
-    const phases: ExecutionPhase[] = [];
-    const now = Date.now();
-    for (let i = 0; i < state.currentPhase; i++) {
-      const phaseNumber = i + 1;
-      const isCurrentPhase = phaseNumber === state.currentPhase;
-      const startTime = state.phaseStartTimes[i] ?? now;
-      const nextPhaseStart = state.phaseStartTimes[i + 1];
-      const phaseDuration = isCurrentPhase
-        ? undefined
-        : nextPhaseStart !== undefined
-          ? (nextPhaseStart - startTime) / 1000
-          : (now - startTime) / 1000;
+    // In -p mode, just show spinner during execution to avoid screen clearing
+    // The complete span summary will be shown in the 'done' phase via SpanFooter
+    const firstTask = state.activeTasks[0];
+    const activeToolName = firstTask !== undefined ? firstTask.name : null;
+    const message =
+      activeToolName !== null
+        ? `Executing ${activeToolName}...`
+        : state.spinnerMessage || 'Thinking...';
 
-      const phaseCompletedTools = state.completedTasks.filter((t) => t.phase === phaseNumber);
-      const phaseActiveTools = state.activeTasks.filter((t) => t.phase === phaseNumber);
-
-      const toolNodes: ToolNode[] = [
-        ...phaseCompletedTools.map(
-          (task): ToolNode => ({
-            id: task.id,
-            name: task.name,
-            status: task.success ? 'complete' : 'error',
-            duration: task.duration >= 0 ? task.duration / 1000 : undefined,
-            error: task.error,
-            phase: phaseNumber,
-          })
-        ),
-        ...phaseActiveTools.map(
-          (task): ToolNode => ({
-            id: task.id,
-            name: task.name,
-            args: task.args !== undefined ? formatToolArgs(task.args) : undefined,
-            status: 'running',
-            phase: phaseNumber,
-          })
-        ),
-      ];
-
-      phases.push({
-        number: phaseNumber,
-        status: isCurrentPhase ? 'working' : 'complete',
-        duration: phaseDuration,
-        messageCount: state.phaseMessageCounts[i] ?? state.messageCount,
-        isThinking: isCurrentPhase && state.spinnerMessage !== '' && state.output === '',
-        toolNodes,
-      });
-    }
-
-    // Show ExecutionStatus with phase info
-    // Note: toolNodes are already included in phases, so we don't need to pass them separately
     return (
       <Box flexDirection="column">
-        {state.currentPhase > 0 && (
-          <ExecutionStatus
-            status="working"
-            messageCount={state.messageCount}
-            toolCount={state.completedTasks.length + state.activeTasks.length}
-            thinkingState={{
-              messageCount: state.messageCount,
-              isActive: state.spinnerMessage !== '' && state.output === '',
-            }}
-            phases={phases}
-            showToolHistory={true}
-          />
-        )}
-        {state.currentPhase === 0 && state.spinnerMessage !== '' && (
-          <Spinner message={state.spinnerMessage} />
-        )}
+        <Spinner message={message} />
         {state.output !== '' && <Text>{state.output}</Text>}
       </Box>
     );
   }
 
-  // Done - show final output
+  // Done - show compact span summary and output with separator in verbose mode
+  const SEPARATOR = '\u2550'.repeat(60); // ═ double line separator
+  const totalToolCount = state.completedTasks.length;
+
   return (
     <Box flexDirection="column">
+      {/* Show compact span summary in verbose mode (non-interactive, auto-expand all spans) */}
+      {state.finalSpans !== null && state.finalSpans.length > 0 && (
+        <SpanFooter
+          spans={state.finalSpans}
+          duration={state.finalDuration ?? 0}
+          toolCount={totalToolCount}
+          expandedSpans={new Set(state.finalSpans.map((s) => s.number))}
+        />
+      )}
+      {/* Separator line between trace and answer in verbose mode */}
+      <Text dimColor>{SEPARATOR}</Text>
       <Text>{state.output}</Text>
     </Box>
   );

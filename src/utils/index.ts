@@ -38,3 +38,17 @@ export { resolveModelName, isProviderConfigured } from './model.js';
 export { getAgentHome, getPromptsDir, getBundledSkillsDir } from './paths.js';
 
 export { readClipboard } from './clipboard.js';
+
+export {
+  generateToolSummary,
+  extractLastLine,
+  extractPreview,
+  type ToolSummary,
+} from './tool-summary.js';
+
+export {
+  truncateReasoning,
+  truncatePreview,
+  REASONING_CONFIG,
+  type TruncatedReasoning,
+} from './reasoning.js';

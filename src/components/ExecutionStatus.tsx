@@ -1,17 +1,21 @@
 /**
- * ExecutionStatus component for agent execution visualization.
- * Displays working/complete/error states with tree-style rendering.
- * Adapted from agent-base Python implementation.
+ * ExecutionStatus component for ephemeral agent execution visualization.
+ * Displays ONLY working state - completion is handled by SpanFooter.
+ *
+ * This component is ephemeral: it shows during execution and disappears
+ * when complete. The parent component is responsible for clearing this
+ * and optionally showing SpanFooter for verbose mode post-completion.
+ *
+ * Note: "Span" aligns with OpenTelemetry terminology - each LLM reasoning
+ * cycle produces a span with associated tool calls.
  */
 
 import React from 'react';
 import { Box, Text } from 'ink';
+import { ToolRow } from './ToolRow.js';
 
 // Visual symbols (from agent-base)
 const SYMBOL_ACTIVE = '●'; // Yellow - working/thinking
-const SYMBOL_COMPLETE = '•'; // Dim - completed node
-const SYMBOL_TOOL = '→'; // Tool executing
-const SYMBOL_SUCCESS = '✓'; // Green - success/complete
 const SYMBOL_ERROR = '✗'; // Red - error
 
 // Tree drawing characters
@@ -28,33 +32,44 @@ export interface ToolNode {
   name: string;
   /** Tool arguments (truncated for display) */
   args?: string;
+  /** Primary argument to show inline (e.g., file path, command, pattern) */
+  primaryArg?: string;
+  /** One-line result summary (e.g., "42 files", "270 lines") */
+  resultSummary?: string;
+  /** Whether the tool has detailed output worth expanding */
+  hasDetailedOutput?: boolean;
   /** Execution status */
   status: 'running' | 'complete' | 'error';
   /** Duration in seconds (for completed tools) */
   duration?: number;
   /** Error message (if status is error) */
   error?: string;
-  /** Phase number this tool belongs to (1-indexed) */
-  phase?: number;
+  /** Span number this tool belongs to (1-indexed) */
+  span?: number;
 }
 
 /**
- * Execution phase information.
- * Each phase represents one LLM reasoning cycle + its associated tool calls.
+ * Execution span information.
+ * Each span represents one LLM reasoning cycle + its associated tool calls.
+ * Note: "Span" aligns with OpenTelemetry terminology.
  */
-export interface ExecutionPhase {
-  /** Phase number (1-indexed) */
+export interface ExecutionSpan {
+  /** Span number (1-indexed) */
   number: number;
-  /** Phase status */
+  /** Span status */
   status: 'working' | 'complete' | 'error';
-  /** Duration in seconds (for completed phases) */
+  /** Duration in seconds (for completed spans) */
   duration?: number;
-  /** Message count for this phase's LLM call */
+  /** Message count for this span's LLM call */
   messageCount: number;
-  /** Whether LLM is actively thinking in this phase */
+  /** Whether LLM is actively thinking in this span */
   isThinking: boolean;
-  /** Tool nodes executed in this phase */
+  /** Tool nodes executed in this span */
   toolNodes: ToolNode[];
+  /** Captured reasoning summary (truncated tail of LLM stream) */
+  reasoning?: string;
+  /** Full reasoning length before truncation */
+  reasoningFullLength?: number;
 }
 
 /**
@@ -74,14 +89,10 @@ export interface ExecutionStatusProps {
     messageCount: number;
     isActive: boolean;
   };
-  /** Tool execution nodes (flat list, legacy mode) */
+  /** Tool execution nodes (flat list) */
   toolNodes?: ToolNode[];
-  /** Execution phases (for multi-phase display in verbose mode) */
-  phases?: ExecutionPhase[];
   /** Error message (if status is error) */
   errorMessage?: string;
-  /** Whether to show detailed tool history (verbose mode) */
-  showToolHistory?: boolean;
 }
 
 /**
@@ -92,68 +103,20 @@ function formatDuration(seconds: number): string {
 }
 
 /**
- * Render a tool node in the tree.
- */
-function ToolNodeRow({ node, isLast }: { node: ToolNode; isLast: boolean }): React.ReactElement {
-  const prefix = isLast ? TREE_LAST : TREE_BRANCH;
-
-  // Determine symbol and color based on status
-  let symbol: string;
-  let color: string;
-
-  if (node.status === 'running') {
-    symbol = SYMBOL_TOOL;
-    color = 'yellow';
-  } else if (node.status === 'complete') {
-    symbol = SYMBOL_COMPLETE;
-    color = 'gray';
-  } else {
-    symbol = SYMBOL_ERROR;
-    color = 'red';
-  }
-
-  return (
-    <Box>
-      <Text dimColor>{prefix} </Text>
-      <Text color={color}>{symbol} </Text>
-      <Text color={color}>{node.name}</Text>
-      {node.args !== undefined && node.args !== '' && <Text dimColor> ({node.args})</Text>}
-      {node.status === 'complete' && node.duration !== undefined && (
-        <Text dimColor> ({formatDuration(node.duration)})</Text>
-      )}
-      {node.status === 'error' && node.error !== undefined && (
-        <Text color="red"> - {node.error}</Text>
-      )}
-    </Box>
-  );
-}
-
-/**
  * ExecutionStatus component.
- * Displays execution status with tree-style visualization.
+ * Displays EPHEMERAL execution status during working state only.
+ * Returns null on completion (parent uses SpanFooter for verbose mode).
  *
- * Non-verbose working state:
+ * Working state:
  * ```
  * ● working... (msg:1 tool:0)
- * └── ● Thinking (1 messages)
+ * ├── ● Thinking (1 messages)
+ * └── • glob **\/*.ts → 42 files
  * ```
  *
- * Non-verbose complete state:
- * ```
- * ✓ Complete (3.9s) - msg:1 tool:0
- * ```
- *
- * Verbose working state (showToolHistory=true):
- * ```
- * ● Phase 1
- * └── ● Thinking (1 messages)
- * ```
- *
- * Verbose complete state (showToolHistory=true):
- * ```
- * • Phase 1 (3.9s)
- * └── • Thinking (1 messages) - Response received
- * ```
+ * Note: Completion state returns null. Parent component should:
+ * - Non-verbose: Just clear the status (ephemeral)
+ * - Verbose: Show SpanFooter with completed spans summary
  */
 export function ExecutionStatus({
   status,
@@ -162,118 +125,12 @@ export function ExecutionStatus({
   duration,
   thinkingState,
   toolNodes = [],
-  phases,
   errorMessage,
-  showToolHistory = false,
-}: ExecutionStatusProps): React.ReactElement {
-  // Completion state
+}: ExecutionStatusProps): React.ReactElement | null {
+  // Completion state - return null (parent shows SpanFooter for verbose mode)
+  // This makes ExecutionStatus ephemeral - visible only during execution
   if (status === 'complete') {
-    // Simple completion (non-verbose or no tools)
-    if (!showToolHistory || toolNodes.length === 0) {
-      return (
-        <Box marginBottom={1}>
-          <Text color="green">{SYMBOL_SUCCESS} Complete</Text>
-          {duration !== undefined && <Text dimColor> ({formatDuration(duration)})</Text>}
-          <Text dimColor>
-            {' '}
-            - msg:{messageCount} tool:{toolCount}
-          </Text>
-        </Box>
-      );
-    }
-
-    // Verbose completion with phases (if provided)
-    if (phases !== undefined && phases.length > 0) {
-      return (
-        <Box flexDirection="column" marginBottom={1}>
-          {phases.map((phase) => (
-            <React.Fragment key={phase.number}>
-              {/* Phase header with duration */}
-              <Box>
-                <Text dimColor>
-                  {SYMBOL_COMPLETE} Phase {phase.number}
-                </Text>
-                {phase.duration !== undefined && (
-                  <Text dimColor> ({formatDuration(phase.duration)})</Text>
-                )}
-              </Box>
-
-              {/* Thinking summary */}
-              <Box>
-                <Text dimColor>
-                  {phase.toolNodes.length > 0 ? TREE_BRANCH : TREE_LAST} {SYMBOL_COMPLETE} Thinking
-                  ({phase.messageCount} messages) - Response received
-                </Text>
-              </Box>
-
-              {/* Tool nodes for this phase */}
-              {phase.toolNodes.map((node, index) => {
-                const isLast = index === phase.toolNodes.length - 1;
-                const prefix = isLast ? TREE_LAST : TREE_BRANCH;
-
-                return (
-                  <Box key={node.id}>
-                    <Text dimColor>
-                      {prefix} {node.status === 'error' ? SYMBOL_ERROR : SYMBOL_COMPLETE}{' '}
-                      {node.name}
-                    </Text>
-                    {node.args !== undefined && node.args !== '' && (
-                      <Text dimColor> ({node.args})</Text>
-                    )}
-                    {node.duration !== undefined && (
-                      <Text dimColor> ({formatDuration(node.duration)})</Text>
-                    )}
-                    {node.status === 'error' && node.error !== undefined && (
-                      <Text color="red"> - {node.error}</Text>
-                    )}
-                  </Box>
-                );
-              })}
-            </React.Fragment>
-          ))}
-        </Box>
-      );
-    }
-
-    // Verbose completion with flat tool list (legacy mode - single phase)
-    return (
-      <Box flexDirection="column" marginBottom={1}>
-        {/* Phase header with duration */}
-        <Box>
-          <Text dimColor>{SYMBOL_COMPLETE} Phase 1</Text>
-          {duration !== undefined && <Text dimColor> ({formatDuration(duration)})</Text>}
-        </Box>
-
-        {/* Thinking summary */}
-        <Box>
-          <Text dimColor>
-            {toolNodes.length > 0 ? TREE_BRANCH : TREE_LAST} {SYMBOL_COMPLETE} Thinking (
-            {messageCount} messages) - Response received
-          </Text>
-        </Box>
-
-        {/* Tool nodes (all dimmed since complete) */}
-        {toolNodes.map((node, index) => {
-          const isLast = index === toolNodes.length - 1;
-          const prefix = isLast ? TREE_LAST : TREE_BRANCH;
-
-          return (
-            <Box key={node.id}>
-              <Text dimColor>
-                {prefix} {node.status === 'error' ? SYMBOL_ERROR : SYMBOL_COMPLETE} {node.name}
-              </Text>
-              {node.args !== undefined && node.args !== '' && <Text dimColor> ({node.args})</Text>}
-              {node.duration !== undefined && (
-                <Text dimColor> ({formatDuration(node.duration)})</Text>
-              )}
-              {node.status === 'error' && node.error !== undefined && (
-                <Text color="red"> - {node.error}</Text>
-              )}
-            </Box>
-          );
-        })}
-      </Box>
-    );
+    return null;
   }
 
   // Error state
@@ -298,109 +155,10 @@ export function ExecutionStatus({
     );
   }
 
-  // Working state - build tree structure
+  // Working state - unified view for both verbose and non-verbose modes
   const hasThinking = thinkingState?.isActive ?? false;
   const hasTools = toolNodes.length > 0;
 
-  // Verbose mode with phases (if provided)
-  if (showToolHistory && phases !== undefined && phases.length > 0) {
-    const currentPhase = phases[phases.length - 1];
-    const completedPhases = phases.slice(0, -1);
-
-    return (
-      <Box flexDirection="column" marginBottom={1}>
-        {/* Completed phases (dimmed) */}
-        {completedPhases.map((phase) => (
-          <React.Fragment key={phase.number}>
-            <Box>
-              <Text dimColor>
-                {SYMBOL_COMPLETE} Phase {phase.number}
-              </Text>
-              {phase.duration !== undefined && (
-                <Text dimColor> ({formatDuration(phase.duration)})</Text>
-              )}
-            </Box>
-            <Box>
-              <Text dimColor>
-                {phase.toolNodes.length > 0 ? TREE_BRANCH : TREE_LAST} {SYMBOL_COMPLETE} Thinking (
-                {phase.messageCount} messages) - Response received
-              </Text>
-            </Box>
-            {phase.toolNodes.map((node, index) => {
-              const isLast = index === phase.toolNodes.length - 1;
-              const prefix = isLast ? TREE_LAST : TREE_BRANCH;
-              return (
-                <Box key={node.id}>
-                  <Text dimColor>
-                    {prefix} {node.status === 'error' ? SYMBOL_ERROR : SYMBOL_COMPLETE} {node.name}
-                  </Text>
-                  {node.args !== undefined && node.args !== '' && (
-                    <Text dimColor> ({node.args})</Text>
-                  )}
-                  {node.duration !== undefined && (
-                    <Text dimColor> ({formatDuration(node.duration)})</Text>
-                  )}
-                </Box>
-              );
-            })}
-          </React.Fragment>
-        ))}
-
-        {/* Current phase (active) */}
-        {currentPhase !== undefined && (
-          <>
-            <Box>
-              <Text color="yellow">
-                {SYMBOL_ACTIVE} Phase {currentPhase.number}
-              </Text>
-            </Box>
-            {currentPhase.isThinking && (
-              <Box>
-                <Text dimColor>{currentPhase.toolNodes.length > 0 ? TREE_BRANCH : TREE_LAST} </Text>
-                <Text color="yellow">{SYMBOL_ACTIVE} Thinking</Text>
-                <Text dimColor> ({currentPhase.messageCount} messages)</Text>
-              </Box>
-            )}
-            {currentPhase.toolNodes.map((node, index) => (
-              <ToolNodeRow
-                key={node.id}
-                node={node}
-                isLast={index === currentPhase.toolNodes.length - 1}
-              />
-            ))}
-          </>
-        )}
-      </Box>
-    );
-  }
-
-  // Verbose mode without phases (legacy - single phase)
-  if (showToolHistory) {
-    return (
-      <Box flexDirection="column" marginBottom={1}>
-        {/* Phase header */}
-        <Box>
-          <Text color="yellow">{SYMBOL_ACTIVE} Phase 1</Text>
-        </Box>
-
-        {/* Thinking node */}
-        {hasThinking && (
-          <Box>
-            <Text dimColor>{hasTools ? TREE_BRANCH : TREE_LAST} </Text>
-            <Text color="yellow">{SYMBOL_ACTIVE} Thinking</Text>
-            <Text dimColor> ({thinkingState?.messageCount ?? 0} messages)</Text>
-          </Box>
-        )}
-
-        {/* Tool nodes */}
-        {toolNodes.map((node, index) => (
-          <ToolNodeRow key={node.id} node={node} isLast={index === toolNodes.length - 1} />
-        ))}
-      </Box>
-    );
-  }
-
-  // Non-verbose working state
   return (
     <Box flexDirection="column" marginBottom={1}>
       {/* Header line */}
@@ -423,7 +181,7 @@ export function ExecutionStatus({
 
       {/* Tool nodes */}
       {toolNodes.map((node, index) => (
-        <ToolNodeRow key={node.id} node={node} isLast={index === toolNodes.length - 1} />
+        <ToolRow key={node.id} node={node} isLast={index === toolNodes.length - 1} />
       ))}
     </Box>
   );

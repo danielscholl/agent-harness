@@ -23,7 +23,13 @@ import type { AutocompleteCommand } from './CommandAutocomplete.js';
 import { configInitHandler } from '../cli/commands/config.js';
 import { unescapeSlash } from '../cli/constants.js';
 import { InputHistory } from '../cli/input/index.js';
-import { MessageHistory, SessionManager, resolveModelName, readClipboard } from '../utils/index.js';
+import {
+  MessageHistory,
+  SessionManager,
+  resolveModelName,
+  readClipboard,
+  truncateReasoning,
+} from '../utils/index.js';
 import type { StoredMessage, SessionTokenUsage, SessionMetadata } from '../utils/index.js';
 import { SessionSelector } from './SessionSelector.js';
 import { resumeHandler } from '../cli/commands/session.js';
@@ -33,8 +39,9 @@ import { Spinner } from './Spinner.js';
 import { ErrorDisplay } from './ErrorDisplay.js';
 import { AnswerBox } from './AnswerBox.js';
 import { ExecutionStatus } from './ExecutionStatus.js';
+import { SpanFooter } from './SpanFooter.js';
 import { PromptDivider } from './PromptDivider.js';
-import type { ToolNode, ExecutionPhase } from './ExecutionStatus.js';
+import type { ToolNode, ExecutionSpan } from './ExecutionStatus.js';
 import { initializeTelemetry } from '../telemetry/index.js';
 import type { InteractiveShellProps, ShellMessage } from '../cli/types.js';
 
@@ -131,15 +138,18 @@ interface PromptState {
 }
 
 /**
- * Phase tracking state for execution visualization.
+ * Span tracking state for execution visualization.
+ * Note: "Span" aligns with OpenTelemetry terminology.
  */
-interface PhaseState {
-  /** Current phase number (1-indexed) */
-  currentPhase: number;
-  /** Start time of each phase (indexed by phase number - 1) */
-  phaseStartTimes: number[];
-  /** Message count for each phase (indexed by phase number - 1) */
-  phaseMessageCounts: number[];
+interface SpanState {
+  /** Current span number (1-indexed) */
+  currentSpan: number;
+  /** Start time of each span (indexed by span number - 1) */
+  spanStartTimes: number[];
+  /** Message count for each span (indexed by span number - 1) */
+  spanMessageCounts: number[];
+  /** Per-span reasoning accumulator (indexed by span number - 1) */
+  spanReasoningBuffers: string[];
 }
 
 /**
@@ -185,10 +195,10 @@ interface ShellState {
   } | null;
   /** Tool nodes from the last completed execution (for verbose mode) */
   lastExecutionToolNodes: ToolNode[];
-  /** Phases from the last completed execution (for verbose mode) */
-  lastExecutionPhases: ExecutionPhase[];
-  /** Phase tracking state */
-  phaseState: PhaseState;
+  /** Spans from the last completed execution (for verbose mode) */
+  lastExecutionSpans: ExecutionSpan[];
+  /** Span tracking state */
+  spanState: SpanState;
   /** Version check result for update banner */
   versionCheck: VersionCheckResult | null;
 }
@@ -241,11 +251,12 @@ export function InteractiveShell({
     lastExecutionDuration: null,
     sessionSelection: null,
     lastExecutionToolNodes: [],
-    lastExecutionPhases: [],
-    phaseState: {
-      currentPhase: 0,
-      phaseStartTimes: [],
-      phaseMessageCounts: [],
+    lastExecutionSpans: [],
+    spanState: {
+      currentSpan: 0,
+      spanStartTimes: [],
+      spanMessageCounts: [],
+      spanReasoningBuffers: [],
     },
     versionCheck: null,
   });
@@ -866,10 +877,11 @@ export function InteractiveShell({
             messageCount: 0,
             executionStartTime: Date.now(),
             lastExecutionToolNodes: [],
-            phaseState: {
-              currentPhase: 0,
-              phaseStartTimes: [],
-              phaseMessageCounts: [],
+            spanState: {
+              currentSpan: 0,
+              spanStartTimes: [],
+              spanMessageCounts: [],
+              spanReasoningBuffers: [],
             },
           }));
 
@@ -903,10 +915,11 @@ export function InteractiveShell({
         messageCount: 0,
         executionStartTime: Date.now(),
         lastExecutionToolNodes: [], // Clear previous execution history
-        phaseState: {
-          currentPhase: 0,
-          phaseStartTimes: [],
-          phaseMessageCounts: [],
+        spanState: {
+          currentSpan: 0,
+          spanStartTimes: [],
+          spanMessageCounts: [],
+          spanReasoningBuffers: [],
         },
       }));
 
@@ -946,36 +959,48 @@ export function InteractiveShell({
               status: task.success ? ('complete' as const) : ('error' as const),
               duration: task.duration >= 0 ? task.duration / 1000 : undefined,
               error: task.error,
-              phase: task.phase,
+              span: task.span,
+              primaryArg: task.primaryArg,
+              resultSummary: task.resultSummary,
+              hasDetailedOutput: task.hasDetailedOutput,
             }));
 
-            // Build completed phases for verbose mode display
-            const phases: ExecutionPhase[] = [];
-            for (let i = 0; i < s.phaseState.currentPhase; i++) {
-              const phaseNumber = i + 1;
-              const startTime = s.phaseState.phaseStartTimes[i] ?? now;
-              const nextPhaseStart = s.phaseState.phaseStartTimes[i + 1];
-              const phaseDuration =
-                nextPhaseStart !== undefined
-                  ? (nextPhaseStart - startTime) / 1000
+            // Build completed spans for verbose mode display
+            const spans: ExecutionSpan[] = [];
+            for (let i = 0; i < s.spanState.currentSpan; i++) {
+              const spanNumber = i + 1;
+              const startTime = s.spanState.spanStartTimes[i] ?? now;
+              const nextSpanStart = s.spanState.spanStartTimes[i + 1];
+              const spanDuration =
+                nextSpanStart !== undefined
+                  ? (nextSpanStart - startTime) / 1000
                   : (now - startTime) / 1000;
 
-              phases.push({
-                number: phaseNumber,
+              // Truncate reasoning for storage (keep tail, most relevant)
+              const fullReasoning = s.spanState.spanReasoningBuffers[i] ?? '';
+              const { truncated, fullLength } = truncateReasoning(fullReasoning);
+
+              spans.push({
+                number: spanNumber,
                 status: 'complete',
-                duration: phaseDuration,
-                messageCount: s.phaseState.phaseMessageCounts[i] ?? s.messageCount,
+                duration: spanDuration,
+                messageCount: s.spanState.spanMessageCounts[i] ?? s.messageCount,
                 isThinking: false,
                 toolNodes: s.completedTasks
-                  .filter((t) => t.phase === phaseNumber)
+                  .filter((t) => t.span === spanNumber)
                   .map((task) => ({
                     id: task.id,
                     name: task.name,
                     status: task.success ? ('complete' as const) : ('error' as const),
                     duration: task.duration >= 0 ? task.duration / 1000 : undefined,
                     error: task.error,
-                    phase: task.phase,
+                    span: task.span,
+                    primaryArg: task.primaryArg,
+                    resultSummary: task.resultSummary,
+                    hasDetailedOutput: task.hasDetailedOutput,
                   })),
+                reasoning: truncated.length > 0 ? truncated : undefined,
+                reasoningFullLength: fullLength > 0 ? fullLength : undefined,
               });
             }
 
@@ -987,7 +1012,7 @@ export function InteractiveShell({
                 isProcessing: false,
                 lastExecutionDuration: duration,
                 lastExecutionToolNodes: toolNodes,
-                lastExecutionPhases: phases,
+                lastExecutionSpans: spans,
               };
             }
             // State management design:
@@ -1010,25 +1035,34 @@ export function InteractiveShell({
               isProcessing: false,
               lastExecutionDuration: duration,
               lastExecutionToolNodes: toolNodes,
-              lastExecutionPhases: phases,
+              lastExecutionSpans: spans,
             };
           });
         },
-        addActiveTask: (id, name, args) => {
+        addActiveTask: (id, name, args, primaryArg) => {
           setState((s) => ({
             ...s,
             activeTasks: [
               ...s.activeTasks,
-              { id, name, args, startTime: Date.now(), phase: s.phaseState.currentPhase },
+              { id, name, args, primaryArg, startTime: Date.now(), span: s.spanState.currentSpan },
             ],
           }));
         },
-        completeTask: (id, name, success, _duration, error) => {
+        completeTask: (
+          id,
+          name,
+          success,
+          _duration,
+          error,
+          primaryArg,
+          resultSummary,
+          hasDetailedOutput
+        ) => {
           setState((s) => {
             // Match by unique id to handle concurrent calls of same tool
             const task = s.activeTasks.find((t) => t.id === id);
             if (task === undefined) {
-              // Task not found - use -1 to indicate unknown duration, current phase
+              // Task not found - use -1 to indicate unknown duration, current span
               // Log debug message if verbose mode enabled
               if (process.env.AGENT_DEBUG !== undefined) {
                 process.stderr.write(
@@ -1039,7 +1073,17 @@ export function InteractiveShell({
                 ...s,
                 completedTasks: [
                   ...s.completedTasks,
-                  { id, name, success, duration: -1, error, phase: s.phaseState.currentPhase },
+                  {
+                    id,
+                    name,
+                    success,
+                    duration: -1,
+                    error,
+                    span: s.spanState.currentSpan,
+                    primaryArg,
+                    resultSummary,
+                    hasDetailedOutput,
+                  },
                 ],
               };
             }
@@ -1049,7 +1093,17 @@ export function InteractiveShell({
               activeTasks: s.activeTasks.filter((t) => t.id !== id),
               completedTasks: [
                 ...s.completedTasks,
-                { id, name, success, duration, error, phase: task.phase },
+                {
+                  id,
+                  name,
+                  success,
+                  duration,
+                  error,
+                  span: task.span,
+                  primaryArg,
+                  resultSummary,
+                  hasDetailedOutput,
+                },
               ],
             };
           });
@@ -1068,35 +1122,49 @@ export function InteractiveShell({
         },
         setMessageCount: (count) => {
           setState((s) => {
-            // Also track message count for the current phase
-            const newPhaseMessageCounts = [...s.phaseState.phaseMessageCounts];
-            if (s.phaseState.currentPhase > 0) {
-              newPhaseMessageCounts[s.phaseState.currentPhase - 1] = count;
+            // Also track message count for the current span
+            const newSpanMessageCounts = [...s.spanState.spanMessageCounts];
+            if (s.spanState.currentSpan > 0) {
+              newSpanMessageCounts[s.spanState.currentSpan - 1] = count;
             }
             return {
               ...s,
               messageCount: count,
-              phaseState: {
-                ...s.phaseState,
-                phaseMessageCounts: newPhaseMessageCounts,
+              spanState: {
+                ...s.spanState,
+                spanMessageCounts: newSpanMessageCounts,
               },
             };
           });
         },
-        incrementPhase: () => {
+        incrementSpan: () => {
           setState((s) => {
-            const newPhase = s.phaseState.currentPhase + 1;
+            const newSpan = s.spanState.currentSpan + 1;
             return {
               ...s,
-              phaseState: {
-                currentPhase: newPhase,
-                phaseStartTimes: [...s.phaseState.phaseStartTimes, Date.now()],
-                phaseMessageCounts: [...s.phaseState.phaseMessageCounts, 0],
+              spanState: {
+                currentSpan: newSpan,
+                spanStartTimes: [...s.spanState.spanStartTimes, Date.now()],
+                spanMessageCounts: [...s.spanState.spanMessageCounts, 0],
+                spanReasoningBuffers: [...s.spanState.spanReasoningBuffers, ''],
               },
             };
           });
         },
-        getCurrentPhase: () => stateRef.current.phaseState.currentPhase,
+        getCurrentSpan: () => stateRef.current.spanState.currentSpan,
+        appendToSpanReasoning: (content) => {
+          setState((s) => {
+            if (s.spanState.currentSpan === 0) return s;
+            const idx = s.spanState.currentSpan - 1;
+            const buffers = [...s.spanState.spanReasoningBuffers];
+            // Append LLM response to span's reasoning buffer
+            buffers[idx] = (buffers[idx] ?? '') + content;
+            return {
+              ...s,
+              spanState: { ...s.spanState, spanReasoningBuffers: buffers },
+            };
+          });
+        },
       });
 
       // Wrap callbacks with telemetry if enabled
@@ -1549,78 +1617,6 @@ export function InteractiveShell({
     }
   });
 
-  // Build phases array for ExecutionStatus
-  const buildPhases = (): ExecutionPhase[] => {
-    const {
-      phaseState,
-      completedTasks,
-      activeTasks,
-      messageCount,
-      spinnerMessage,
-      streamingOutput,
-    } = state;
-
-    if (phaseState.currentPhase === 0) {
-      return [];
-    }
-
-    const phases: ExecutionPhase[] = [];
-    const now = Date.now();
-
-    for (let i = 0; i < phaseState.currentPhase; i++) {
-      const phaseNumber = i + 1;
-      const isCurrentPhase = phaseNumber === phaseState.currentPhase;
-      const startTime = phaseState.phaseStartTimes[i] ?? now;
-      const phaseMessageCount = phaseState.phaseMessageCounts[i] ?? messageCount;
-
-      // Get tools for this phase
-      const phaseCompletedTools = completedTasks.filter((t) => t.phase === phaseNumber);
-      const phaseActiveTools = activeTasks.filter((t) => t.phase === phaseNumber);
-
-      // Calculate phase duration (for completed phases, use next phase start or now)
-      const nextPhaseStart = phaseState.phaseStartTimes[i + 1];
-      const phaseDuration = isCurrentPhase
-        ? undefined
-        : nextPhaseStart !== undefined
-          ? (nextPhaseStart - startTime) / 1000
-          : (now - startTime) / 1000;
-
-      // Build tool nodes for this phase
-      const toolNodes: ToolNode[] = [
-        ...phaseCompletedTools.map(
-          (task): ToolNode => ({
-            id: task.id,
-            name: task.name,
-            status: task.success ? 'complete' : 'error',
-            duration: task.duration >= 0 ? task.duration / 1000 : undefined,
-            error: task.error,
-            phase: phaseNumber,
-          })
-        ),
-        ...phaseActiveTools.map(
-          (task): ToolNode => ({
-            id: task.id,
-            name: task.name,
-            args: task.args !== undefined ? formatToolArgs(task.args) : undefined,
-            status: 'running',
-            phase: phaseNumber,
-          })
-        ),
-      ];
-
-      phases.push({
-        number: phaseNumber,
-        status: isCurrentPhase ? 'working' : 'complete',
-        duration: phaseDuration,
-        messageCount: phaseMessageCount,
-        isThinking: isCurrentPhase && spinnerMessage !== '' && streamingOutput === '',
-        toolNodes,
-      });
-    }
-
-    return phases;
-  };
-
   // Render config loading state
   if (!state.configLoaded) {
     return <Spinner message="Loading configuration..." />;
@@ -1689,11 +1685,9 @@ export function InteractiveShell({
         </Box>
       )}
 
-      {/* Message history with completion status before assistant responses */}
+      {/* Message history */}
       {state.messages.map((msg, index) => {
         const isLastMessage = index === state.messages.length - 1;
-        const isLastAssistantMessage =
-          msg.role === 'assistant' && isLastMessage && !state.isProcessing;
 
         // Show horizontal rule after assistant messages that aren't the last
         const showDividerAfter = msg.role === 'assistant' && !isLastMessage;
@@ -1707,20 +1701,6 @@ export function InteractiveShell({
 
         return (
           <React.Fragment key={index}>
-            {/* Show completion status before the last assistant message */}
-            {isLastAssistantMessage &&
-              state.tokenUsage.queryCount > 0 &&
-              state.lastExecutionDuration !== null && (
-                <ExecutionStatus
-                  status="complete"
-                  messageCount={state.messageCount}
-                  toolCount={state.lastExecutionToolNodes.length}
-                  duration={state.lastExecutionDuration}
-                  toolNodes={state.lastExecutionToolNodes}
-                  phases={state.lastExecutionPhases}
-                  showToolHistory={verbose}
-                />
-              )}
             <Box marginBottom={hasBottomMargin ? 1 : 0}>
               <Text
                 color={msg.role === 'user' ? 'blue' : msg.role === 'system' ? 'yellow' : 'green'}
@@ -1753,7 +1733,10 @@ export function InteractiveShell({
                 status: task.success ? 'complete' : 'error',
                 duration: task.duration >= 0 ? task.duration / 1000 : undefined,
                 error: task.error,
-                phase: task.phase,
+                span: task.span,
+                primaryArg: task.primaryArg,
+                resultSummary: task.resultSummary,
+                hasDetailedOutput: task.hasDetailedOutput,
               })
             ),
             ...state.activeTasks.map(
@@ -1761,18 +1744,16 @@ export function InteractiveShell({
                 id: task.id,
                 name: task.name,
                 args: task.args !== undefined ? formatToolArgs(task.args) : undefined,
+                primaryArg: task.primaryArg,
                 status: 'running',
-                phase: task.phase,
+                span: task.span,
               })
             ),
           ]}
-          phases={buildPhases()}
-          showToolHistory={verbose}
         />
       )}
 
       {/* Streaming output with AnswerBox */}
-      {/* Show when: has output OR (processing AND no spinner showing) */}
       {(state.streamingOutput !== '' || (state.isProcessing && state.spinnerMessage === '')) && (
         <AnswerBox content={state.streamingOutput} isStreaming={state.isProcessing} />
       )}
@@ -1806,6 +1787,20 @@ export function InteractiveShell({
         state.promptState === null &&
         (state.sessionSelection === null || !state.sessionSelection.active) &&
         state.messages.length > 0 && <PromptDivider cwd={process.cwd()} />}
+
+      {/* SpanFooter for verbose mode - shows execution summary with auto-expanded spans */}
+      {verbose &&
+        !state.isProcessing &&
+        state.promptState === null &&
+        (state.sessionSelection === null || !state.sessionSelection.active) &&
+        state.lastExecutionSpans.length > 0 && (
+          <SpanFooter
+            spans={state.lastExecutionSpans}
+            duration={state.lastExecutionDuration ?? 0}
+            toolCount={state.lastExecutionToolNodes.length}
+            expandedSpans={new Set(state.lastExecutionSpans.map((s) => s.number))}
+          />
+        )}
 
       {/* Input prompt with autocomplete - supports multi-line via Shift+Enter */}
       {!state.isProcessing &&

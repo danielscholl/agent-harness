@@ -17,6 +17,14 @@ export {
 export { AnswerBox, type AnswerBoxProps } from './AnswerBox.js';
 export { ToolsInfo } from './ToolsInfo.js';
 export { Version } from './Version.js';
-export { ExecutionStatus, type ExecutionStatusProps, type ToolNode } from './ExecutionStatus.js';
+export {
+  ExecutionStatus,
+  type ExecutionStatusProps,
+  type ToolNode,
+  type ExecutionSpan,
+} from './ExecutionStatus.js';
 export { PromptLine, type PromptLineProps } from './PromptLine.js';
 export { PromptDivider, type PromptDividerProps } from './PromptDivider.js';
+export { ToolRow, type ToolRowProps } from './ToolRow.js';
+export { SpanNode, type SpanNodeProps } from './SpanNode.js';
+export { SpanFooter, type SpanFooterProps } from './SpanFooter.js';
