@@ -17,6 +17,7 @@ A harness is infrastructure. It connects an AI model to tools and policies. Not 
 | | Harness (this project) | Agent (the LLM) |
 |---|------------------------|-----------------|
 | Decides actions | No | Yes |
+| Executes tools | Yes | No |
 | Enforces safety | Yes | No |
 | Has goals | No | Yes (when configured) |
 | Ships with behavior | No | Yes (when configured) |
@@ -34,13 +35,7 @@ A harness is infrastructure. It connects an AI model to tools and policies. Not 
 - **Observability** — tracing and logs via OpenTelemetry
 - **Extension points** — skills, commands, lifecycle hooks
 
-**The harness does NOT provide:**
-
-- Goals or objectives
-- Domain-specific behavior
-- Autonomous planning out of the box
-
-Drop in AGENTS.md, commands, and skills. They define the agent.
+You supply behavior through AGENTS.md, commands, and skills.
 
 ---
 
