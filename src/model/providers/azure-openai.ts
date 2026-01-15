@@ -397,16 +397,17 @@ class AzureResponsesChatModel extends BaseChatModel {
     // Check if this is a tool continuation (returns last AIMessage with response_id)
     const continuation = this.detectToolContinuation(messages);
 
-    // Extract signal from options if provided (for cancellation support)
+    // Extract signal from options for cancellation support.
+    // ParsedCallOptions also includes `timeout` and `maxConcurrency`, but:
+    // - timeout: Handled by Agent Layer (our own RESPONSES_API_TIMEOUT_MS constant)
+    // - maxConcurrency: Not applicable for single LLM calls (handled by Agent Layer for parallel tool execution)
     const signal = options?.signal;
 
     // Request options with timeout and optional signal
-    const requestOptions: { timeout: number; signal?: AbortSignal } = {
+    const requestOptions = {
       timeout: RESPONSES_API_TIMEOUT_MS,
+      ...(signal !== undefined && { signal }),
     };
-    if (signal !== undefined) {
-      requestOptions.signal = signal;
-    }
 
     let response;
 
